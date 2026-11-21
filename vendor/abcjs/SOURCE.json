@@ -1,0 +1,11 @@
+{
+  "name": "abcjs",
+  "version": "6.7.0",
+  "license": "MIT",
+  "source": "https://registry.npmjs.org/abcjs/-/abcjs-6.7.0.tgz",
+  "files": {
+    "abcjs-basic-min.js": "b0cde4bc52bb33949181683a245005fff8a024a8c1f07ec6ce3222cd4bd72e51",
+    "LICENSE.md": "d7bdcd152b978adee22a2f9b92a4d72c4ec2c20a86512766c7c210b462b54702",
+    "abcjs-basic-min.js.LICENSE": "57706d6d731055a627cde38fa5202cd1b274a8b1d57f98eb85b7dd5a1c09d247"
+  }
+}

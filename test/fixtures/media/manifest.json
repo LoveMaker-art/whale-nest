@@ -1,0 +1,22 @@
+{
+  "animation.gif": {
+    "bytes": 19357,
+    "sha256": "fd4c63b2be99269bd277c46b6f0697ced20db89ceead8c8e8808dacb2deedac4"
+  },
+  "video.mp4": {
+    "bytes": 1308,
+    "sha256": "6387279cb88dc4ef5e6404e974c7a2005f0342b16590939d1e0f28e4b9518fe7"
+  },
+  "audio.wav": {
+    "bytes": 19244,
+    "sha256": "2720b05f77aa8b91f8d8d94e229300acdc9672ada94fe6978aa4a1b42b0bfc02"
+  },
+  "image.png": {
+    "bytes": 413,
+    "sha256": "d32e3139e6a3891b718640380124b919109342331b9b56f66a2b1615e637c5ab"
+  },
+  "document.txt": {
+    "bytes": 70,
+    "sha256": "db6036172cdb42d05d81adc2c1fe91a22c2b793f6537c9451ee0cc9c9aa80bae"
+  }
+}

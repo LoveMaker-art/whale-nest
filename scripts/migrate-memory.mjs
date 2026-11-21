@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { importLegacy, rollbackLegacy } from '../src/migration.mjs';
+const [configPath, action, argument, mode] = process.argv.slice(2);
+assert.equal(mode, '--offline', 'Usage: node scripts/migrate-memory.mjs INSTANCE_JSON import SNAPSHOT_JSON --offline | INSTANCE_JSON rollback SOURCE_HASH --offline');
+const options = JSON.parse(readFileSync(configPath, 'utf8'));
+const directory = resolve(options.dataDir);
+assert.ok(!existsSync(join(directory, 'runtime.lock')), 'Stop the instance first; recover a verified dead lease separately');
+let result;
+if (action === 'import') result = importLegacy(JSON.parse(readFileSync(argument, 'utf8')), null, directory);
+else if (action === 'rollback') result = rollbackLegacy(argument, directory);
+else throw new Error('Unknown migration action');
+console.log(JSON.stringify(result));

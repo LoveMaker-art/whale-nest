@@ -1,0 +1,114 @@
+diff --git a/src/runtime/types.ts b/src/runtime/types.ts
+--- a/src/runtime/types.ts
++++ b/src/runtime/types.ts
+@@ -418,6 +418,7 @@
+   prompt(input: ConnectRuntimePrompt): AsyncIterable<RuntimeActivity>;
+   close(): Promise<void>;
+   cancel?(): Promise<boolean>;
++  afterClawChatReply?(turnId: string): Promise<void>;
+ }
+ 
+ export interface ConnectRuntimeAdapter {
+diff --git a/src/runtime/session-turn-executor.ts b/src/runtime/session-turn-executor.ts
+--- a/src/runtime/session-turn-executor.ts
++++ b/src/runtime/session-turn-executor.ts
+@@ -20,6 +20,10 @@
+   async *execute(target: TurnTarget, input: SessionTurnExecution): AsyncIterable<RuntimeActivity> {
+     const handle = await this.sessionFor(target);
+     yield* handle.prompt({ ...input, turnOrigin: target.turnOrigin });
++  }
++
++  async afterClawChatReply(sessionRef: string, turnId: string): Promise<void> {
++    await this.handles.get(normalizeSessionRef(sessionRef))?.handle.afterClawChatReply?.(turnId);
+   }
+ 
+   async cancel(sessionRef: string): Promise<boolean> {
+diff --git a/src/runtime/connect-runtime.ts b/src/runtime/connect-runtime.ts
+--- a/src/runtime/connect-runtime.ts
++++ b/src/runtime/connect-runtime.ts
+@@ -559,6 +559,7 @@
+       chatId: message.chatId,
+     });
+     const policy = policyForOutputVisibility(mode);
++    let confirmedFinalText = false;
+     const surface =
+       this.options.turnSurfaces?.createClawChat({
+         sessionRef: current.sessionRef,
+@@ -566,6 +567,9 @@
+         materialize: (event) => materializeRuntimeOutput(event, policy),
+         deliver: async (event, reply) => {
+           const delivery = await this.sendReply(message, reply, workspace);
++          if (event.data?.outputKind === "final" && event.state === "complete" && delivery?.text.trim() && !delivery.media.length) {
++            confirmedFinalText = true;
++          }
+           if (delivery?.media.length) {
+             await this.transcriptProjection?.applyRuntimeDelivery(current.sessionRef, event, delivery);
+           }
+@@ -579,6 +583,9 @@
+         materialize: (event) => materializeRuntimeOutput(event, policy),
+         deliver: async (event, reply) => {
+           const delivery = await this.sendReply(message, reply, workspace);
++          if (event.data?.outputKind === "final" && event.state === "complete" && delivery?.text.trim() && !delivery.media.length) {
++            confirmedFinalText = true;
++          }
+           if (delivery?.media.length) {
+             await this.transcriptProjection?.applyRuntimeDelivery(current.sessionRef, event, delivery);
+           }
+@@ -629,6 +636,10 @@
+       await surface.accept(event);
+     }
+     await surface.complete();
++    if (confirmedFinalText && message.messageId) {
++      // A supplemental attachment must never turn a delivered reply into a failed input.
++      await this.executor.afterClawChatReply(current.sessionRef, message.messageId).catch(() => {});
++    }
+   }
+ 
+   private async runClientTurn(
+diff --git a/src/service/version.ts b/src/service/version.ts
+--- a/src/service/version.ts
++++ b/src/service/version.ts
+@@ -1 +1 @@
+-export const CONNECT_VERSION = "0.1.0-beta.9-whalenest.media.3-replay.2-renewal.1-liveware.1-voice.2";
++export const CONNECT_VERSION = "0.1.0-beta.9-whalenest.media.3-replay.2-renewal.1-liveware.1-voice.2-stickers.1";
+diff --git a/tests/connect-runtime.test.ts b/tests/connect-runtime.test.ts
+--- a/tests/connect-runtime.test.ts
++++ b/tests/connect-runtime.test.ts
+@@ -99,6 +99,37 @@
+   });
+ }
+ describe("ConnectRuntime Agent Binding sessions", () => {
++  it.each(["confirmed", "failed", "suppressed"] as const)("runs a supplement only after confirmed final text (%s)", async (outcome) => {
++    const fixture = await runtimeFixture();
++    const afterClawChatReply = mock(async (turnId: string) => {
++      expect(turnId).toBe("message-1");
++      expect(fixture.sendMessageEnvelope).toHaveBeenCalledTimes(1);
++    });
++    if (outcome === "failed") fixture.sendMessageEnvelope.mockImplementationOnce(async () => {
++      throw new Error("no reply receipt");
++    });
++    const native = {
++      async *prompt() { if (outcome !== "suppressed") yield activity("ordinary final reply"); },
++      async close() {},
++      afterClawChatReply,
++    };
++    const runtimeAdapters = new RuntimeAdapterRegistry([fixedRuntimeAdapter({
++      kind: "codex", modes: [], start: async () => native,
++    })]);
++    const runtime = new ConnectRuntime({
++      agentId: "codex", config: fixture.config, configPath: fixture.configPath,
++      stateStore: fixture.store, wsClient: fixture.wsClient, runtimeAdapters,
++    });
++    try {
++      await runtime.handleInboundMessage(message());
++      expect(afterClawChatReply).toHaveBeenCalledTimes(outcome === "confirmed" ? 1 : 0);
++    } finally {
++      await runtime.dispose();
++      await runtimeAdapters.close();
++      await fixture.store.close();
++    }
++  });
++
+   it("keeps voice and text on the same queued runtime handle without projecting voice", async () => {
+     const fixture = await runtimeFixture();
+     const entered = Promise.withResolvers<void>();

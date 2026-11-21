@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark"><title>鲸栖通话</title>
+<style>
+:root{--bg:#eef3f8;--paper:#fff;--ink:#19364c;--muted:#617a8e;--line:#d3e0eb;--signal:#276aa0;--wave:#4f94c2;--alert:#a03945;--body:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;--display:"Songti SC","Noto Serif CJK SC",serif;--mono:ui-monospace,"SFMono-Regular",monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--body)}main{width:min(100%,620px);min-height:100dvh;margin:auto;padding:24px 22px max(24px,env(safe-area-inset-bottom))}header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:18px}.brand{font-weight:600;letter-spacing:.04em}.tag{font-size:12px;color:var(--muted)}h1{font:500 32px/1.3 var(--display);margin:30px 0 10px}.intro{margin:0;color:var(--muted);font-size:14px}.stage{position:relative;display:grid;place-items:center;height:180px;margin:12px 0}.disc{width:114px;height:114px;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center;background:var(--paper);box-shadow:0 0 0 15px var(--bg),0 0 0 16px var(--line)}.bars{display:flex;gap:5px;align-items:center;height:45px}.bars i{width:4px;height:12px;border-radius:4px;background:var(--wave);transition:height .15s}.bars i:nth-child(2),.bars i:nth-child(4){height:23px}.bars i:nth-child(3){height:34px}body[data-state="speaking"] .bars i{animation:wave .8s ease-in-out infinite alternate}body[data-state="speaking"] .bars i:nth-child(even){animation-delay:-.4s}body[data-state="listening"] .disc{border-color:var(--signal)}body[data-state="thinking"] .disc{animation:breathe 1.5s ease-in-out infinite alternate}@keyframes wave{to{height:8px}}@keyframes breathe{to{box-shadow:0 0 0 20px var(--bg),0 0 0 21px var(--line)}}.status{text-align:center;margin:0;font-weight:600}.hint{text-align:center;font-size:13px;color:var(--muted);min-height:22px;margin:4px 0 24px}.transcript{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:16px 18px;min-height:148px;max-height:32vh;overflow:auto;overflow-wrap:anywhere}.label{font-size:11px;color:var(--muted);letter-spacing:.08em}.said{color:var(--muted);font-size:14px;margin:6px 0 12px}.reply{white-space:pre-wrap;margin:6px 0;font-size:18px}.empty{color:var(--muted);font-size:15px}.meter{display:flex;gap:16px;justify-content:space-between;margin:18px 0 22px;font:12px var(--mono);color:var(--muted);flex-wrap:wrap}.controls{display:flex;gap:10px}button{border:1px solid var(--line);border-radius:12px;padding:13px 18px;font:600 15px var(--body);cursor:pointer;background:var(--paper);color:var(--ink);min-height:48px}button.primary{background:var(--signal);color:#fff;border-color:var(--signal);flex:1}button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:3px solid var(--wave);outline-offset:3px}.error{color:var(--alert);font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}.privacy{font-size:12px;color:var(--muted);margin:18px 0 0}.debug{font:11px var(--mono);color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}details{margin-top:20px;color:var(--muted);font-size:12px}@media(prefers-color-scheme:dark){:root{--bg:#182733;--paper:#213442;--ink:#deebf5;--muted:#9cb4c7;--line:#385262;--signal:#3278ad;--wave:#82bbdf;--alert:#ff9ba7}}@media(max-width:360px){main{padding:18px 16px}h1{font-size:28px}.stage{height:150px}.meter{gap:8px}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+select{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:8px;min-height:40px;padding:6px 12px}select:focus-visible{outline:3px solid var(--wave);outline-offset:3px}
+#diagnostic table{width:100%;font-size:11px;border-collapse:collapse;line-height:1.4}#diagnostic th,#diagnostic td{padding:7px 3px;border-bottom:1px solid var(--line);vertical-align:top;white-space:pre-line;overflow-wrap:anywhere}#diagnostic button{font-size:12px;padding:8px}
+</style>
+<script src="i18n.js?v=__VOICE_BUILD_ID__" defer></script><script src="voice.js?v=__VOICE_BUILD_ID__" defer></script><script src="diagnostic.js?v=__VOICE_BUILD_ID__" defer></script><script src="recorder.js?v=__VOICE_BUILD_ID__" defer></script><script src="classic-page.js?v=__VOICE_BUILD_ID__" defer></script>
+</head>
+<body data-state="ready"><main>
+<header><span class="brand">ClawNest <span class="tag">/ 语音</span></span><span class="tag" id="connection">尚未连接</span></header>
+<h1>说吧，我在听。</h1><p class="intro">像聊天一样开口。想换个话题，直接打断就好。</p>
+<div class="stage" aria-hidden="true"><div class="disc"><div class="bars"><i></i><i></i><i></i><i></i><i></i></div></div></div>
+<p class="status" id="status" role="status" aria-live="polite">准备好就开始</p><p class="hint" id="hint">请在安静的地方开启麦克风</p>
+<section class="transcript" aria-label="实时字幕"><div class="label">你说</div><p class="said" id="said">—</p><div class="label">回复</div><p class="reply empty" id="reply">对话开始后，文字会出现在这里。</p></section>
+<div class="meter"><span id="time">本次 00:00</span><span id="quota">剩余时长连接后显示</span></div>
+<div class="controls"><button class="primary" id="start">开启麦克风</button><button id="end" disabled>结束对话</button></div>
+<p class="privacy"><label for="sensitivity">麦克风灵敏度 </label><select id="sensitivity"><option value="low">低</option><option value="medium" selected>中</option><option value="high">高</option></select></p>
+<p class="privacy"><label for="prebuffer">语音预缓冲 </label><select id="prebuffer"><option value="0">关闭（原有播放）</option><option value="1000">1 秒</option><option value="1500">1.5 秒（默认）</option><option value="2500">2.5 秒</option></select> <small>下一条回复生效</small></p>
+<p class="privacy"><label for="text-sync">回复文字 </label><select id="text-sync"><option value="on">随语音逐句显示</option><option value="off">立即显示全部文字（调试）</option></select></p>
+<p class="error" id="error" role="alert"></p><p class="privacy">不保存原始录音。已确认播放的完整句段会留在你和 Agent 的聊天里。</p>
+<details><summary>语音调试</summary><pre class="debug" id="debug">完成一轮后显示</pre></details>
+<details id="diagnostic" hidden><summary>诊断</summary>
+<label>下行传输: <select id="downstream-setting"><option value="sse">SSE（默认）</option><option value="ws">WS（诊断）</option></select></label>
+<p>仅发送合成静音，不播放、不录音。每项 10 秒；测试时暂停语音输入。</p>
+<label>下行 <select id="diag-transport"><option value="both">WS + SSE 对照</option value="ws">WS</option><option value="sse">SSE</option></select></label>
+<label>帧 <select id="diag-size"><option value="all">全部 1/4/16/64 KB</option value="1024">1 KB</option><option value="4096">4 KB</option><option value="16384">16 KB</option><option value="65536">64 KB</option></select></label>
+<label>节奏 <select id="diag-profile"><option value="both">稳态 + 突发</option><option value="steady">44 KB/s 稳态</option><option value="burst">200 KB/100 ms 突发</option></select></label>
+<p><button id="diag-down" disabled>下行压力测试</button> <button id="diag-up" disabled>上行压力测试</button> <button id="diag-combined" disabled>双向压力测试</button> <button id="diag-stop" disabled>停止</button></p>
+<p id="diag-status" role="status">开启麦克风连接后可测试；测试期间麦克风数据不会上传。</p>
+<div style="overflow:auto"><table><thead><tr><th>UTC<br>模式</th><th>传输<br>帧/节奏</th><th>收帧<br>KB</th><th>缺/乱/重</th><th>间隔<br>抖动 ms</th><th>上行帧<br>KB/缺</th><th>结果<br>关闭码/原因</th></tr></thead><tbody id="diag-results"></tbody></table></div>
+<p>KB 为 1024 字节；稳态为 44,100 B/s，上行为 32,768 B/s。抖动排除发送节奏，SSE 另有约 33% base64 开销。缺失或断线请截图；结果也会记录到服务端 UTC 日志。</p>
+</details>
+<details id="event-panel" hidden><summary>诊断记录</summary><button id="copy-events">复制最近记录</button><pre class="debug" id="event-records"></pre></details>
+<p class="privacy">版本 <span id="build-id">__VOICE_BUILD_ID__</span> · <span id="transport-status">SSE</span></p>
+</main></body></html>

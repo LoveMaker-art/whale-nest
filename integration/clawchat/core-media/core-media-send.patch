@@ -1,0 +1,706 @@
+diff --git a/src/agent/tool-catalog.ts b/src/agent/tool-catalog.ts
+--- a/src/agent/tool-catalog.ts
++++ b/src/agent/tool-catalog.ts
+@@ -24,6 +24,7 @@
+ export interface ToolHandlerContext {
+   request(method: string, path: string, body?: unknown): Promise<unknown>;
+   mention(input: Record<string, unknown>): Promise<unknown>;
++  sendMedia(input: Record<string, unknown>): Promise<unknown>;
+   react(input: Record<string, unknown>): unknown;
+   uploadAvatar(input: Record<string, unknown>): Promise<unknown>;
+ }
+@@ -43,7 +44,9 @@
+   handler: async (input, context) => await context.request(method, path(input), body ? body(input) : undefined),
+ });
+ 
+-const websocket = (operation: "mention" | "react"): Pick<ConnectToolDefinition, "execution" | "handler"> => ({
++const websocket = (
++  operation: "mention" | "react" | "sendMedia",
++): Pick<ConnectToolDefinition, "execution" | "handler"> => ({
+   execution: "websocket",
+   handler: async (input, context) => await context[operation](input),
+ });
+@@ -63,6 +66,37 @@
+ };
+ 
+ export const CONNECT_TOOL_CATALOG = [
++  {
++    name: "clawchat_send_media",
++    description:
++      "Upload one absolute local file and send it through the existing ClawChat connection; await its message acknowledgement.",
++    timeoutMs: 120_000,
++    properties: {
++      chatId: p("string", "Exact conversation ID.", { required: true }),
++      chatType: p("string", "Exact conversation type.", { required: true, enum: ["direct", "group"] }),
++      filePath: p("string", "Absolute regular local file, up to 100 MiB; final symlinks are refused.", {
++        required: true,
++        record: "basename",
++      }),
++      caption: p("string", "Optional caption."),
++      replyToMessageId: p("string", "Optional exact source message ID."),
++      expectedKind: p("string", "Expected kind returned by upload; refuse mismatches before sending.", {
++        enum: ["image", "audio", "file", "video"],
++      }),
++      sha256: p("string", "Expected SHA-256 of the immutable local file."),
++      duration: p("integer", "Audio/video duration in milliseconds.", { minimum: 1, maximum: 86_400_000 }),
++      width: p("integer", "Image/video width in pixels.", { minimum: 1, maximum: 100_000 }),
++      height: p("integer", "Image/video height in pixels.", { minimum: 1, maximum: 100_000 }),
++    },
++    ...websocket("sendMedia"),
++  },
++  {
++    name: "clawchat_get_agent_permissions",
++    description: "Read the current agent's owner-managed permissions and moment visibility. This tool cannot change permissions.",
++    timeoutMs: 30_000,
++    properties: {},
++    ...http("GET", () => "/v1/agents/me/permissions"),
++  },
+   {
+     name: "clawchat_get_account_profile",
+     description: "Get the connected ClawChat account profile.",
+diff --git a/src/agent/tool-executor.ts b/src/agent/tool-executor.ts
+--- a/src/agent/tool-executor.ts
++++ b/src/agent/tool-executor.ts
+@@ -1,6 +1,9 @@
+-import { basename, isAbsolute } from "node:path";
++import { createHash } from "node:crypto";
++import { constants } from "node:fs";
++import { open } from "node:fs/promises";
++import { basename, extname, isAbsolute } from "node:path";
+ import { buildTextMessagePayload } from "../clawchat/message-mapper";
+-import { EVENT } from "../clawchat/protocol";
++import { EVENT, MessageSendError } from "../clawchat/protocol";
+ import type { ConnectWsClient } from "../clawchat/ws-client";
+ import type { ActivationCredentials, ChatType } from "../types";
+ import { getConnectTool, validateToolInput } from "./tool-catalog";
+@@ -50,9 +53,72 @@
+   return await tool.handler(input, {
+     request: async (method, path, body) => await callClawChat(method, path, body, options),
+     mention: async (value) => await mention(value, options.wsClient),
++    sendMedia: async (value) => await sendMedia(value, options.wsClient),
+     react: (value) => react(value, options.wsClient),
+     uploadAvatar: async (value) => await uploadAvatar(value, options),
+   });
++}
++
++async function sendMedia(input: Record<string, unknown>, ws: ConnectWsClient): Promise<unknown> {
++  const filePath = String(input.filePath);
++  if (!isAbsolute(filePath)) throw new Error("filePath must be absolute");
++  const handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
++  let file: Blob;
++  try {
++    const metadata = await handle.stat();
++    if (!metadata.isFile() || metadata.size <= 0 || metadata.size > 100 * 1024 * 1024)
++      throw new Error("media must be a non-empty regular file of at most 100 MiB");
++    const bytes = await handle.readFile();
++    if (bytes.length !== metadata.size) throw new Error("media changed while reading");
++    if (
++      input.sha256 != null &&
++      (!/^[a-f0-9]{64}$/.test(String(input.sha256)) ||
++        createHash("sha256").update(bytes).digest("hex") !== input.sha256)
++    )
++      throw new Error("media SHA-256 mismatch");
++    const mime = extname(filePath).toLowerCase() === ".wav" ? "audio/wav" : Bun.file(filePath).type;
++    file = new Blob([bytes], { type: mime || "application/octet-stream" });
++  } finally {
++    await handle.close();
++  }
++  const fragment = await ws.uploadMedia(file, { filename: basename(filePath) });
++  if (input.expectedKind != null && fragment.kind !== input.expectedKind)
++    throw new Error("uploaded media kind mismatch");
++  const media = { ...fragment };
++  if (input.duration != null) {
++    if (media.kind !== "audio" && media.kind !== "video") throw new Error("duration requires uploaded audio or video");
++    Object.assign(media, { duration: input.duration });
++  }
++  for (const key of ["width", "height"]) {
++    if (input[key] == null) continue;
++    if (media.kind !== "image" && media.kind !== "video") throw new Error(`${key} requires uploaded image or video`);
++    Object.assign(media, { [key]: input[key] });
++  }
++  const payload = buildTextMessagePayload(typeof input.caption === "string" ? input.caption : "", {
++    replyToMessageId: typeof input.replyToMessageId === "string" ? input.replyToMessageId : undefined,
++  });
++  payload.message.body.fragments.push(media);
++  try {
++    const ack = await ws.sendMessageEnvelope(EVENT.MESSAGE_REPLY, String(input.chatId), payload, {
++      toType: input.chatType as ChatType,
++    });
++    if (!ack.payload.message_id) throw new Error("message acknowledgement did not contain a message ID");
++    const record = fragment as Record<string, unknown>;
++    return {
++      sent: true,
++      messageId: ack.payload.message_id,
++      kind: fragment.kind,
++      name: record.name,
++      mime: record.mime,
++      size: record.size,
++    };
++  } catch (error) {
++    if (error instanceof MessageSendError) throw error;
++    if (isIndeterminateToolError(error)) throw error;
++    throw new IndeterminateToolExecutionError(
++      `media send outcome is unknown: ${error instanceof Error ? error.message : String(error)}`,
++    );
++  }
+ }
+ 
+ async function mention(input: Record<string, unknown>, ws: ConnectWsClient): Promise<unknown> {
+diff --git a/src/service/cli.ts b/src/service/cli.ts
+--- a/src/service/cli.ts
++++ b/src/service/cli.ts
+@@ -502,6 +502,25 @@
+       );
+       return 0;
+     }
++    if (argv[1] === "status") {
++      const requestId = argv[2]?.trim();
++      if (!requestId) throw new Error("tool status requires an exact request ID");
++      const config = await loadConfig(optionValue(argv, "--config"));
++      const bindingId = optionValue(argv, "--agent") ?? process.env.CLAWCHAT_CONNECT_AGENT_ID ?? config.defaultAgent;
++      if (!bindingId) throw new Error("no Agent Binding selected");
++      getAgentBinding(config, bindingId);
++      const store = (deps.createStateStore ?? createStateStore)({ dbPath: config.stateDbPath });
++      try {
++        const record = await store.getToolRequest(requestId);
++        if (record && record.bindingId !== bindingId) throw new Error("request belongs to another Agent Binding");
++        io.writeStdout(
++          `${JSON.stringify({ requestId, status: record?.state ?? "not_found", ...(record?.result ? { result: record.result } : {}), ...(record?.error ? { error: record.error } : {}) })}\n`,
++        );
++        return 0;
++      } finally {
++        await store.close();
++      }
++    }
+     const toolName = argv[2] ?? "";
+     const tool = getConnectTool(toolName);
+     if (!tool) throw new Error(`unknown ClawChat tool: ${toolName || "(missing)"}`);
+diff --git a/src/service/version.ts b/src/service/version.ts
+--- a/src/service/version.ts
++++ b/src/service/version.ts
+@@ -1 +1 @@
+-export const CONNECT_VERSION = "0.1.0-beta.9";
++export const CONNECT_VERSION = "0.1.0-beta.9-whalenest.media.3";
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@clawling/clawchat-plugin-connect",
+-  "version": "0.1.0-beta.9",
++  "version": "0.1.0-beta.9-whalenest.media.3",
+   "description": "Local ClawChat bridge for Plugin-provided coding runtimes and independently managed Web Apps.",
+   "repository": {
+     "type": "git",
+diff --git a/skills/manifest.json b/skills/manifest.json
+--- a/skills/manifest.json
++++ b/skills/manifest.json
+@@ -1,5 +1,5 @@
+ {
+-  "connectVersion": "0.1.0-beta.9",
++  "connectVersion": "0.1.0-beta.9-whalenest.media.3",
+   "files": {
+     "clawchat-core/SKILL.md": "2e892661abf0482cb6058cb594158d978b4cb83c826f5947782d4427bd66753f",
+     "clawchat-core/agents/openai.yaml": "83cf32458e89607db5c51317fc1dcd5dbdb279a4f6d068a9eaa2e963490aeda7",
+diff --git a/tests/media-send-tool.test.ts b/tests/media-send-tool.test.ts
+new file mode 100644
+--- /dev/null
++++ b/tests/media-send-tool.test.ts
+@@ -0,0 +1,262 @@
++import { afterEach, describe, expect, it, mock } from "bun:test";
++import { mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { getConnectTool, recordToolInput, validateToolInput } from "../src/agent/tool-catalog";
++import { executeConnectTool, isIndeterminateToolError } from "../src/agent/tool-executor";
++import { type MessagePayload, MessageSendError, StateError } from "../src/clawchat/protocol";
++import type { ConnectWsClient } from "../src/clawchat/ws-client";
++import type { ActivationCredentials } from "../src/types";
++
++const activation: ActivationCredentials = {
++  localAgentId: "dsh",
++  accessToken: "test-only",
++  refreshToken: null,
++  serverAgentId: "agent-test",
++  userId: "user-test",
++  ownerUserId: "owner-test",
++  conversationId: "cnv_owner",
++};
++const temporary: string[] = [];
++afterEach(async () => {
++  for (const dir of temporary.splice(0)) await rm(dir, { recursive: true, force: true });
++});
++const fixture = (name: string) => join(import.meta.dir, "fixtures/media-send", name);
++const options = (wsClient: unknown) => ({
++  baseUrl: "https://unused.test",
++  deviceId: "device-test",
++  activation,
++  wsClient: wsClient as ConnectWsClient,
++});
++
++describe("generic media delivery through the existing Core connection", () => {
++  for (const [name, kind, mime] of [
++    ["image.png", "image", "image/png"],
++    ["audio.wav", "audio", "audio/wav"],
++    ["document.txt", "file", "text/plain"],
++    ["video.mp4", "video", "video/mp4"],
++  ] as const) {
++    it(`uploads and sends ${kind} through the supplied connection and returns its real ack`, async () => {
++      const uploadMedia = mock(async (file: Blob, args: { filename: string }) => {
++        expect(file.type.split(";")[0]).toBe(mime);
++        expect(args.filename).toBe(name);
++        return { kind, url: `https://media.test/${name}`, name, mime, size: file.size };
++      });
++      const sendMessageEnvelope = mock(async (...args: unknown[]) => {
++        expect(args[0]).toBe("message.reply");
++        expect(args[1]).toBe("cnv_owner");
++        const payload = args[2] as MessagePayload;
++        expect(payload.message.body.fragments).toContainEqual(expect.objectContaining({ kind, name, mime }));
++        expect(payload.message.context.reply?.reply_to_msg_id).toBe("msg_source");
++        expect(args[3]).toEqual({ toType: "direct" });
++        return { payload: { message_id: `msg_ack_${kind}` } };
++      });
++      const result = await executeConnectTool(
++        "clawchat_send_media",
++        {
++          chatId: "cnv_owner",
++          chatType: "direct",
++          filePath: fixture(name),
++          caption: "M2 fixed fixture",
++          replyToMessageId: "msg_source",
++          ...(kind === "audio" ? { duration: 600 } : {}),
++          ...(kind === "video" ? { duration: 1000, width: 160, height: 96 } : {}),
++        },
++        options({ uploadMedia, sendMessageEnvelope }),
++      );
++      expect(result).toMatchObject({ sent: true, messageId: `msg_ack_${kind}`, kind, name, mime });
++      expect(uploadMedia).toHaveBeenCalledTimes(1);
++      expect(sendMessageEnvelope).toHaveBeenCalledTimes(1);
++      if (kind === "audio" || kind === "video") {
++        const payload = sendMessageEnvelope.mock.calls[0]?.[2] as MessagePayload;
++        const fragment = payload.message.body.fragments.at(-1) as Record<string, unknown>;
++        expect(fragment.duration).toBe(kind === "audio" ? 600 : 1000);
++        if (kind === "video") expect(fragment).toMatchObject({ width: 160, height: 96 });
++      }
++    });
++  }
++
++  it("does not send a message when upload fails", async () => {
++    const sendMessageEnvelope = mock(async () => {
++      throw Error("must not run");
++    });
++    await expect(
++      executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav") },
++        options({
++          uploadMedia: async () => {
++            throw Error("upload rejected");
++          },
++          sendMessageEnvelope,
++        }),
++      ),
++    ).rejects.toThrow("upload rejected");
++    expect(sendMessageEnvelope).not.toHaveBeenCalled();
++  });
++
++  it("keeps a post-submission connection error indeterminate without retrying", async () => {
++    const sendMessageEnvelope = mock(async () => {
++      throw Error("connection dropped after submission");
++    });
++    let caught: unknown;
++    try {
++      await executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav") },
++        options({
++          uploadMedia: async () => ({
++            kind: "audio",
++            url: "https://media.test/audio.wav",
++            name: "audio.wav",
++            mime: "audio/wav",
++            size: 19244,
++          }),
++          sendMessageEnvelope,
++        }),
++      );
++    } catch (error) {
++      caught = error;
++    }
++    expect(isIndeterminateToolError(caught)).toBe(true);
++    expect(sendMessageEnvelope).toHaveBeenCalledTimes(1);
++  });
++
++  it("keeps Core shutdown during a submitted send indeterminate", async () => {
++    let caught: unknown;
++    try {
++      await executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav") },
++        options({
++          uploadMedia: async () => ({
++            kind: "audio",
++            url: "https://media.test/audio.wav",
++            name: "audio.wav",
++            mime: "audio/wav",
++            size: 19244,
++          }),
++          sendMessageEnvelope: async () => {
++            throw new StateError("client closed");
++          },
++        }),
++      );
++    } catch (error) {
++      caught = error;
++    }
++    expect(isIndeterminateToolError(caught)).toBe(true);
++  });
++
++  it("refuses relative paths, directories, symlinks and empty files before upload", async () => {
++    const root = await mkdtemp(join(await realpath(tmpdir()), "media-send-"));
++    temporary.push(root);
++    await writeFile(join(root, "empty.wav"), "");
++    await symlink(fixture("audio.wav"), join(root, "link.wav"));
++    const uploadMedia = mock(async () => {
++      throw Error("must not upload");
++    });
++    for (const filePath of ["relative.wav", root, join(root, "link.wav"), join(root, "empty.wav")]) {
++      await expect(
++        executeConnectTool(
++          "clawchat_send_media",
++          { chatId: "cnv_owner", chatType: "direct", filePath },
++          options({ uploadMedia }),
++        ),
++      ).rejects.toThrow();
++    }
++    expect(uploadMedia).not.toHaveBeenCalled();
++  });
++
++  it("preserves a definite platform rejection as failed", async () => {
++    const rejection = new MessageSendError("not_member");
++    let caught: unknown;
++    try {
++      await executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav") },
++        options({
++          uploadMedia: async () => ({
++            kind: "audio",
++            url: "https://media.test/audio.wav",
++            name: "audio.wav",
++            mime: "audio/wav",
++            size: 19244,
++          }),
++          sendMessageEnvelope: async () => {
++            throw rejection;
++          },
++        }),
++      );
++    } catch (error) {
++      caught = error;
++    }
++    expect(caught).toBe(rejection);
++    expect(isIndeterminateToolError(caught)).toBe(false);
++  });
++
++  it("refuses to report sent without a message ID in the acknowledgement", async () => {
++    let caught: unknown;
++    try {
++      await executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav") },
++        options({
++          uploadMedia: async () => ({
++            kind: "audio",
++            url: "https://media.test/audio.wav",
++            name: "audio.wav",
++            mime: "audio/wav",
++            size: 19244,
++          }),
++          sendMessageEnvelope: async () => ({ payload: {} }),
++        }),
++      );
++    } catch (error) {
++      caught = error;
++    }
++    expect(isIndeterminateToolError(caught)).toBe(true);
++  });
++
++  it("refuses changed file bytes before upload and a kind mismatch before sending", async () => {
++    const uploadMedia = mock(async () => ({
++      kind: "file",
++      url: "https://media.test/file",
++      name: "audio.wav",
++      mime: "application/octet-stream",
++      size: 19244,
++    }));
++    const sendMessageEnvelope = mock(async () => ({ payload: { message_id: "must-not-send" } }));
++    await expect(
++      executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav"), sha256: "0".repeat(64) },
++        options({ uploadMedia, sendMessageEnvelope }),
++      ),
++    ).rejects.toThrow("SHA-256 mismatch");
++    expect(uploadMedia).not.toHaveBeenCalled();
++    await expect(
++      executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav"), expectedKind: "audio" },
++        options({ uploadMedia, sendMessageEnvelope }),
++      ),
++    ).rejects.toThrow("kind mismatch");
++    expect(sendMessageEnvelope).not.toHaveBeenCalled();
++  });
++
++  it("requires exact chat type, validates metadata, and redacts recorded file paths", () => {
++    const tool = getConnectTool("clawchat_send_media");
++    expect(tool).not.toBeNull();
++    if (!tool) throw Error("media tool not registered");
++    expect(() => validateToolInput(tool, { chatId: "cnv_owner", filePath: fixture("audio.wav") })).toThrow("chatType");
++    expect(() =>
++      validateToolInput(tool, {
++        chatId: "cnv_owner",
++        chatType: "direct",
++        filePath: fixture("audio.wav"),
++        duration: -1,
++      }),
++    ).toThrow("duration");
++    expect(recordToolInput(tool, { filePath: fixture("audio.wav") })).toEqual({ filePath: "audio.wav" });
++  });
++});
+diff --git a/tests/tool-catalog.test.ts b/tests/tool-catalog.test.ts
+--- a/tests/tool-catalog.test.ts
++++ b/tests/tool-catalog.test.ts
+@@ -2,9 +2,9 @@
+ import { CONNECT_TOOL_CATALOG, getConnectTool, validateToolInput } from "../src/agent/tool-catalog";
+ 
+ describe("Connect Tool Catalog", () => {
+-  it("publishes exactly the agreed 24 tool-name entries without memory or conversation lookup", () => {
+-    expect(CONNECT_TOOL_CATALOG).toHaveLength(24);
+-    expect(new Set(CONNECT_TOOL_CATALOG.map((tool) => tool.name)).size).toBe(24);
++  it("publishes the existing tools plus media and read-only self permissions", () => {
++    expect(CONNECT_TOOL_CATALOG).toHaveLength(26);
++    expect(new Set(CONNECT_TOOL_CATALOG.map((tool) => tool.name)).size).toBe(26);
+     expect(getConnectTool("clawchat_get_conversation")).toBeNull();
+     expect(CONNECT_TOOL_CATALOG.some((tool) => tool.name.includes("memory"))).toBe(false);
+     expect(
+@@ -12,6 +12,15 @@
+         (tool) => ["http", "websocket", "file-upload"].includes(tool.execution) && typeof tool.handler === "function",
+       ),
+     ).toBe(true);
++  });
++
++  it("keeps self-permission reads at the fixed authenticated endpoint", async () => {
++    const tool = getConnectTool("clawchat_get_agent_permissions");
++    if (!tool) throw new Error("self-permission tool missing");
++    expect(tool.execution).toBe("http");
++    const requests: unknown[] = [];
++    await tool.handler({}, { request: async (...args: unknown[]) => { requests.push(args); return {}; } } as never);
++    expect(requests).toEqual([["GET", "/v1/agents/me/permissions", undefined]]);
+   });
+ 
+   it("requires authoritative message and identity ids", () => {
+diff --git a/tests/cli.test.ts b/tests/cli.test.ts
+--- a/tests/cli.test.ts
++++ b/tests/cli.test.ts
+@@ -895,6 +895,90 @@
+     expect(JSON.parse(output.stdout.at(-1) ?? "{}")).not.toHaveProperty("agent");
+   });
+ 
++  it("reuses a settled media request without submitting another send", async () => {
++    const path = await tempConfig();
++    const config = upsertAgentBinding(defaultConfig(), "codex", testBinding());
++    config.stateDbPath = `${path}.sqlite`;
++    await saveConfig(config, path);
++    const input = { chatId: "cnv_owner", chatType: "direct", filePath: "/tmp/media.wav", duration: 600 };
++    const store = createStateStore({ dbPath: config.stateDbPath });
++    await store.submitToolRequest({
++      requestId: "media-request",
++      bindingId: "codex",
++      toolName: "clawchat_send_media",
++      normalizedInput: input,
++      timeoutMs: 120_000,
++    });
++    await store.claimNextToolRequest("codex");
++    await store.settleToolRequest("media-request", {
++      state: "succeeded",
++      result: { sent: true, messageId: "msg_media_ack" },
++    });
++    await store.close();
++    for (let retry = 0; retry < 2; retry++) {
++      const output = io();
++      expect(
++        await runConnectCli(
++          [
++            "tool",
++            "call",
++            "clawchat_send_media",
++            "--input-json",
++            JSON.stringify(input),
++            "--request-id",
++            "media-request",
++            "--agent",
++            "codex",
++            "--config",
++            path,
++          ],
++          output.deps,
++        ),
++      ).toBe(0);
++      expect(JSON.parse(output.stdout.at(-1) ?? "{}")).toMatchObject({
++        requestId: "media-request",
++        status: "succeeded",
++        result: { sent: true, messageId: "msg_media_ack" },
++      });
++    }
++    const verify = createStateStore({ dbPath: config.stateDbPath });
++    expect(await verify.claimNextToolRequest("codex")).toBeNull();
++    await verify.close();
++  });
++
++  it("reads media request status without creating or resending a request", async () => {
++    const path = await tempConfig();
++    const config = upsertAgentBinding(defaultConfig(), "codex", testBinding());
++    config.stateDbPath = `${path}.sqlite`;
++    await saveConfig(config, path);
++    const store = createStateStore({ dbPath: config.stateDbPath });
++    await store.submitToolRequest({
++      requestId: "query-media",
++      bindingId: "codex",
++      toolName: "clawchat_send_media",
++      normalizedInput: {},
++      timeoutMs: 120_000,
++    });
++    await store.claimNextToolRequest("codex");
++    await store.settleToolRequest("query-media", {
++      state: "succeeded",
++      result: { sent: true, messageId: "msg_query" },
++    });
++    await store.close();
++    for (const [id, status] of [
++      ["query-media", "succeeded"],
++      ["does-not-exist", "not_found"],
++    ]) {
++      const output = io();
++      expect(await runConnectCli(["tool", "status", id, "--agent", "codex", "--config", path], output.deps)).toBe(0);
++      expect(JSON.parse(output.stdout.at(-1) ?? "{}")).toMatchObject({ requestId: id, status });
++    }
++    const verify = createStateStore({ dbPath: config.stateDbPath });
++    expect(await verify.getToolRequest("does-not-exist")).toBeNull();
++    expect(await verify.claimNextToolRequest("codex")).toBeNull();
++    await verify.close();
++  });
++
+   it("settles a locally timed-out Tool Request to a terminal state", async () => {
+     const path = await tempConfig();
+     const config = upsertAgentBinding(defaultConfig(), "codex", testBinding());
+@@ -927,10 +1011,10 @@
+     });
+   });
+ 
+-  it("lists the static 24-entry tool catalog without opening state", async () => {
++  it("lists the static 26-entry tool catalog without opening state", async () => {
+     const output = io();
+     await expect(runConnectCli(["tool", "list"], output.deps)).resolves.toBe(0);
+-    expect(JSON.parse(output.stdout[0] ?? "{}").tools).toHaveLength(24);
++    expect(JSON.parse(output.stdout[0] ?? "{}").tools).toHaveLength(26);
+   });
+ 
+   it("describes tools, reads stdin JSON, and honors explicit, runtime, then default Binding precedence", async () => {
+diff --git a/tests/fixtures/media-send/document.txt b/tests/fixtures/media-send/document.txt
+new file mode 100644
+--- /dev/null
++++ b/tests/fixtures/media-send/document.txt
+@@ -0,0 +1 @@
++M2 消息适配测试文件。固定素材，不包含用户资料。
+diff --git a/tests/tool-executor.test.ts b/tests/tool-executor.test.ts
+--- a/tests/tool-executor.test.ts
++++ b/tests/tool-executor.test.ts
+@@ -15,6 +15,22 @@
+ };
+ 
+ describe("Connect Tool Executor", () => {
++  it("reads own permissions with the current binding token and device", async () => {
++    let observed: { url: string; method?: string; headers?: HeadersInit } | undefined;
++    const permissions = { "moment.visibility": ["owner"], "moment.publish": "allow", "moment.delete": "ask" };
++    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
++      observed = { url: String(url), method: init?.method, headers: init?.headers };
++      return Response.json({ code: 0, data: permissions });
++    }) as typeof fetch;
++    const value = await executeConnectTool("clawchat_get_agent_permissions", {}, {
++      baseUrl: "https://example.test", deviceId: "device-1", activation, wsClient: {} as ConnectWsClient, fetchImpl,
++    });
++    expect(value).toEqual(permissions);
++    expect(observed?.url).toBe("https://example.test/v1/agents/me/permissions");
++    expect(observed?.method).toBe("GET");
++    expect(observed?.headers).toMatchObject({ authorization: "Bearer secret", "x-device-id": "device-1" });
++  });
++
+   it("sends exact mentions and replies on the existing binding WebSocket", async () => {
+     const sendMessageEnvelope = mock(async () => ({ payload: { message_id: "outbound-message-1" } }));
+     const wsClient = { sendMessageEnvelope } as unknown as ConnectWsClient;
+diff --git a/tests/fixtures/media-send/image.png b/tests/fixtures/media-send/image.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f472723d9fc53be10c3ea80f19763de2e46f37c
+GIT binary patch
+literal 413
+zcmeAS@N?(olHy`uVBq!ia0vp^AAq=mg9%7FUwKi$z`&T|>EaktG3V_iN6rHV0t^Qy
+zPcC-}aVZT8F1g~ea05?IL+zV6dli%G^c(mkXNfpZPRa=4@$FjZX=tL^rgrqg5((-G
+uZl1?&L`(A#ZZ>*tHzAR>o`G66MSRuzX-RAT{5AmwJA<dIpUXO@geCwG_LvO-
+
+literal 0
+HcmV?d00001
+
+diff --git a/tests/fixtures/media-send/audio.wav b/tests/fixtures/media-send/audio.wav
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b64d548282530bead6707c4c5f7fc099642797a
+GIT binary patch
+literal 19244
+zcmeHP-AmMI6n;O>xe7804Dn_wE0@r$MGO{<7)KFlp{;fzVlvovnG1!=x!R1#x|%+~
+zE{5pFhFFq{U?akGE((G~DpMlcEU!cq3JkhA=l$sYBf2~cKls6KczMo&m-jvAd7kro
+zcV}lqk5ajPe`Npa8~ACRQc9=a`S$cOsFYFb)So8?PN?*s^hG<pWG3tYtigZqDSp67
+zEa7Gxh6P(=8%>MeshZ-hknsg~m)CNcx@jA=(BJfe4shT}ci&e+CEivQechb0tuO~U
+zyoc}bE&hx9aS9qBZ_k;MzM@L86w3aQ`^*`xQZF^rcKVG*sGi69tUKbnLN<1)F5Pan
+z*j0NAns69jCPWi>8Uvh!Q9EN6^@>`KOW})0zuOJ+3Jub))R3M*O7Fbeq5tBS!g5?u
+zi+aY4+LI9AbXwy>T5A}a@D{AvEw<fs=}wi6UEzp7>&CgBM-rCp2~#gsDZ`)nkt_RB
+zD8+<ZpEG&e08_9(#q>7Cb`Ntn2d!|*UN;q;Vvm(@-%q;02lz$GO-ssAH<f8E-{peK
+z_+6nX?o=(h(bU)lI}DpsjwchMrzz)aZ~!Lkl5tvVrDA|k=R4eG{zjK*FKwkZD$*zF
+z=S^<a&H3r@CeEtYx@yYyFnomqKF0rX8gJkpd;kX8>_L;)d37x2L!ZCqrnr$u=@9))
+zJLo7qq*k8iio4*8;Y=*5qAr*oy8)_@!4aIn_xK<7;v!_>qP=6r^tgHw$HFuJ(bc%)
+zJWKubOG4B^SIO{A&bek^A8O-9Rj1b*Hm~du)Z!36$NBUOVS0yGmd$!or#GtFSRa~w
+z&fR3gSJN6>(^~yBOUJp!eRR+KSa=f0)tJ6xF4`<CLT|$IK4BWc3|3(S^w@$a>Y_@x
+z!v$Y)^W4f0Q%pNjY=>x+8hMJZxjvr{DR!0D2Thwb@BsFt+)Sq&J;nllg~L#`Rr6ZU
+zsyA^u%=uNf$@TN6l;gI9Xm85-H@eInuFgY<LH39257{5GKji$7^Fz)LxnIfsO72%u
+ze@Oiy^@r5wQlCqGF8wR%UrGN;`n%HKmHw{qAHshK{~`RK@Pon+3V$yAx$x)0pNqak
+z^d+J%5&f0uuS9<(`b5zuiat^FyQ1F}{jTWSMc*#^cJY6R|3myA;*S!4l=!2>KPdh|
+w@ehi>R{XW%uND8f_|L_EF8*_w&mi*|WIlt;FOm5rGQULT`^bEsA3xvcJ3{+L_y7O^
+
+literal 0
+HcmV?d00001
+
+diff --git a/tests/fixtures/media-send/video.mp4 b/tests/fixtures/media-send/video.mp4
+new file mode 100644
+index 0000000000000000000000000000000000000000..231974b7199ed9f7d8a061e1589f600154b621d5
+GIT binary patch
+literal 1308
+zcma)6ZAepL6n^iPqI2m?qmeT=u+)%1vCxz>W@(}%kxN4GV|TXUuA95Jks={w_>o|R
+z`6K;d3qixAK+r#xF)d0e`yh-$G;Ly;ABiBQ+|IezF<k!WaG&=*=Q+=N&VAqaZiEn3
+zDOYJ_tO@ai5X!__81UoVF+&$~z+<WnhNHed@fo_TuLarK)Ru+e;FNdTE{YH-p`^kn
+zA(V>*po@>ZMJ{cKrgrjRHLyBk|A0DT+;8eRU!T3GD&h~Ph2Qfp99y3XnO-HGj>J>T
+zb#=OW-$yxNGefg<+Xby9fegQXG3Z|t)bPPMa<%MSW#7WFx1&&MuVzwFIMgy5lc-B@
+z+?ngN1W!D1S&w98e!dUcU`^MR+NVFy4E7ph2ExKB`muWu)%C2IpSyK3s=xi((yKor
+z<-E=>D_4lmV&3C<4N!+PQyNDUzwR(<+0-VJHA!~%6Uk4K_Q(!av__P^@w>ZPeO#&_
+zBk6%FnNA0+2-bA_*7B~xZ|BFUkoG3|uOXpw_lZXS_fp5kO=@kfGY6<Zsym~R&mVQJ
+zlvhvx$OR@u^F0Q7eMxQ}i+C_p@;>Lb?6N3q*eX<LT(PHlDmgDv`!cucW8VZEuYs{x
+z?4UL?b|VclnF;T0Mi3&&7XTLnkH@wIKzqe$9_4nP1ZpmEw&F5K7I0-kPs-ENT@8DC
+znO7gT(ydBErvp#~ASBX2b1cj%gPGm@^l*hxmloGbObl%*2927bx8Hjn-T@(TM%ru>
+zJQ(aI+Tiwa)>>=^b&dflsdbRD03}f{rt(s7LhX#WK@@IUBrWDtw9SATG~Al}qRp%p
+zeQK2DO3dJQupBE~ipY~2#dduh_-Nk8ftxQPnUF!C{i_gp&#2^i2o6A1Ek%<6ev$-4
+z!Q7+EbzaIyqsWfv`ILtntE;#|R%$Ysg_1J8(Z&cxlq@G4G6upPV8-9SRqx^Dn>pME
+zYSz4B2nAmF-}sMwtCt?@hQc}FWusvagp#E>D-vpjLa7v>R6wW#tsZ$Wx7PiR>5!`u
+kQ^JUR17IIuHy~sa_^$4F7x;SsIENxwPLCe}8rF~f3%2nPqyPW_
+
+literal 0
+HcmV?d00001
+

@@ -1,0 +1,111 @@
+--- a/src/clawchat/ws-protocol-validation.ts
++++ b/src/clawchat/ws-protocol-validation.ts
+@@ -54,7 +54,7 @@
+   return null;
+ }
+ 
+-export function dseqPayloadError(envelope: Envelope): string | null {
++export function dseqPayloadError(envelope: Envelope, ackEpoch?: string): string | null {
+   if (envelope.event === EVENT.MESSAGE_SEND || envelope.event === EVENT.MESSAGE_REPLY) {
+     const payload = envelope.payload as { message_id?: unknown };
+     if (
+@@ -78,7 +78,16 @@
+   )
+     return "invalid history.transit frame";
+   if (envelope.event === EVENT.SYNC_MARK && !isSyncMarkPayload(envelope.payload)) return "invalid sync.mark payload";
+-  if (envelope.event === EVENT.REPLAY_DONE && !isEmptyPayload(envelope.payload)) return "invalid replay.done payload";
++  if (envelope.event === EVENT.REPLAY_DONE && !isEmptyPayload(envelope.payload)) {
++    const payload = envelope.payload as Record<string, unknown> | null;
++    // Preserve legacy empty frames; admit only the observed live-platform
++    // clean result, bound to the epoch negotiated by this same connection.
++    if (!payload || Array.isArray(payload) || Object.keys(payload).length !== 2 ||
++        payload.truncation_check !== "clean" || typeof payload.ack_epoch !== "string" ||
++        !payload.ack_epoch || (ackEpoch !== undefined && payload.ack_epoch !== ackEpoch)) {
++      return "invalid replay.done payload";
++    }
++  }
+   return null;
+ }
+ 
+--- a/src/clawchat/ws-client.ts
++++ b/src/clawchat/ws-client.ts
+@@ -993,7 +993,7 @@
+       );
+       return false;
+     }
+-    const validationError = dseqPayloadError(envelope);
++    const validationError = dseqPayloadError(envelope, this.ackEpoch);
+     if (validationError) return await this.quarantineDseqEnvelope(envelope, dseq, validationError);
+     if (envelope.event === EVENT.SYNC_MARK || envelope.event === EVENT.REPLAY_DONE) {
+       await this.options.stateStore.advanceProtocolDelivery(this.options.agentId, this.ackEpoch, dseq);
+--- a/tests/ws-client.test.ts
++++ b/tests/ws-client.test.ts
+@@ -1438,6 +1438,39 @@
+     client.close();
+   });
+ 
++  it("accepts the live platform clean replay result without quarantining or creating a message", async () => {
++    const transport = new MemoryTransport();
++    const stateStore = createStore();
++    const client = createClient({url:"ws://example/ws",token:"token",stateStore,transport,
++      traceIdFactory:()=>"trace-live-replay",heartbeat:{enabled:false},reliability:{ackDebounceMs:1000,ackResendMs:0}});
++    const done = mock(); client.on("replay_done",done);
++    await handshake(client,transport,"trace-live-replay");
++    transport.receive({version:"2",event:EVENT.REPLAY_DONE,trace_id:"server-control:replay.done:1",emitted_at:5,dseq:1,
++      payload:{truncation_check:"clean",ack_epoch:"01JXYZ8K3MNPQRSTVWXYZ0AB"}});
++    await flush();
++    expect(stateStore.quarantineProtocolDelivery).not.toHaveBeenCalled();
++    expect(stateStore.advanceProtocolDelivery).toHaveBeenCalledWith("test-binding","01JXYZ8K3MNPQRSTVWXYZ0AB",1);
++    expect(stateStore.recordProtocolDelivery).not.toHaveBeenCalled();
++    expect(transport.sent.at(-1)).toMatchObject({event:EVENT.MESSAGE_SYNC_ACK,payload:{dseq:1}});
++    expect(done).toHaveBeenCalledTimes(1);client.close();
++  });
++
++  it("rejects replay results from another epoch or with unsupported truncation state", async () => {
++    for (const payload of [
++      {truncation_check:"clean",ack_epoch:"different-epoch"},
++      {truncation_check:"truncated",ack_epoch:"01JXYZ8K3MNPQRSTVWXYZ0AB"},
++      {truncation_check:"clean",ack_epoch:"01JXYZ8K3MNPQRSTVWXYZ0AB",extra:true},
++    ]) {
++      const transport=new MemoryTransport(),stateStore=createStore();
++      const client=createClient({url:"ws://example/ws",token:"token",stateStore,transport,
++        traceIdFactory:()=>"trace-bad-replay",heartbeat:{enabled:false},reliability:{ackDebounceMs:0,ackResendMs:0}});
++      const done=mock();client.on("replay_done",done);await handshake(client,transport,"trace-bad-replay");
++      transport.receive({version:"2",event:EVENT.REPLAY_DONE,trace_id:"bad-replay",emitted_at:5,dseq:1,payload});
++      await flush();expect(stateStore.quarantineProtocolDelivery).toHaveBeenCalled();
++      expect(done).not.toHaveBeenCalled();client.close();
++    }
++  });
++
+   it("accepts trace-less reliable control frames emitted by the reference server", async () => {
+     const transport = new MemoryTransport();
+     const stateStore = createStore();
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@clawling/clawchat-plugin-connect",
+-  "version": "0.1.0-beta.9-whalenest.media.3",
++  "version": "0.1.0-beta.9-whalenest.media.3-replay.2",
+   "description": "Local ClawChat bridge for Plugin-provided coding runtimes and independently managed Web Apps.",
+   "repository": {
+     "type": "git",
+--- a/src/service/version.ts
++++ b/src/service/version.ts
+@@ -1 +1 @@
+-export const CONNECT_VERSION = "0.1.0-beta.9-whalenest.media.3";
++export const CONNECT_VERSION = "0.1.0-beta.9-whalenest.media.3-replay.2";
+--- a/scripts/generate-skills-manifest.ts
++++ b/scripts/generate-skills-manifest.ts
+@@ -1,9 +1,10 @@
+ import { createHash } from "node:crypto";
+ import { readdir, readFile } from "node:fs/promises";
+ import { join, relative } from "node:path";
++import { fileURLToPath } from "node:url";
+ import { CONNECT_VERSION } from "../src/service/version";
+ 
+-const root = new URL("../skills", import.meta.url).pathname;
++const root = fileURLToPath(new URL("../skills", import.meta.url));
+ const files: string[] = [];
+ for (const skill of ["clawchat-core", "clawchat-liveware"]) await walk(join(root, skill));
+ files.sort();

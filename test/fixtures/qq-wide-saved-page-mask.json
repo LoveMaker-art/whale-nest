@@ -1,0 +1,79 @@
+{
+  "source": "Only the static add-account icon, footer and scan instructions from QQ 3.2.34. No account details or encoded QR pixels.",
+  "masks": [
+    {
+      "region": "add-account-symbol",
+      "bounds": [
+        441,
+        135,
+        478,
+        172
+      ],
+      "threshold": "dark",
+      "maskZlibBase64": "eJxjYBg2gJFxVNFQUsSIE5CqiM4OH1VEI0XDCQAAGAQAZQ=="
+    },
+    {
+      "region": "other-login-label",
+      "bounds": [
+        243,
+        379,
+        323,
+        398
+      ],
+      "threshold": "blue",
+      "maskZlibBase64": "eJztksEOwzAIQ+3//+lNDQGbUlWadgwHpCT4gUuBE38I8srYmfv6+8B1YoQpUg8/avFFoPDWfeOh8/jAY/A2Aw2o5dGtdbJaZI3qWo3anXBDb3CJAtzncHk/Os/9Dh5VME1381u8+vQ5p1/lw7SOrRl3Gp7hpMivPNSA9jOOvDRUQMlgeU0eowXFXn0/5OSF67ucdqDbpLS9b/jET/EB0F0Bng=="
+    },
+    {
+      "region": "account-management-label",
+      "bounds": [
+        342,
+        379,
+        395,
+        398
+      ],
+      "threshold": "blue",
+      "maskZlibBase64": "eJzdUVsSACEIgvtfeqecRMm9QP74SAQNeNh4fFjWSLXkg9pIJT1mCXlAiAdo8HK7VOonr0ykJW262AxkMu54YnLtXcEPU7siLtB8Pe8cmcpEUHLziBwGCLQXbChvLCuWf4qy9A7LGtVj9gGcOQFS"
+    }
+  ],
+  "scanInstruction": {
+    "region": "scan-instruction",
+    "bounds": [
+      441,
+      303,
+      574,
+      342
+    ],
+    "threshold": "dark",
+    "maskZlibBase64": "eJztV+0SwyAIM+//0vtRvyVC1fa2G7nd1WEKqVKkITgcvwMgX/IQcRQZAcJ9Z8M34ab8xIBGRcSarJkFnHUUJQ76QZpENWjv3Xn6xsPgA/0CcBHNRdhrEng09XMYJq0ilpAzbs7gIgRBG0qmRlt2LorgT4d6Oq95KS6Fln83tubygHof1Ky695o+9S6/VSwcDsdXoTs8n+4W9KNhSYR05FK7+Cf1lgdKoVrrBw6N9aaI2tysRLZzvkAVOzvBrvcipqi8R2fZVacGEaGqUkVongwiVPQirESDCLaGdt8HRPRE6kHt3WkGtyVh54vE4fgHfACAkQDg"
+  },
+  "scanExpiredLabel": {
+    "bounds": [
+      466,
+      187,
+      550,
+      205
+    ],
+    "threshold": "red",
+    "maskZlibBase64": "eJztktEOgCAIRT3//9OZAwG1cG29eTfTEs4ltJSjn0UbtGVV/6SS9z4h4WTcVXJcq0EdZMx7n56odSz52DNhgv27Dx+YGJOMqf3E+DOTwNytU9bBJ/rGOuGtTgH7M0qYm+duc6Ov+YT4gYm7fNIeuZjMOUh/rMGsmI91qqV3VotYQ0n7efRRFxOOALU="
+  },
+  "scanRefreshLabel": {
+    "bounds": [
+      490,
+      211,
+      525,
+      244
+    ],
+    "threshold": "dark",
+    "maskZlibBase64": "eJztj1EOwCAIQ8v9L70ABSNM/Vv2YU3QxNcCwNVnkix5xY8JesCnlhkxlyFapUSUFGZ1hN2jET2rlBF1GHeHwLmGxJLCxdrAUpHXndzo2Aq5+q0eLEAAfQ=="
+  },
+  "scanRefreshHoveredLabel": {
+    "bounds": [
+      490,
+      211,
+      525,
+      244
+    ],
+    "threshold": "dark",
+    "maskZlibBase64": "eJztj0kOACAIA8v/P21YjeByMx6sCRgdCgBf10QRIvmPCHxgVw4jIlWCcKRkkVzMqyLQd29kNSuXbnUYd4doy4r4kjYQFYQyMt1Jl1JshXw9qwYwxAB/"
+  }
+}

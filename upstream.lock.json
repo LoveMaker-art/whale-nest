@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "purpose": "固定上游源码及许可基线；npm 依赖以 package-lock.json 为准；不代表已发布或上线",
+  "aurabot": {
+    "repository": "https://github.com/aureth-labs/dsh-aurabot-qq",
+    "commit": "a138d14e3215f052dfa7d6a9dd16c0e409d9752d",
+    "version": "1.2.1",
+    "license": "MIT",
+    "licenseFile": "licenses/aurabot.LICENSE",
+    "licenseSha256": "ab818d52c6ab6e784c9fc775f98037d180acf06f4421a7b84c77fe722baeb0f2",
+    "noticesFile": "licenses/aurabot.THIRD-PARTY-NOTICES.txt",
+    "noticesSha256": "550d47ad0a04e7a5cd2e3202b46f511c4eb04d8a5a49f3ca196eb9b4180451f8",
+    "vendoredDirectory": "vendor/aurabot",
+    "provenanceFile": "vendor/aurabot.provenance.json"
+  },
+  "clawchatConnect": {
+    "repository": "https://github.com/x-metheus/clawchat-plugin-connect",
+    "commit": "2cb2d450c381e3b64a337c907e72ba6d9e299316",
+    "version": "0.1.0-beta.9",
+    "license": "MIT"
+  },
+  "dsh": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.2.2-rc.1"
+  },
+  "personaReference": {
+    "repository": "https://github.com/zexuanw958-svg/dafeiyu-config-pack",
+    "commit": "8c01b0361b8a4baff5be3d2bc67ed55108953086",
+    "file": "persona/大肥鱼.md",
+    "localFile": "vendor/persona-reference/persona.md",
+    "sha256": "82f23bcba2e7c0879c5458fd1410b3d3e707764de5bd3c4a0283d5fecd94bc12",
+    "license": "MIT",
+    "licenseFile": "vendor/persona-reference/LICENSE",
+    "licenseSha256": "158a9cfa16972b8c1c5c167287922b8c54f62a9ea92ae628d58d06cb0ffb80d7"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "songsmith": {
+    "version": "1.0.6",
+    "url": "https://apps-nest.clawling.com/api/v1/apps/clawchat-songsmith/versions/1.0.6/download",
+    "sha256": "ac1740c2bae8780894a2ba0bef8055b674a93aaf1092a2f28405d1c32f27945a",
+    "commit": "fc2ac3886f9f2adc8eb4d7e6188b88681bd5e774",
+    "adapted": ["app.html"]
+  },
+  "clawnest_voice": {
+    "version": "0.1.11",
+    "url": "https://apps-nest.clawling.com/api/v1/apps/clawnest-voice/versions/0.1.11/download",
+    "sha256": "7bc03977b6232d0238f339003bbbb7c7c811dfaefa4d6191920c465507383b05",
+    "commit": "4c8ae57adcc987b18fb094aa9793500cb849bcc4",
+    "adapted": ["gateway.py", "quota.py", "serve.py", "upstream.py", "page.html", "page.js", "classic-page.js", "i18n.js"],
+    "transport": ["dsh_http.py", "dsh-http.js"],
+    "entry": "dsh_runtime.py"
+  }
+}

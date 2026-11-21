@@ -1,0 +1,38 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createPersonaManagement, originalPersonaId } from '../src/persona-management.mjs';
+
+test('original persona library: CRUD, per-turn selection, persistence and validation', t => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'whalenest-persona-'));
+  const old = process.env.AURABOT_DATA_DIR;
+  process.env.AURABOT_DATA_DIR = join(dataDir, 'aurabot');
+  t.after(() => { if (old === undefined) delete process.env.AURABOT_DATA_DIR; else process.env.AURABOT_DATA_DIR = old; rmSync(dataDir, { recursive: true, force: true }); });
+  const options = { instanceId: 'persona-test', dataDir }, reference = '你是原始大肥鱼。';
+  const manager = createPersonaManagement(options, reference);
+  assert.equal(manager.current().body, reference);
+  assert.equal(manager.perform().items[0].id, originalPersonaId);
+  manager.perform({ action: 'create', id: 'blue', name: '小蓝', body: 'PERSONA_FIXTURE_BLUE' });
+  const events = [{ type: 'turn/start' }], session = { get seq() { return events.length - 1; }, eventAt: n => events[n] };
+  assert.equal(manager.forTurn(session), reference);
+  manager.perform({ action: 'use', id: 'blue' });
+  assert.equal(manager.forTurn(session), reference, 'A mid-turn switch applies only to the next turn');
+  events.push({ type: 'turn/end' }, { type: 'turn/start' });
+  assert.equal(manager.forTurn(session), 'PERSONA_FIXTURE_BLUE');
+  assert.throws(() => manager.perform({ action: 'delete', id: 'blue' }), /正在使用/);
+  assert.throws(() => manager.perform({ action: 'create', id: 'blue', body: 'duplicate' }), /已存在/);
+  for (const id of ['../blue', 'blue/x', '', '__bad\n']) assert.throws(() => manager.perform({ action: 'get', id }), /ID/);
+  assert.throws(() => manager.perform({ action: 'update', id: 'blue', body: ' ' }), /正文/);
+  assert.throws(() => manager.perform({ action: 'update', id: 'blue', tags: ['x]\nname:bad'] }), /标签/);
+  manager.perform({ action: 'update', id: 'blue', body: 'PERSONA_FIXTURE_UPDATED' });
+  assert.equal(manager.forTurn(session), 'PERSONA_FIXTURE_BLUE');
+  const restarted = createPersonaManagement(options, reference);
+  assert.equal(restarted.current().body, 'PERSONA_FIXTURE_UPDATED');
+  assert.equal(JSON.parse(readFileSync(join(dataDir, 'persona-state.json'))).currentId, 'blue');
+  restarted.perform({ action: 'use', id: originalPersonaId });
+  restarted.perform({ action: 'delete', id: 'blue' });
+  assert.throws(() => restarted.perform({ action: 'get', id: 'blue' }), /不存在/);
+  assert.equal(restarted.current().body, reference);
+});

@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+
+export async function buildAurabotImage(root,provenance){
+ const source=async path=>{const b=await readFile(new URL('vendor/aurabot/src/'+path,root));assert.equal(createHash('sha256').update(b).digest('hex'),provenance.files['src/'+path]);return b.toString();};
+ const patch=(text,a,b)=>{assert.equal(text.split(a).length,2,'Image baseline changed: '+a.slice(0,80));return text.replace(a,b);};
+ let feature=await source('features/imagegen.js');
+ feature=feature.replaceAll("from '../", "from '../vendor/aurabot/src/").replaceAll("from './", "from '../vendor/aurabot/src/features/");
+ feature=patch(feature,'fetchImpl, codexAuth })','fetchImpl, codexAuth, platform })');
+ feature=patch(feature,'async function generate(prompt, { shape, image } = {})','async function generate(prompt, { shape, image, requestId, signal } = {})');
+ feature=patch(feature,"if (local?.active('image')) {", "if (!platform?.enabled && local?.active('image')) {");
+ feature=patch(feature,"const buf = c.provider === 'codex' ?", "const buf = platform?.enabled ? await platform.generate(full, { image, size: c.size, requestId, signal }) : c.provider === 'codex' ?");
+ feature=patch(feature,'  const enabled = () => {','  const enabled = () => {\n    if (platform?.enabled) return true');
+ await writeFile(new URL('src/aurabot-image.generated.mjs',root),'// Generated from pinned createImageGen; injected selected platform only.\n'+feature);
+ const paintings=await source('features/paintings.js'),start=paintings.indexOf('export function savePainting ('),end=paintings.indexOf('\n/** 文件名安全',start);
+ assert.ok(start>=0&&end>start);
+ let save=paintings.slice(start,end).replace('{ now = new Date() } = {}','{ now = new Date(), requestId } = {}');
+ save=patch(save,"const ext = mimeOf(buf) === 'image/jpeg' ? 'jpg' : 'png'", "const ext = ({ 'image/jpeg': 'jpg', 'image/webp': 'webp' })[mimeOf(buf)] || 'png'\n    const suffix = requestId ? '--wn-' + createHash('sha256').update(requestId).digest('hex').slice(0, 16) : ''");
+ save=patch(save,'`${stamp}-${slug}.${ext}`','`${stamp}-${slug}${suffix}.${ext}`');
+ save=patch(save,'    writeFileSync(file, buf)',"    const previous = requestId && readdirSync(d).find(name => name.endsWith(suffix + '.' + ext))\n    const existing = previous ? join(d, previous) : file\n    if (existsSync(existing)) { if (!readFileSync(existing).equals(buf)) return ''; return existing }\n    writeFileSync(file, buf, { flag: 'wx', mode: 0o600 })");
+ await writeFile(new URL('src/aurabot-painting-save.generated.mjs',root),"// Generated original savePainting; stable suffix, existing original gallery format.\nimport {mkdirSync,writeFileSync,readFileSync,existsSync,readdirSync} from 'node:fs'\nimport {join} from 'node:path'\nimport {createHash} from 'node:crypto'\nimport {dataDir} from '../vendor/aurabot/src/core/store.js'\nimport {mimeOf} from '../vendor/aurabot/src/chat/inbound.js'\nconst dir=()=>dataDir('imagegen')\n"+save);
+ let module=await source('modules/imagegen/index.js');
+ module=module.replace('removePainting, savePainting }','removePainting }');
+ module=module.replaceAll("from '../../", "from '../vendor/aurabot/src/");
+ module=patch(module,"from '../vendor/aurabot/src/features/imagegen.js'", "from './aurabot-image.generated.mjs'");
+ module="import {savePainting} from './aurabot-painting-save.generated.mjs'\n"+module;
+ module=patch(module,'createImageGen({ getConfig:', 'createImageGen({ platform: api.imagePorts, getConfig:');
+ const begin=module.indexOf('      execute: async ({ prompt, shape, image }) => {'),finish=module.indexOf('\n      },\n    }) : []))',begin);assert.ok(begin>=0&&finish>begin);
+ let body=module.slice(begin,finish);
+ body=patch(body,'      execute: async ({ prompt, shape, image }) => {', '      execute: async (args, exec) => api.imagePorts.execute(args, { chat, sessionId }, exec, async (request) => {\n        const { prompt, shape, image } = args');
+ body=patch(body,'resolveDrawImage(image, { hub, chat })','resolveDrawImage(image, { hub: api.imagePorts.referenceHub(request), chat })');
+ body=patch(body,'{ shape, image: reference })','{ shape, image: reference, requestId: request.id, signal: exec.signal })');
+ const sentStart=body.indexOf('        const sent = await hub.sendSegments('),savedEnd=body.indexOf('        if (saved) api.log.debug',sentStart);assert.ok(sentStart>=0&&savedEnd>sentStart);
+ body=body.slice(0,sentStart)+"        const saved = savePainting(buf, String(prompt || ''), { requestId: request.id })\n        api.imagePorts.saved(request, saved, buf)\n        const sent = await api.imagePorts.send(request, buf, saved)\n        if (sent.state !== 'confirmed') return { ok: false, generated: true, saved: true, file: request.record.file, operationId: request.id, ...sent, message: '作品已保存，消息尚未确认；查询或重发已有作品，不重新生成。' }\n"+body.slice(savedEnd);
+ body=patch(body,'        return out',"        return { ...out, generated: true, saved: true, file: request.record.file, operationId: request.id, state: sent.state, messageId: sent.messageId }");
+ body=patch(body,'rememberPainting(chat.chatId, saved)','rememberPainting(api.imagePorts.paintingScope(request), saved)');
+ body=patch(body,'try { memory.addEvent?.(', 'try { api.imagePorts.note(request, () => memory.addEvent?.(');
+ body=patch(body,'importance: 0.4 }) }','importance: 0.4 })) }');
+ module=module.slice(0,begin)+body+module.slice(finish).replace('\n      },\n    }) : []))','\n      }),\n    }) : []))');
+ await writeFile(new URL('src/aurabot-image-module.generated.mjs',root),'// Generated from pinned imagegen module; one original draw chain for both channels.\n'+module);
+}

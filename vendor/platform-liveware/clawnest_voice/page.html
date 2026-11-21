@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark"><meta name="theme-color" content="#eef3f8" media="(prefers-color-scheme:light)"><meta name="theme-color" content="#182733" media="(prefers-color-scheme:dark)"><title>鲸栖通话</title>
+<link rel="stylesheet" href="page.css?v=__VOICE_BUILD_ID__">
+<script src="i18n.js?v=__VOICE_BUILD_ID__" defer></script><script src="voice.js?v=__VOICE_BUILD_ID__" defer></script><script src="diagnostic.js?v=__VOICE_BUILD_ID__" defer></script><script src="recorder.js?v=__VOICE_BUILD_ID__" defer></script><script src="dsh-http.js?v=__VOICE_BUILD_ID__" defer></script><script src="page.js?v=__VOICE_BUILD_ID__" defer></script>
+</head><body class="deep-ocean" data-state="ready" data-ui-state="idle"><main class="app" id="app">
+<header class="app-header">
+  <h1><span id="connection-lamp" class="connection-lamp" data-signal="idle" role="status" aria-label="尚未连接" aria-live="polite" aria-atomic="true"></span>鲸栖通话</h1>
+  <span class="sr-only" id="connection-status" aria-live="polite" aria-atomic="true">尚未连接</span>
+  <span class="sr-only" id="connection" aria-hidden="true">尚未连接</span>
+  <div class="call-header-actions">
+    <span class="call-clock" id="time">00:00</span><span class="sr-only" id="quota"></span>
+    <button class="quiet settings-entry" id="settings-open" aria-label="通话设置" aria-haspopup="dialog" aria-controls="settings-sheet">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5h4l.6 2.7 2 .9 2.5-1.4 2.8 2.8-1.4 2.5.9 2 2.1.6v4l-2.7.6-.9 2 1.4 2.5-2.8 2.8-2.5-1.4-2 .9-.6 2.7h-4l-.6-2.7-2-.9-2.5 1.4-2.8-2.8 1.4-2.5-.9-2-2.7-.6v-4l2.7-.6.9-2-1.4-2.5 2.8-2.8 2.5 1.4 2-.9z" transform="translate(1 -1) scale(.87)"/><circle cx="11.5" cy="11.7" r="3.1"/></svg>
+    </button>
+  </div>
+</header>
+<div class="error-card" id="notice" aria-label="通知"><span class="notice-icon" aria-hidden="true">!</span><p id="error" role="status" aria-live="polite"></p><button class="error-action" id="error-action" hidden>知道了</button><button class="notice-close" id="notice-close" aria-label="关闭通知"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+<section class="call-focus" aria-label="通话对象">
+  <div class="call-portrait"><div class="call-rings" aria-hidden="true"></div><img id="agent-avatar" src="default-avatar.png" alt="" referrerpolicy="no-referrer"></div>
+  <h2 id="agent-name">语音通话</h2>
+  <p id="status" role="status" aria-live="polite" aria-atomic="true">点击拨打</p>
+  <p class="sr-only" id="hint">点一下，开启麦克风。</p>
+  <div class="call-wave" id="call-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+</section>
+<div class="call-caption">
+  <p id="caption-current" hidden></p>
+  <button type="button" id="captions-view" aria-controls="call-history" aria-expanded="false" hidden>查看字幕</button>
+</div>
+<section class="conversation call-history" id="call-history" aria-labelledby="caption-title" hidden>
+<div class="conversation-heading"><h2 id="caption-title">这次通话的字幕</h2><button type="button" id="captions-close">关闭</button></div>
+<div class="transcript" id="transcript" role="region" aria-label="对话文字" tabindex="0">
+<div class="empty-state" id="empty-state"><h3>嗨，开口聊聊吧</h3><p>想到什么，就聊什么。</p><p class="permission">首次开始时，请允许使用麦克风。<br>结束后，麦克风就会关闭。</p></div>
+<div id="history" hidden></div><div class="current-group" id="current-group"><article class="message user"><p class="speaker">你</p><p class="bubble said" id="said"></p><p class="message-note" id="said-note"></p></article><article class="message"><p class="speaker">回复</p><p class="bubble reply empty" id="reply"></p><p class="message-note" id="reply-note"></p></article></div>
+</div><p class="stage-note" id="stage-note"></p></section>
+<footer class="dock call-dock" aria-label="通话控制">
+  <button class="call-control" id="mic-toggle" type="button" aria-pressed="false" aria-label="静音" disabled>
+    <span class="call-disc"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="9" y="2.5" width="6" height="12.5" rx="3"/><path d="M5.5 11.5v1a6.5 6.5 0 0 0 13 0v-1M12 19v3m-3 0h6"/><path class="mic-slash" d="M3 3l18 18"/></svg></span>
+    <span id="mic-toggle-label">静音</span>
+  </button>
+  <button class="call-control" id="start" type="button" aria-label="开始通话" aria-pressed="false" aria-describedby="status hint">
+    <span class="call-disc"><svg class="phone-icon call-icon" aria-hidden="true" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M6.6 2.8c.5-.2 1.1 0 1.4.5l2 4c.2.4.1 1-.2 1.3l-1.7 1.7a15 15 0 0 0 5.6 5.6l1.7-1.7c.3-.3.9-.4 1.3-.2l4 2c.5.3.7.9.5 1.4l-1.1 3c-.2.5-.7.8-1.2.8C9.7 21.2 2.8 14.3 2.8 5.1c0-.5.3-1 .8-1.2z"/></svg><svg class="phone-icon hangup-icon" aria-hidden="true" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M2 10.5a17.5 17.5 0 0 1 20 0c.5.4.7 1 .4 1.6l-1.5 3c-.3.6-.9.8-1.5.6l-3.5-1.2c-.5-.2-.9-.7-.9-1.3v-2a13 13 0 0 0-6 0v2c0 .6-.4 1.1-.9 1.3l-3.5 1.2c-.6.2-1.2 0-1.5-.6l-1.5-3c-.3-.6-.1-1.2.4-1.6z"/></svg></span><span id="call-action">拨打</span>
+  </button>
+  <button class="call-control" id="captions-toggle" type="button" aria-pressed="false" aria-label="字幕">
+    <span class="call-disc"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M6 10h5m3 0h4M6 14h3m3 0h6"/></svg></span><span>字幕</span>
+  </button>
+</footer>
+</main><div class="sr-only" id="subtitle-live" aria-live="polite" aria-relevant="additions" aria-atomic="false"></div>
+<dialog id="settings-sheet" aria-labelledby="settings-title"><header class="sheet-header"><h2 id="settings-title">通话设置</h2><button class="quiet" id="settings-close" aria-label="关闭设置" autofocus><svg aria-hidden="true" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div class="sheet-body">
+<details id="notice-details" hidden><summary>通知详情</summary><p id="notice-full"></p></details>
+<details class="settings-section" id="section-basic" open><summary>通话</summary>
+<label class="setting" for="barge-in"><span>开口打断</span><input id="barge-in" type="checkbox" role="switch" checked aria-describedby="barge-in-hint"></label>
+<p class="sheet-intro" id="barge-in-hint">对方在说话时，你一开口，它就先停下来听你。</p>
+<label class="setting" id="barge-sensitivity-row" for="barge-sensitivity"><span>多容易打断</span><select id="barge-sensitivity"><option value="low">不易打断</option><option value="standard" selected>标准</option><option value="high">更易打断</option></select></label>
+</details><details class="settings-section" id="section-mic" open><summary>麦克风</summary>
+<label class="setting stacked" for="sensitivity"><span><span id="mic-sensitivity-title">让对方更容易听到你</span> <output id="sensitivity-label" for="sensitivity">标准</output><small id="sensitivity-hint">周围声音常被当成你在说话，就往左调。说得轻容易漏掉，就往右调。下一句话生效。</small></span><input id="sensitivity" type="range" min="0" max="4" step="1" value="2" aria-describedby="sensitivity-hint"></label>
+<div class="sensitivity-scale" aria-hidden="true"><span>少收环境声</span><span>更容易听见轻声</span></div>
+<div class="mic-meter"><meter id="mic-level" min="0" max="1" value="0" aria-label="麦克风实时音量"></meter><span id="mic-level-state">开始通话后可查看音量</span></div>
+</details><details class="settings-section" id="section-display" open><summary>字幕</summary>
+<label class="setting" for="text-sync"><span>字幕出现时机<small>下一句回复生效。</small></span><select id="text-sync"><option value="audio">跟着声音</option><option value="text">先看文字</option></select></label>
+</details><details class="settings-section" id="section-debug"><summary>通话遇到问题</summary>
+<label class="setting stacked" for="prebuffer"><span>声音断续时<small>「播放更稳」会先存一小段声音再播放，首句可能稍晚听到。下一条回复生效。</small></span><select id="prebuffer"><option value="0">最快播放</option><option value="600">标准（推荐）</option><option value="1000">播放更稳 · 1 秒</option><option value="1500">播放更稳 · 1.5 秒</option><option value="2500">播放更稳 · 2.5 秒</option></select></label>
+<label class="setting" for="debug-toggle"><span>调试模式<small>只改变本页信息的显示</small></span><input id="debug-toggle" type="checkbox" role="switch"></label>
+<div id="debug-panel" hidden><p class="debug-values" id="buffer-values"></p><details><summary>语音调试</summary><pre class="debug" id="debug">完成一轮后显示</pre></details>
+<details id="diagnostic" hidden><summary>诊断</summary>
+<label>下行传输: <select id="downstream-setting"><option value="sse">SSE（默认）</option><option value="ws">WS（诊断）</option></select></label>
+<p>仅发送合成静音，不播放、不录音。每项 10 秒；测试时暂停语音输入。</p>
+<label>下行 <select id="diag-transport"><option value="both">WS + SSE 对照</option><option value="ws">WS</option><option value="sse">SSE</option></select></label>
+<label>帧 <select id="diag-size"><option value="all">全部 1/4/16/64 KB</option><option value="1024">1 KB</option><option value="4096">4 KB</option><option value="16384">16 KB</option><option value="65536">64 KB</option></select></label>
+<label>节奏 <select id="diag-profile"><option value="both">稳态 + 突发</option><option value="steady">44 KB/s 稳态</option><option value="burst">200 KB/100 ms 突发</option></select></label>
+<p><button id="diag-down" disabled>下行压力测试</button> <button id="diag-up" disabled>上行压力测试</button> <button id="diag-combined" disabled>双向压力测试</button> <button id="diag-stop" disabled>停止</button></p>
+<p id="diag-status" role="status">开启麦克风连接后可测试；测试期间麦克风数据不会上传。</p>
+<div class="debug-table"><table><thead><tr><th>UTC<br>模式</th><th>传输<br>帧/节奏</th><th>收帧<br>KB</th><th>缺/乱/重</th><th>间隔<br>抖动 ms</th><th>上行帧<br>KB/缺</th><th>结果<br>关闭码/原因</th></tr></thead><tbody id="diag-results"></tbody></table></div>
+<p>KB 为 1024 字节；稳态为 44,100 B/s，上行为 32,768 B/s。抖动排除发送节奏，SSE 另有约 33% base64 开销。缺失或断线请截图；结果也会记录到服务端 UTC 日志。</p>
+</details>
+</div><details id="event-panel" hidden><summary>故障信息</summary><button id="copy-events">复制故障信息</button><p id="copy-events-status" role="status"></p><pre class="debug" id="event-records"></pre></details>
+</details><p class="build">版本 <span id="build-id">__VOICE_BUILD_ID__</span> · <span id="transport-status">SSE</span></p></div></dialog></body></html>

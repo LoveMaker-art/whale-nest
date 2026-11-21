@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {createBiliRules} from '../src/bili-rules.mjs';
+import {createBiliAccount} from '../src/bili-account.mjs';
+import {seedBiliAccount} from './bili-test-helper.mjs';
+async function fixture(t){const dataDir=await mkdtemp(join(tmpdir(),'whalenest-bili-rules-'));t.after(()=>rm(dataDir,{recursive:true,force:true}));let at=Date.parse('2026-11-15T01:00:00Z');const route={channel:'clawchat',account:'a',sender:'owner',conversation:'dm',kind:'private'},options={instanceId:'test',dataDir,owners:[route],clawchat:{route}},now=()=>at,rules=createBiliRules(options,route,{now}),deps={now,mutationPolicy:rules},account=seedBiliAccount(options,route,deps);return {options,route,rules,account,deps,now,advance:ms=>{at+=ms;}};}
+test('Bili settings validate, persist and do not admit an unknown or mixed-invalid update',async t=>{const f=await fixture(t);f.rules.configure({minViews:1000,minAgeDays:7,watchOn:true,inboxUids:'456,789 456',dynamicPerDay:2,dynamicGapMin:30});assert.equal(f.rules.settings().inboxUids,'456,789');
+ const reload=createBiliRules(f.options,f.route,{now:f.now});assert.equal(reload.settings().minViews,1000);assert.equal(reload.settings().watchOn,true);assert.throws(()=>reload.configure({watchInterval:1}),/Invalid/);assert.throws(()=>reload.configure({minViews:3,autoComment:true}),/Unsupported/);assert.equal(reload.settings().minViews,1000);
+});
+test('account writes reserve before transport, enforce interval and daily limits, and survive restart',async t=>{const f=await fixture(t);f.rules.configure({dynamicPerDay:2,dynamicGapMin:10});let sent=0;const send=async()=>({dynamicId:String(++sent)}),call=id=>f.account.mutate({requestId:id,kind:'dynamic',input:{text:id}},send);
+ assert.equal((await call('one')).state,'confirmed');assert.equal((await call('two')).reason,'cooldown');assert.equal(sent,1);f.advance(600000);assert.equal((await call('two')).state,'confirmed');f.advance(600000);assert.equal((await call('three')).reason,'daily-limit');assert.equal(sent,2);
+ const rules=createBiliRules(f.options,f.route,{now:f.now}),account=createBiliAccount(f.options,f.route,{now:f.now,mutationPolicy:rules});assert.equal((await account.mutate({requestId:'one',kind:'dynamic',input:{text:'one'}},send)).duplicate,true);assert.equal(sent,2);f.advance(86400000);assert.equal((await account.mutate({requestId:'tomorrow',kind:'dynamic',input:{text:'new day'}},send)).state,'confirmed');assert.equal(sent,3);
+});
+test('definite rejection frees a reservation; uncertainty stays charged and concurrent sends cannot overrun the ceiling',async t=>{const f=await fixture(t);f.rules.configure({messagePerDay:1,messageGapMin:0});let sends=0;const request=id=>({requestId:id,kind:'message',input:{text:id}});
+ assert.equal((await f.account.mutate(request('rejected'),async()=>{throw Object.assign(Error('refused'),{definitelyNotApplied:true});})).state,'failed');assert.equal(f.rules.status('123').usage.message.today,0);
+ const outcomes=await Promise.all(['lost','second'].map(id=>f.account.mutate(request(id),async()=>{sends++;await new Promise(r=>setTimeout(r,5));throw Error('lost acknowledgement');})));assert.equal(sends,1);assert.equal(outcomes[0].state,'uncertain');assert.equal(outcomes[1].state,'limited');assert.equal(f.rules.status('123').usage.message.today,1);
+});
+test('reply quotas and legacy receipts are preserved by account, not reset by loading a new runtime',async t=>{const f=await fixture(t);f.rules.configure({inboxPerDay:1,replyPerDay:null,replyGapMin:0});const legacy={id:'legacy',uid:'123',kind:'reply',createdAt:f.now(),state:'uncertain'};f.rules.importReceipts([legacy]);f.rules.importReceipts([legacy]);assert.equal(f.rules.status('123').usage.inbox.today,1);
+ assert.equal(f.rules.reserve('next',{kind:'reply',uid:'123',input:{parent:'9'}}).reason,'daily-limit');assert.equal(f.rules.reserve('different-account',{kind:'reply',uid:'456',input:{parent:'9'}}).ok,true);assert.equal(f.rules.reserve('top-level',{kind:'reply',uid:'123',input:{}}).ok,true);
+});

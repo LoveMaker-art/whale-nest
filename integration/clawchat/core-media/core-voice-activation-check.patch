@@ -1,0 +1,83 @@
+--- a/src/plugin/host.ts
++++ b/src/plugin/host.ts
+@@ -87,6 +87,7 @@
+   compilePluginDurableStateValidator,
+   discardStagedPlugin,
+   type InstalledPluginLockEntry,
++  isPluginActivationCurrent,
+   listInstalledPlugins,
+   type PluginConfigurationValidator,
+   pluginDependents,
+@@ -1718,8 +1719,7 @@
+                     withPrivateVoiceSession: async (
+                       ...args: Parameters<NonNullable<ConnectPluginRuntimeInstanceContext["withPrivateVoiceSession"]>>
+                     ) => {
+-                      const selected = await this.requireInstalled(installed.pluginId);
+-                      if (selected.status !== "active" || selected.activationGeneration !== installed.activationGeneration) {
++                      if (!await isPluginActivationCurrent(this.configPath, installed.pluginId, installed.activationGeneration)) {
+                         throw new Error("Voice Runtime generation is no longer active");
+                       }
+                       const runtime = this.bindingRuntimes.find((item) => item.agentId === agentBindingIdentity(binding));
+--- a/src/plugin/store.ts
++++ b/src/plugin/store.ts
+@@ -353,6 +353,20 @@
+   return Object.values(lockfile.plugins)
+     .map((entry) => validateLockEntry(entry, paths.store))
+     .sort((left, right) => left.pluginId.localeCompare(right.pluginId));
++}
++
++/** Recheck the activation of an already loaded Plugin before accepting work. */
++export async function isPluginActivationCurrent(
++  configPath: string,
++  pluginId: string,
++  activationGeneration: number,
++): Promise<boolean> {
++  const id = requireIdentity(pluginId, "Plugin ID");
++  const lockfile = await readPluginLockfile(pluginInstallationPaths(configPath).lockfile);
++  if (!Object.hasOwn(lockfile.plugins, id)) return false;
++  const entry = lockfile.plugins[id];
++  return isRecord(entry) && entry.pluginId === id && entry.status === "active"
++    && entry.activationGeneration === activationGeneration;
+ }
+ 
+ export async function removeInstalledPlugin(configPath: string, pluginId: string): Promise<InstalledPluginLockEntry> {
+--- a/src/service/version.ts
++++ b/src/service/version.ts
+@@ -1 +1 @@
+-export const CONNECT_VERSION = "0.1.0-beta.9-whalenest.media.3-replay.2-renewal.1-liveware.1-voice.1";
++export const CONNECT_VERSION = "0.1.0-beta.9-whalenest.media.3-replay.2-renewal.1-liveware.1-voice.2";
+--- /dev/null
++++ b/tests/voice-plugin-activation.test.ts
+@@ -0,0 +1,32 @@
++import { expect, test } from "bun:test";
++import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { dirname, join } from "node:path";
++import { CONNECT_PLUGIN_LOCK_FORMAT, isPluginActivationCurrent, pluginInstallationPaths } from "../src/plugin/store";
++
++test("voice admission checks the current activation without loading unrelated version manifests", async () => {
++  const directory = await mkdtemp(join(tmpdir(), "connect-voice-activation-"));
++  const configPath = join(directory, "config.json");
++  const { lockfile } = pluginInstallationPaths(configPath);
++  const pluginId = "whalenest.runtime.deepseek-harness";
++  const entry = { pluginId, activationGeneration: 7, status: "active", retainedVersions: ["unused version metadata"] };
++  const write = (plugins: Record<string, unknown>) =>
++    writeFile(lockfile, JSON.stringify({ format: CONNECT_PLUGIN_LOCK_FORMAT, plugins }));
++  try {
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(false);
++    await mkdir(dirname(lockfile), { recursive: true });
++    await write({ [pluginId]: entry, "other.runtime": "unused plugin metadata" });
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(true);
++    expect(await isPluginActivationCurrent(configPath, pluginId, 6)).toBe(false);
++    await write({ [pluginId]: { ...entry, activationGeneration: 8 } });
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(false);
++    await write({ [pluginId]: { ...entry, status: "disabled" } });
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(false);
++    await write({ [pluginId]: { ...entry, pluginId: "other.runtime" } });
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(false);
++    await write({});
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(false);
++  } finally {
++    await rm(directory, { recursive: true, force: true });
++  }
++});

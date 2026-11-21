@@ -1,0 +1,93 @@
+{
+  "manifestVersion": 1,
+  "interfaceVersion": "1",
+  "pluginId": "whalenest.runtime.deepseek-harness",
+  "version": "0.1.0-beta.9-whalenest.3",
+  "dependencies": [
+    {
+      "type": "host",
+      "id": "runtime-provider",
+      "interfaceVersion": "1"
+    },
+    {
+      "type": "host",
+      "id": "managed-web-app-provider",
+      "interfaceVersion": "1"
+    }
+  ],
+  "installationConfigurationSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "executablePath": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    }
+  },
+  "capabilities": [
+    {
+      "id": "deepseek-harness",
+      "type": "runtime",
+      "interfaceVersion": "1",
+      "family": "deepseek-harness",
+      "configurationSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "homePath": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "executablePathOverride": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "outputVisibility": {
+            "type": "string",
+            "enum": [
+              "minimal",
+              "normal",
+              "full"
+            ]
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "deepseek-harness-web",
+      "type": "managed-web-app",
+      "interfaceVersion": "1",
+      "configurationSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "displayName": "DeepSeek Harness Web",
+      "description": "DeepSeek Harness's native Web interface",
+      "nativeRuntimeCapabilityIds": [
+        "deepseek-harness"
+      ],
+      "compatibleRuntimes": []
+    }
+  ],
+  "artifacts": [
+    {
+      "target": "linux-x64",
+      "entry": "artifacts/linux-x64.mjs",
+      "integrity": "sha256-cJV0JI9tPCAiXVsDj/SQHA6L3FXfMtPHRPEEX04Tj/4="
+    }
+  ]
+}

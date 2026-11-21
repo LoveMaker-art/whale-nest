@@ -1,0 +1,239 @@
+diff --git a/src/plugin/host.ts b/src/plugin/host.ts
+--- a/src/plugin/host.ts
++++ b/src/plugin/host.ts
+@@ -1714,6 +1714,19 @@
+                 Object.freeze({
+                   activationGeneration: installed.activationGeneration,
+                   ...(durableState ? { durableState } : {}),
++                  ...(installed.pluginId === "whalenest.runtime.deepseek-harness" ? {
++                    withPrivateVoiceSession: async (
++                      ...args: Parameters<NonNullable<ConnectPluginRuntimeInstanceContext["withPrivateVoiceSession"]>>
++                    ) => {
++                      const selected = await this.requireInstalled(installed.pluginId);
++                      if (selected.status !== "active" || selected.activationGeneration !== installed.activationGeneration) {
++                        throw new Error("Voice Runtime generation is no longer active");
++                      }
++                      const runtime = this.bindingRuntimes.find((item) => item.agentId === agentBindingIdentity(binding));
++                      if (!runtime?.withPrivateVoiceSession) throw new Error("Voice Runtime binding is unavailable");
++                      await runtime.withPrivateVoiceSession(...args);
++                    },
++                  } : {}),
+                 }),
+               );
+             },
+diff --git a/src/plugin/sdk.ts b/src/plugin/sdk.ts
+--- a/src/plugin/sdk.ts
++++ b/src/plugin/sdk.ts
+@@ -17,7 +17,7 @@
+   RuntimeThreadDiscoverySnapshot,
+   RuntimeWorkspaceSnapshot,
+ } from "../runtime/types";
+-import type { RuntimeWorkspace } from "../types";
++import type { RuntimeModelSelection, RuntimeWorkspace } from "../types";
+ 
+ export const CONNECT_PLUGIN_MANIFEST_VERSION = 1 as const;
+ export const CONNECT_PLUGIN_INTERFACE_VERSION = "1" as const;
+@@ -237,9 +237,30 @@
+   close?(): Promise<void>;
+ }
+ 
++export interface PrivateVoiceSessionRequest {
++  chatId: string;
++  ownerId: string;
++  sessionRef?: string;
++}
++
++export type WithPrivateVoiceSession = (
++  request: PrivateVoiceSessionRequest,
++  signal: AbortSignal,
++  run: (
++    session: ConnectRuntimeSession,
++    context: {
++      sessionRef: string;
++      workspace: RuntimeWorkspace;
++      model?: RuntimeModelSelection;
++      reasoningEffort?: string;
++    },
++  ) => Promise<void>,
++) => Promise<void>;
++
+ export interface ConnectPluginRuntimeInstanceContext {
+   readonly activationGeneration: number;
+   readonly durableState?: ConnectPluginDurableState;
++  readonly withPrivateVoiceSession?: WithPrivateVoiceSession;
+ }
+ 
+ export interface ConnectPluginRuntimeProvider {
+diff --git a/src/runtime/connect-runtime.ts b/src/runtime/connect-runtime.ts
+--- a/src/runtime/connect-runtime.ts
++++ b/src/runtime/connect-runtime.ts
+@@ -14,6 +14,7 @@
+ import type { ConnectWsClient } from "../clawchat/ws-client";
+ import type { MessageBlockContent } from "../client-contract";
+ import type { TranscriptProjection } from "../client-interface/transcript-projection";
++import type { WithPrivateVoiceSession } from "../plugin/sdk";
+ import { defaultConfigPath, getAgentBinding } from "../config";
+ import type { ConnectStateStore } from "../persistence/state";
+ import type {
+@@ -245,6 +246,41 @@
+     };
+   }
+ 
++  async withPrivateVoiceSession(...[request, signal, run]: Parameters<WithPrivateVoiceSession>): Promise<void> {
++    signal.throwIfAborted();
++    const ticket = await this.withRoutingGate(request.chatId, async () => {
++      const current = await this.materializeCurrentSession(request.chatId);
++      if (current.agentId !== this.options.agentId || (request.sessionRef && current.sessionRef !== request.sessionRef)) {
++        throw new Error("Current private Session changed during the call");
++      }
++      return await this.queue.submitAccepted(
++        sessionKey(current.chatId, current.sessionId),
++        async () => {
++          signal.throwIfAborted();
++          const target = await this.sessionContinuity.forSession(current.sessionRef).targetForTurn("clawchat");
++          const workspace = await this.workspaces.resolveWorkspace(runtimeSessionFromTurnTarget(target));
++          const selection = await this.modelFor(runtimeSessionFromTurnTarget(target), target.bindingId, workspace);
++          const session = await this.executor.sessionFor(target);
++          signal.throwIfAborted();
++          await run(session, { sessionRef: target.sessionRef, workspace, ...selection });
++        },
++        async () => {
++          signal.throwIfAborted();
++          await this.acceptTurnTarget(current.sessionRef, current.agentId);
++        },
++        `Session ${current.sessionRef}`,
++      );
++    });
++    const abort = () => { ticket.cancel(); };
++    signal.addEventListener("abort", abort, { once: true });
++    if (signal.aborted) abort();
++    try {
++      await ticket.completion;
++    } finally {
++      signal.removeEventListener("abort", abort);
++    }
++  }
++
+   async enqueueClientTurn(
+     sessionRef: string,
+     prompt: string,
+diff --git a/src/runtime/session-turn-executor.ts b/src/runtime/session-turn-executor.ts
+--- a/src/runtime/session-turn-executor.ts
++++ b/src/runtime/session-turn-executor.ts
+@@ -18,7 +18,7 @@
+   constructor(private readonly options: SessionTurnExecutorOptions) {}
+ 
+   async *execute(target: TurnTarget, input: SessionTurnExecution): AsyncIterable<RuntimeActivity> {
+-    const handle = await this.handleFor(target);
++    const handle = await this.sessionFor(target);
+     yield* handle.prompt({ ...input, turnOrigin: target.turnOrigin });
+   }
+ 
+@@ -62,7 +62,7 @@
+     if (failure) throw failure.reason;
+   }
+ 
+-  private async handleFor(target: TurnTarget): Promise<ConnectRuntimeSession> {
++  async sessionFor(target: TurnTarget): Promise<ConnectRuntimeSession> {
+     const key = normalizeSessionRef(target.sessionRef);
+     const existing = this.handles.get(key);
+     if (existing) return existing.handle;
+diff --git a/src/service/binding-runtime.ts b/src/service/binding-runtime.ts
+--- a/src/service/binding-runtime.ts
++++ b/src/service/binding-runtime.ts
+@@ -21,6 +21,7 @@
+ import { getAgentBinding } from "../config";
+ import type { ConnectStateStore } from "../persistence/state";
+ import { ConnectBindingLivewarePublicationStateStore } from "../plugin/official/liveware-publication-state";
++import type { WithPrivateVoiceSession } from "../plugin/sdk";
+ import { ConnectRuntime } from "../runtime/connect-runtime";
+ import type { ConnectExecutionCapabilities } from "../runtime/execution-capabilities";
+ import type { RuntimeAdapterRegistry } from "../runtime/registry";
+@@ -117,6 +118,7 @@
+   cancelQueuedClientTurn?(sessionRef: string, turnId: string): boolean;
+   sessionActivity?(sessionRef: string): Promise<SessionActivity>;
+   activeClientTurnId?(sessionRef: string): string | null;
++  withPrivateVoiceSession?: WithPrivateVoiceSession;
+   claimSessionLifecycle?(sessionRef: string): Promise<() => Promise<void>>;
+   executeTool?(toolName: string, input: Record<string, unknown>): Promise<unknown>;
+ }
+@@ -544,6 +546,13 @@
+     agentId: options.agentId,
+     websocketUrl: options.config.websocketUrl,
+     deviceId: options.deviceId,
++    withPrivateVoiceSession: async (request, signal, run) => {
++      const activation = await options.stateStore.getActivation(options.agentId);
++      if (!activation || activation.conversationId !== request.chatId || activation.ownerUserId !== request.ownerId) {
++        throw new Error("Voice Session is not the activated owner private chat");
++      }
++      await runtime.withPrivateVoiceSession(request, signal, run);
++    },
+     enqueueClientTurn: async (sessionRef, prompt, media, selection, signal, turnId) =>
+       await runtime.enqueueClientTurn(sessionRef, prompt, media, selection, signal, turnId),
+     uploadClientMedia: async (file, filename) => await runtime.uploadClientMedia(file, filename),
+diff --git a/src/service/version.ts b/src/service/version.ts
+--- a/src/service/version.ts
++++ b/src/service/version.ts
+@@ -1 +1 @@
+-export const CONNECT_VERSION = "0.1.0-beta.9-whalenest.media.3-replay.2-renewal.1-liveware.1";
++export const CONNECT_VERSION = "0.1.0-beta.9-whalenest.media.3-replay.2-renewal.1-liveware.1-voice.1";
+diff --git a/tests/connect-runtime.test.ts b/tests/connect-runtime.test.ts
+--- a/tests/connect-runtime.test.ts
++++ b/tests/connect-runtime.test.ts
+@@ -99,6 +99,56 @@
+   });
+ }
+ describe("ConnectRuntime Agent Binding sessions", () => {
++  it("keeps voice and text on the same queued runtime handle without projecting voice", async () => {
++    const fixture = await runtimeFixture();
++    const entered = Promise.withResolvers<void>();
++    const release = Promise.withResolvers<void>();
++    const visibleText = mock(async function* () {yield activity("ordinary text result");});
++    const native = {prompt: visibleText, cancel: mock(async () => true), close: mock(async () => {})};
++    const start = mock(async () => native);
++    const runtimeAdapters = new RuntimeAdapterRegistry([fixedRuntimeAdapter({kind: "codex", modes: [], start})]);
++    const projection = new TranscriptProjection({config: fixture.config, stateStore: fixture.store, runtimeAdapters});
++    const runtime = new ConnectRuntime({
++      agentId: "codex", config: fixture.config, configPath: fixture.configPath,
++      stateStore: fixture.store, wsClient: fixture.wsClient, runtimeAdapters, transcriptProjection: projection,
++    });
++    const request = {chatId: "chat-1", ownerId: "user-1"};
++    const voice = runtime.withPrivateVoiceSession(request, new AbortController().signal, async (session) => {
++      expect(session).toBe(native);
++      entered.resolve();
++      await release.promise;
++    });
++    try {
++      await Promise.race([entered.promise, voice.then(() => {throw new Error("Voice did not acquire its session");})]);
++      const text = runtime.handleInboundMessage(message("ordinary text input"));
++      const cancelled = new AbortController();
++      const discarded = mock(async () => {});
++      const queued = runtime.withPrivateVoiceSession(request, cancelled.signal, discarded);
++      const result = queued.then(() => null, error => error);
++      await Bun.sleep(20);
++      expect(visibleText).not.toHaveBeenCalled();
++      cancelled.abort();
++      expect(await result).toBeInstanceOf(Error);
++      expect(discarded).not.toHaveBeenCalled();
++      release.resolve();
++      await voice;
++      await text;
++      expect(start).toHaveBeenCalledTimes(1);
++      expect(visibleText).toHaveBeenCalledTimes(1);
++      const current = await fixture.store.getCurrentRuntimeSession("chat-1", "codex");
++      const blocks = await fixture.store.listTranscriptBlocks(current!.sessionRef);
++      expect(blocks.filter(block => block.type === "message")).toHaveLength(2);
++      expect(JSON.stringify(blocks)).toContain("ordinary text input");
++      expect(JSON.stringify(blocks)).toContain("ordinary text result");
++      expect(fixture.sendMessageEnvelope).toHaveBeenCalledTimes(1);
++    } finally {
++      release.resolve();
++      await voice.catch(() => undefined);
++      await runtime.dispose();
++      await runtimeAdapters.close();
++      await fixture.store.close();
++    }
++  });
+   it.each(["workbuddy-ai", "workbuddy-cn"] as const)(
+     "serializes Client and ClawChat turns through one adopted %s Task Attachment",
+     async (profile) => {

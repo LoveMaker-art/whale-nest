@@ -1,0 +1,13 @@
+node_modules/
+.whale-nest/
+/archive/
+*.connect-plugin
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+
+._*
+__pycache__/
+*.pyc

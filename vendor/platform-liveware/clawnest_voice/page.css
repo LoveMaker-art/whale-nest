@@ -1,0 +1,361 @@
+:root{color-scheme:light dark;--base:#eef3f8;--surface:#ffffff;--raised:#d3e0eb;--text:#19364c;--classic-muted:#617a8e;--muted:#4b6275;--accent:#276aa0;--wave:#4f94c2;--accent-ink:#ffffff;--error:#a03945;--error-bg:#fceef0;--warning:#805416;--line:#d3e0eb;--control-line:#617a8e;--secondary:var(--wave);--text-accent:#276aa0;--glow-rgb:79,148,194;--state-accent:var(--accent);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-top:env(safe-area-inset-top,0px);--viewport-height:100svh;--viewport-height:100dvh;--viewport-top:0px;--viewport-width:100%;--viewport-left:0px;--body:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;--display:"Noto Sans SC","PingFang SC",sans-serif;--mono:"SFMono-Regular",Consolas,monospace}
+@media(prefers-color-scheme:dark){:root{--base:#182733;--surface:#213442;--raised:#385262;--text:#deebf5;--muted:#9cb4c7;--line:#385262;--control-line:#9cb4c7;--accent:#3278ad;--wave:#82bbdf;--text-accent:#82bbdf;--error:#ff9ba7;--error-bg:#3d2732;--warning:#e5c48c;--glow-rgb:130,187,223;--state-accent:var(--wave)}}
+*{box-sizing:border-box}body{margin:0;background:var(--base);color:var(--text);font:15px/1.6 var(--body)}button,select,input{font:inherit}button,select{min-height:44px;border:1px solid var(--control-line);border-radius:12px;background:var(--surface);color:var(--text);padding:9px 14px}button{cursor:pointer}select{max-width:100%;min-width:0}button:disabled{cursor:default;color:var(--muted)}button[aria-disabled=true]{cursor:default}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible,.conversation:focus-visible{outline:3px solid var(--accent);outline-offset:4px}[hidden]{display:none!important}.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+
+html,body{height:100%;overflow:hidden}.app{--dock-height:112px;max-width:840px;height:100svh;height:var(--viewport-height);margin:0 auto;padding:max(8px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) calc(var(--dock-height) + env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px}.app-header{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}h1{font:500 21px/1.35 var(--display);letter-spacing:.025em;margin:0;white-space:nowrap}.quiet{background:transparent;border:0;color:var(--muted);padding:8px 10px}.settings-entry{margin-right:-10px;flex-shrink:0}.connection{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;margin:0;padding:3px 8px;border:1px solid var(--line);border-radius:20px;min-width:0}.connection-dot{height:5px;width:5px;flex-shrink:0;border-radius:50%;background:var(--muted)}#connection{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}body[data-connected=true] .connection-dot{background:var(--accent)}
+.conversation{min-width:0;min-height:0;display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:10px}.conversation-heading{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-shrink:0}.conversation-heading h2{font-size:11px;letter-spacing:.04em;color:var(--muted);font-weight:400;margin:0}.meter{font-size:10px;color:var(--muted);display:flex;gap:10px;font-variant-numeric:tabular-nums}.transcript{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:14px;padding:4px 1px 24px;scroll-padding-block:16px 24px}.transcript:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.current-group,.history-group{display:flex;flex-direction:column;gap:14px;flex-shrink:0}.message{max-width:94%;margin:0}.message.user{align-self:flex-end;max-width:88%}.speaker{font-size:11px;color:var(--muted);margin:0 0 5px 3px}.user .speaker{text-align:right;margin-right:3px}.bubble{margin:0;background:var(--surface);padding:12px 15px;border-radius:4px 16px 16px 16px;font-size:16px;line-height:1.8;white-space:pre-wrap}.user .bubble{background:var(--raised);border-radius:16px 4px 16px 16px;font-size:14px}.current{color:inherit;text-decoration:none;text-shadow:none;animation:none}.message-note{font-size:11px;color:var(--muted);margin:4px 0 0 4px}.empty-state{margin:auto 0;padding:24px 14px;text-align:center;flex-shrink:0}.empty-state h3{font-size:17px;font-weight:400;margin:0 0 8px}.empty-state p{font-size:13px;color:var(--muted);margin:0}.permission{margin-top:16px!important;font-size:12px!important}.empty:empty,.message:has(.bubble:empty){display:none}.history-group{padding-bottom:16px;border-bottom:1px solid var(--line)}#history:empty{display:none}#history{display:flex;flex-direction:column;gap:16px;flex-shrink:0}.stage-note{color:var(--text-accent);font-size:12px;margin:0;flex-shrink:0}.stage-note:empty{display:none}.error-card{background:var(--error-bg);border-radius:12px;padding:12px 14px;border-left:2px solid var(--error);display:grid;gap:8px;flex-shrink:0;max-height:50%;overflow:auto;scroll-padding:8px}.error-card:has(#error:empty){display:none}#error{color:var(--error);font-size:13px;line-height:1.7;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.error-action{color:var(--error);border-color:var(--error);background:transparent;justify-self:start;font-size:13px;padding:8px 12px}
+.dock{position:fixed;z-index:2;bottom:0;left:50%;transform:translateX(-50%);width:min(100%,840px);height:calc(112px + env(safe-area-inset-bottom));padding:16px max(20px,env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));background:var(--base);border-top:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:18px}.orb{width:72px;height:72px;flex-shrink:0;border-radius:50%;border:2px solid var(--accent);background:var(--accent-ink);color:var(--accent);display:grid;place-items:center;padding:0}.mic-icon{width:30px;height:30px}.stop-icon{width:20px;height:20px;border:2px solid currentColor;border-radius:3px;display:none}.prepare-spinner{display:none;width:30px;height:30px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin 1s linear infinite}.orb[data-mode=end],.orb[data-mode=cancel]{color:var(--accent-ink);background:var(--accent)}.orb[data-mode=end] .mic-icon,.orb[data-mode=cancel] .mic-icon{display:none}.orb[data-mode=end] .stop-icon,.orb[data-mode=cancel] .prepare-spinner{display:block}.orb:disabled{color:var(--muted);border-color:var(--control-line);background:var(--surface)}.control-copy{min-width:0}.control-copy p{font-size:16px;margin:0;font-weight:500}#status{font-size:12px;line-height:1.6;font-weight:400;color:var(--muted);margin:3px 0 0;white-space:nowrap}body[data-tone=warning] .stage-note{color:var(--warning)}@keyframes spin{to{transform:rotate(360deg)}}
+dialog{width:min(100%,560px);max-height:88dvh;margin:auto auto 0;padding:0;background:var(--surface);color:var(--text);border:1px solid var(--line);border-bottom:0;border-radius:24px 24px 0 0;overflow:hidden}dialog::backdrop{background:#0009}.sheet-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px 14px;border-bottom:1px solid var(--line)}.eyebrow{font-size:11px;color:var(--muted);margin:0 0 2px}.sheet-header h2{font-size:24px;font-weight:500;margin:0}.sheet-body{max-height:calc(88dvh - 99px);overflow:auto;padding:0 24px max(24px,env(safe-area-inset-bottom));overscroll-behavior:contain}.sheet-intro{font-size:13px;color:var(--muted);margin:15px 0 8px}.setting{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:15px 0;border-bottom:1px solid var(--line);font-size:14px}.setting small{display:block;color:var(--muted);font-size:12px;margin-top:4px}.setting.stacked{align-items:stretch;flex-direction:column;gap:10px}.setting.stacked select{width:100%}.setting input[type=checkbox]{appearance:none;width:46px;height:28px;background:var(--line);border:1px solid var(--control-line);border-radius:20px;position:relative;flex-shrink:0;cursor:pointer;margin:8px 0;box-shadow:0 0 0 8px transparent}.setting input[type=checkbox]:before{content:"";position:absolute;width:18px;height:18px;border-radius:50%;top:4px;left:4px;background:var(--text)}.setting input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}.setting input[type=checkbox]:checked:before{left:22px;background:var(--accent-ink)}#debug-panel{padding-top:8px}details{border-bottom:1px solid var(--line);font-size:12px}summary{cursor:pointer;min-height:48px;padding:14px 0;font-size:13px}details p{color:var(--muted)}details button{font-size:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.8 var(--mono);color:var(--muted);padding:8px 0}.debug-warning,.build{font-size:11px;color:var(--muted)}.debug-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}#diagnostic select{display:block;width:100%;margin:6px 0 12px}#copy-status{min-height:18px}.build{margin:16px 0 0}
+
+.settings-fallback{position:fixed;inset:auto 0 0;z-index:10;box-shadow:0 0 0 100vmax #0009}.sheet-header button{min-width:64px}.debug-values{font:12px/1.8 var(--mono);color:var(--muted)}#diagnostic table{min-width:500px;border-collapse:collapse;font-size:11px}#diagnostic th,#diagnostic td{padding:6px;border-bottom:1px solid var(--line)}.debug-table{overflow:auto}#time:empty,#quota:empty{display:none}a{color:var(--text-accent)}
+@media(max-width:359px){.app{padding-inline:12px;gap:8px}.app-header{gap:8px}h1{font-size:19px}.connection{font-size:10px;padding-inline:6px}.bubble{font-size:15px}.error-card{padding:8px 10px}}
+@media(min-width:900px){.app{padding-inline:32px;gap:20px;padding-top:24px}.bubble{font-size:18px}.user .bubble{font-size:16px}.transcript{gap:24px}.conversation{padding-top:16px}dialog{margin:auto;border-bottom:1px solid var(--line);border-radius:24px}}
+@media(max-height:450px){.app{--dock-height:92px;padding-top:max(4px,env(safe-area-inset-top));gap:4px}.app-header{min-height:44px}.conversation{padding-top:4px;gap:4px}.dock{height:calc(92px + env(safe-area-inset-bottom));padding-top:8px;padding-bottom:calc(12px + env(safe-area-inset-bottom))}.empty-state{padding:8px}.permission{margin-top:6px!important}.error-card{max-height:60%}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* T-0080: one voice, one pool of light. The two accents follow the speaker. */
+
+body[data-ui-state=speaking]{--state-accent:var(--text-accent)}
+
+.conversation{position:relative;isolation:isolate}
+.conversation:before{content:"";position:absolute;z-index:-1;inset:6% -8% 0;pointer-events:none;background:radial-gradient(ellipse at 25% 68%,rgba(var(--glow-rgb),.085),transparent 64%),radial-gradient(ellipse at 80% 30%,rgba(var(--glow-rgb),.045),transparent 54%);animation:aurora-drift 12s ease-in-out infinite alternate;transition:background 800ms;contain:strict}
+/* The original title dot now carries connection state; no decoration elsewhere. */
+:root{--signal-green:#238636;--signal-amber:#a66b00;--signal-red:#cf3030;--signal-gray:#617a8e}
+@media(prefers-color-scheme:dark){:root{--signal-green:#5fd97f;--signal-amber:#f5bc42;--signal-red:#ff6b61;--signal-gray:#9cb4c7}}
+.app-header h1{display:flex;align-items:center;gap:8px}
+.connection-lamp{--lamp-color:var(--signal-gray);position:relative;display:inline-block;flex:0 0 11px;width:11px;height:11px;border-radius:50%;background:var(--lamp-color);transition:background-color 200ms ease}
+.connection-lamp:before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:0 0 3px 1px var(--lamp-color);opacity:0;transition:box-shadow 200ms ease,opacity 200ms ease}
+.connection-lamp[data-signal=connected]{--lamp-color:var(--signal-green)}
+.connection-lamp[data-signal=pending]{--lamp-color:var(--signal-amber)}
+.connection-lamp[data-signal=error]{--lamp-color:var(--signal-red)}
+.connection-lamp[data-signal=error]:before{opacity:.42}
+.connection-lamp[data-signal=connected]:before{animation:connection-breathe 4s ease-in-out infinite}
+.connection-lamp[data-signal=pending]:before{animation:connection-breathe 3.2s ease-in-out infinite}
+@keyframes connection-breathe{0%,100%{opacity:.35}50%{opacity:.65}}
+@keyframes connection-breathe-reduced{0%,100%{opacity:.42}50%{opacity:.48}}
+@media(prefers-reduced-motion:reduce){
+ .connection-lamp{transition:background-color 200ms ease!important}
+ .connection-lamp:before{transition:box-shadow 200ms ease,opacity 200ms ease!important}
+ .connection-lamp[data-signal=connected]:before,.connection-lamp[data-signal=pending]:before{animation:connection-breathe-reduced 12s ease-in-out infinite!important}
+}
+
+.bubble{animation:bubble-arrive 280ms ease-out both;border:1px solid var(--line)}
+.user .bubble{border-color:var(--line)}
+.current{color:inherit;text-decoration:none;text-shadow:none;animation:none}
+.empty-state h3{font-weight:500;font-size:20px;letter-spacing:.03em}
+.empty-state h3:before{content:"◌";display:block;font-size:40px;line-height:1.5;color:var(--state-accent);font-weight:300;text-shadow:0 0 24px rgba(var(--glow-rgb),.35)}
+.dock{isolation:isolate;background:var(--base)}
+.orb{position:relative;isolation:isolate;--ripple-level:0;--ripple-alpha:.12;--ripple-duration:2.6s;color:var(--state-accent);border-color:var(--state-accent);background:var(--surface);transition:background 300ms,box-shadow 300ms,transform 150ms;box-shadow:0 0 28px rgba(var(--glow-rgb),.09)}
+.orb[data-mode=end],.orb[data-mode=cancel]{background:var(--accent);color:var(--accent-ink)}
+
+
+.orb:disabled{background:var(--surface);border-color:var(--control-line);color:var(--muted);box-shadow:none}
+/* Round13: every ripple paints inside the flat 72px phone target. */
+.orb{overflow:hidden;clip-path:circle(50%);isolation:isolate;--ripple-alpha:.1;--ripple-extra:0}
+.orb:focus-visible{outline-offset:-4px}
+.water-rings{position:absolute;inset:0;z-index:1;pointer-events:none;color:#fff;overflow:hidden;border-radius:50%;opacity:0;transition:opacity 240ms}
+.water-rings i{position:absolute;inset:0;border:1px solid currentColor;border-radius:50%;opacity:0;transform:scale(.06);will-change:transform,opacity;animation:water-ripple 2.6s linear infinite;animation-play-state:paused}
+body:is([data-animation=listening],[data-animation=speaking]) .water-rings{opacity:1}
+body:is([data-animation=listening],[data-animation=speaking]) .water-rings i{animation-play-state:running}
+.water-rings i:nth-child(2){animation-delay:-.8666667s;opacity:0;--ring-weight:var(--ripple-extra)}
+.water-rings i:nth-child(3){animation-delay:-1.7333333s;opacity:0;--ring-weight:var(--ripple-extra)}
+body[data-motion-paused=true] *,body[data-motion-paused=true] *:before,body[data-motion-paused=true] *:after{animation-play-state:paused!important}
+
+body[data-motion=simple] .conversation:before,body[data-motion=simple] .current{color:inherit;text-decoration:none;text-shadow:none;animation:none}
+body[data-motion=simple] .water-rings i{will-change:auto}
+
+
+@keyframes water-ripple{0%{transform:scale(.06);opacity:0}18%,55%{opacity:calc(var(--ripple-alpha)*var(--ring-weight,1))}100%{transform:scale(.98);opacity:0}}
+@keyframes aurora-drift{to{transform:translate3d(3%,-2%,0) scale(1.06)}}
+@keyframes bubble-arrive{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes sentence-glow{50%{text-shadow:0 0 20px rgba(var(--glow-rgb),.55)}}
+@keyframes start-invite{50%{box-shadow:0 0 0 8px rgba(var(--glow-rgb),.05),0 0 32px rgba(var(--glow-rgb),.15)}}
+
+
+.current{color:inherit;text-decoration:none;text-shadow:none;animation:none}
+.current:after{content:none}
+@keyframes sentence-sweep{0%,100%{transform:translateX(0) scaleX(.15);opacity:0}55%{transform:translateX(12%) scaleX(.85);opacity:1}}
+body[data-motion=simple] .current:after{content:none}
+
+/* A bounded flex sheet keeps every section reachable above the safe area. */
+#settings-sheet{max-height:calc(100svh - env(safe-area-inset-top) - 16px);max-height:calc(100dvh - env(safe-area-inset-top) - 16px)}
+#settings-sheet[open]{display:flex;flex-direction:column}.sheet-header{position:sticky;top:0;flex-shrink:0;background:var(--surface);z-index:1;padding:12px 20px}.sheet-body{max-height:none;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 20px 12px;overscroll-behavior:contain;scroll-padding-block:16px}.sheet-footer{flex-shrink:0;position:sticky;bottom:0;background:var(--surface);padding:8px 20px max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--line)}.sheet-footer button{width:100%;min-height:44px}.settings-section>summary{font-size:15px;font-weight:500;min-height:48px}.settings-section .setting{font-size:14px}.setting input[type=range]{width:100%;min-width:0;min-height:44px;accent-color:var(--accent);margin:0}.setting output{float:right;color:var(--text-accent)}.mic-meter{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:var(--muted);padding:8px 0}.mic-meter meter{flex:1;min-width:100px;height:20px;accent-color:var(--accent)}#mic-level-state{overflow-wrap:anywhere}.setting>span{min-width:0}.setting select{max-width:100%}.settings-section p{overflow-wrap:anywhere}.sheet-header h2{font-size:22px}
+
+/* T-0082: compact notice occupies its own row, above the scrolling transcript. */
+.app{grid-template-rows:auto auto minmax(0,1fr);row-gap:8px}
+.app:has(#error:empty){grid-template-rows:auto minmax(0,1fr)}
+.error-card{display:flex;align-items:center;gap:8px;min-width:0;max-height:none;overflow:hidden;border-left:0;border-radius:10px;padding:0 8px;min-height:44px}
+.notice-icon{flex:0 0 18px;text-align:center;font-size:12px;color:var(--error);border:1px solid currentColor;border-radius:50%;line-height:16px}
+#error{flex:1;min-width:0;font-size:12px;line-height:1.45;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis}
+.error-action{flex-shrink:0;min-height:44px;padding:4px 8px;font-size:12px;white-space:nowrap;border:0}
+#settings-sheet{height:fit-content;min-height:0;max-height:70svh;max-height:70dvh}
+.sheet-header{padding:6px 14px;position:relative;gap:8px}
+.sheet-header .eyebrow{display:none}.sheet-header h2{font-size:19px}
+.sheet-header #settings-close{width:44px;height:44px;min-width:44px;padding:11px;display:grid;place-items:center}
+.sheet-body{padding:0 16px max(10px,env(safe-area-inset-bottom))}
+.settings-section>summary,summary{min-height:44px;padding:9px 0}
+.setting{padding:8px 0;gap:10px}.setting.stacked{gap:5px}.setting small{margin-top:2px}
+.sheet-intro{margin:8px 0 4px}.build{margin-top:8px}
+@media(min-width:900px){#settings-sheet{max-height:70dvh}}
+
+/* Round12: center in the visual viewport, including keyboard pan. Symmetric
+   clearance preserves its exact center while reserving BOTH safe-area edges. */
+#settings-sheet{--sheet-edge:max(var(--safe-top),var(--safe-bottom));--sheet-inline-edge:max(env(safe-area-inset-left,0px),env(safe-area-inset-right,0px));position:fixed;inset:auto;margin:0;left:calc(var(--viewport-left) + var(--viewport-width)/2);top:calc(var(--viewport-top) + var(--viewport-height)/2);width:min(560px,calc(var(--viewport-width) - 40px - var(--sheet-inline-edge)*2));max-width:calc(var(--viewport-width) - 40px - var(--sheet-inline-edge)*2);transform:translate(-50%,-50%);height:fit-content;min-height:0;max-height:max(0px,calc(var(--viewport-height) - 40px - var(--sheet-edge)*2));border:1px solid var(--line);border-radius:22px;box-shadow:0 12px 40px #0003}
+#settings-sheet[open]{display:flex;flex-direction:column;animation:settings-enter 140ms ease-out both}
+#settings-sheet[open].settings-closing{animation:settings-leave 120ms ease-in both}
+#settings-sheet::backdrop,.settings-backdrop{background:#0009;animation:settings-shade-in 140ms ease-out both}
+#settings-sheet.settings-closing::backdrop,.settings-backdrop.settings-closing{animation:settings-shade-out 120ms ease-in both}
+.settings-backdrop{position:fixed;inset:0;z-index:9}
+#settings-sheet.settings-fallback{z-index:10}
+.sheet-header{flex:0 0 auto}.sheet-body{flex:0 1 auto;min-height:0;max-height:none;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding-bottom:10px}
+@keyframes settings-enter{from{opacity:0;transform:translate(-50%,-50%) scale(.98)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@keyframes settings-leave{from{opacity:1;transform:translate(-50%,-50%) scale(1)}to{opacity:0;transform:translate(-50%,-50%) scale(.98)}}
+@keyframes settings-shade-in{from{opacity:0}to{opacity:1}}
+@keyframes settings-shade-out{from{opacity:1}to{opacity:0}}
+@media(prefers-reduced-motion:reduce){
+ #settings-sheet[open]{animation:settings-shade-in 140ms ease-out both!important}
+ #settings-sheet[open].settings-closing{animation:settings-shade-out 120ms ease-in both!important}
+ #settings-sheet::backdrop,.settings-backdrop{animation:settings-shade-in 140ms ease-out both!important}
+ #settings-sheet.settings-closing::backdrop,.settings-backdrop.settings-closing{animation:settings-shade-out 120ms ease-in both!important}
+}
+
+
+/* Persistent HTML decoration; CSS draws the volume envelope.
+   One 72px hit target. Listening geometry is now entirely inside the button. */
+.orb>.stop-icon,.orb>.mic-icon,.orb>.prepare-spinner{position:relative;z-index:1;pointer-events:none}
+/* Owner explicitly needs an ongoing listening/thinking signal even with Reduce Motion.
+   Narrow exceptions to the global static fallback: gentle ring expansion and
+   slow vertical contraction, no flashing. Hidden-page pause still wins via play-state. */
+@media(prefers-reduced-motion:reduce){
+ body:is([data-animation=listening],[data-animation=speaking]):not([data-motion-paused=true]) .water-rings i{animation-play-state:running!important}
+}
+
+/* One phone target, centered copy below it; decoration stays inside the phone. */
+.app{--dock-height:108px;padding-bottom:calc(var(--dock-height) + var(--safe-bottom));grid-template-rows:auto minmax(0,1fr)}
+.dock{height:calc(108px + var(--safe-bottom));padding-top:2px;padding-bottom:calc(4px + var(--safe-bottom));flex-direction:column;gap:8px;justify-content:flex-start;overflow:visible}
+.orb{isolation:isolate;z-index:auto;background:#5fd97f;border:0;color:#fff}
+.orb[data-mode=end],.orb[data-mode=cancel]{background:#ff3b30;border-color:#ff3b30;color:#fff}
+.orb:disabled{background:var(--surface);border-color:var(--control-line);color:var(--muted)}
+.phone-icon{position:relative;z-index:4;width:32px;height:32px;pointer-events:none}
+.hangup-icon{display:none}
+.orb:is([data-mode=end],[data-mode=cancel]) .call-icon{display:none}
+.orb:is([data-mode=end],[data-mode=cancel]) .hangup-icon{display:block}
+.control-copy{position:relative;z-index:1;width:100%;text-align:center;pointer-events:none}
+#status{font-size:13px;line-height:1.6;margin:0;white-space:normal;text-shadow:0 1px 2px var(--base),0 0 4px var(--base)}
+.message{align-self:flex-start;text-align:left}
+.message.user{align-self:flex-end;text-align:right}
+.user .message-note{text-align:right;margin-right:4px}
+/* Fixed compact top notice; reserve space above the header so it never covers
+   transcript or call controls. Native settings remain in the dialog top layer. */
+#notice{position:fixed;z-index:8;top:calc(var(--viewport-top) + max(8px,var(--safe-top)));left:calc(var(--viewport-left) + var(--viewport-width)/2);transform:translateX(-50%);width:min(calc(var(--viewport-width) - 24px),800px);min-height:44px;max-height:48px;padding:0 4px 0 8px;gap:4px;box-shadow:0 3px 12px #0001}
+body[data-notice=true] .app{padding-top:calc(max(8px,var(--safe-top)) + 52px)}
+.notice-close{flex:0 0 44px;width:44px;height:44px;min-height:44px;padding:13px;border:0;background:transparent;color:var(--error);display:grid;place-items:center}
+@media(max-height:450px){
+ .app{--dock-height:105px}
+ .dock{height:calc(105px + var(--safe-bottom));padding-top:2px;padding-bottom:calc(8px + var(--safe-bottom));gap:4px}
+}
+
+/* Round9: vector antialiasing and uniform sentence ink. Focus outline remains keyboard-only. */
+.phone-icon,.phone-icon path{fill:#fff;stroke:none}
+
+@media(max-height:450px){#status{line-height:18px}}
+
+/* Round10: explicit safe-area additions and a fixed, flat phone target. */
+.app{--dock-height:140px;padding-top:calc(var(--safe-top) + 12px)}
+.dock{height:calc(140px + var(--safe-bottom));padding-top:16px;padding-bottom:calc(20px + var(--safe-bottom))}
+#notice{top:calc(var(--viewport-top) + var(--safe-top) + 12px)}
+body[data-notice=true] .app{padding-top:calc(var(--safe-top) + 64px)}
+.orb,.orb:active{width:72px;height:72px;min-height:72px;transform:none;box-shadow:none;transition:none;background:#5fd97f}
+.orb:is([data-mode=end],[data-mode=cancel]){background:#ff3b30}
+/* Removed voice-orb's overlapping radial highlights. Decoration has no fill over the phone. */
+@media(max-height:450px){.app{--dock-height:128px;padding-top:calc(var(--safe-top) + 8px)}.dock{height:calc(128px + var(--safe-bottom));padding-top:12px;padding-bottom:calc(20px + var(--safe-bottom))}#notice{top:calc(var(--viewport-top) + var(--safe-top) + 8px)}body[data-notice=true] .app{padding-top:calc(var(--safe-top) + 60px)}}
+
+/* Round11: keep dock geometry/padding; move only its two content children. */
+.dock>.orb,.dock>.control-copy{translate:0 10px}
+/* Only bars animate while thinking. Hidden listening geometry never paints. */
+/* One waveform, delayed at each bar: a later bar repeats its left neighbour.
+   Negative offsets seed an already-running wave; increasing delays travel right.
+   8.5 steps/period avoids duplicated end phases across the nine bars. */
+.thinking-bars{--thinking-period:1.4s;--wave-step:calc(var(--thinking-period) / 8.5);position:absolute;inset:0;display:none;align-items:center;justify-content:center;gap:3px;pointer-events:none;z-index:4}
+.thinking-bars i{--wave-order:var(--bar-index);display:block;flex:0 0 2px;height:30px;background:#fff;border:0;border-radius:1px;transform-origin:center;animation:thinking-contract var(--thinking-period) ease-in-out infinite;animation-play-state:paused;animation-delay:calc((var(--wave-order) - 9) * var(--wave-step))}
+.thinking-bars i:nth-child(1){--bar-index:0;--center-step:4;--edge-step:0}
+.thinking-bars i:nth-child(2){--bar-index:1;--center-step:3;--edge-step:1}
+.thinking-bars i:nth-child(3){--bar-index:2;--center-step:2;--edge-step:2}
+.thinking-bars i:nth-child(4){--bar-index:3;--center-step:1;--edge-step:3}
+.thinking-bars i:nth-child(5){--bar-index:4;--center-step:0;--edge-step:4}
+.thinking-bars i:nth-child(6){--bar-index:5;--center-step:1;--edge-step:3}
+.thinking-bars i:nth-child(7){--bar-index:6;--center-step:2;--edge-step:2}
+.thinking-bars i:nth-child(8){--bar-index:7;--center-step:3;--edge-step:1}
+.thinking-bars i:nth-child(9){--bar-index:8;--center-step:4;--edge-step:0}
+.thinking-bars[data-wave-direction=right-to-left] i{--wave-order:calc(8 - var(--bar-index))}
+.thinking-bars[data-wave-direction=center-out] i{--wave-order:var(--center-step)}
+.thinking-bars[data-wave-direction=edges-in] i{--wave-order:var(--edge-step)}
+body[data-animation=thinking] .thinking-bars{display:flex}
+body[data-animation=thinking] .thinking-bars i{animation-play-state:running}
+body[data-animation=thinking] .orb:is([data-mode=end],[data-mode=cancel]) .hangup-icon{display:none}
+body[data-motion=simple] .thinking-bars{--thinking-period:2.4s}
+@keyframes thinking-contract{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.2)}}
+@media(prefers-reduced-motion:reduce){
+ .thinking-bars{--thinking-period:2.4s}
+ .thinking-bars i{animation:thinking-contract var(--thinking-period) ease-in-out infinite!important;animation-play-state:paused!important;animation-delay:calc((var(--wave-order) - 9) * var(--wave-step))!important}
+ body[data-animation=thinking]:not([data-motion-paused=true]) .thinking-bars i{animation-play-state:running!important}
+}
+
+/* Listening and playback share internal ripples; thinking keeps only its bars. */
+body[data-animation=thinking] .water-rings{display:none}
+@media(prefers-reduced-motion:reduce){
+ .water-rings i{animation:water-ripple 4.2s linear infinite!important;animation-play-state:paused!important;will-change:auto}
+ .water-rings i:nth-child(2){animation-delay:-1.4s!important}
+ .water-rings i:nth-child(3){animation-delay:-2.8s!important}
+ body:is([data-animation=listening],[data-animation=speaking]):not([data-motion-paused=true]) .water-rings i{animation-play-state:running!important}
+}
+
+.deep-ocean {
+  color-scheme: dark;
+  --base: #08151e;
+  --surface: #102531;
+  --raised: #234655;
+  --text: #ecf6fa;
+  --muted: #a9c4d1;
+  --line: #bdeaff32;
+  --control-line: #bdeaff42;
+  --text-accent: #aceff3;
+  --call-mint: #a1efd1;
+  background: radial-gradient(ellipse at 50% 10%, #183845 0, transparent 58%), var(--base);
+}
+.deep-ocean .app {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr) auto auto;
+  width: min(100%, 698px);
+  height: min(calc(var(--viewport-height) - 48px), 720px);
+  margin: max(24px, var(--safe-top)) auto 0;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 35px;
+  background: radial-gradient(ellipse at 50% 41%, #25596b 0, #153b4c 25%, #0c2635 53%, #091c28 76%);
+  box-shadow: 0 32px 85px #0005;
+}
+.deep-ocean .app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 14% 0, #7fdbec26, transparent 43%),
+    repeating-linear-gradient(112deg, transparent 0 19%, #a5eafa0a 19.2%, transparent 19.5% 25%);
+  opacity: .4;
+  pointer-events: none;
+}
+.deep-ocean .app-header {min-height: 68px; padding: 12px 25px; position: relative; z-index: 1}
+.deep-ocean .app-header h1 {margin: 0; color: #c6dfe8; font-size: 14px; font-weight: 600; white-space: nowrap}
+.call-header-actions {display: flex; align-items: center; gap: 14px}
+.call-clock {color: #a6c5d1; font-size: 14px; font-variant-numeric: tabular-nums; letter-spacing: .065em}
+.deep-ocean .settings-entry {
+  display: grid; place-items: center; width: 44px; min-width: 44px; padding: 0;
+  border: 1px solid var(--line); border-radius: 50%; background: #aee9fe13; color: #d3edf6;
+}
+.deep-ocean .settings-entry:hover {background: #bbefff2b}
+.deep-ocean .settings-entry svg {width: 20px; height: 20px}
+.call-focus {display: grid; justify-items: center; align-content: center; overflow: hidden; padding: 9px 20px; text-align: center}
+.call-portrait {position: relative; isolation: isolate; width: clamp(80px, 24dvh, 146px); aspect-ratio: 1}
+.call-portrait img {display: block; width: 100%; height: 100%; border: 2px solid #b8eff736; border-radius: 50%; object-fit: cover; box-shadow: 0 8px 44px #04182561}
+.call-rings {position: absolute; z-index: -1; inset: -13px; border: 1px solid #b1eaff3b; border-radius: 50%; box-shadow: 0 0 38px #91deff22}
+.call-rings::before,.call-rings::after {content: ""; position: absolute; inset: -16px; border: 1px solid #b1eaff26; border-radius: inherit}
+.call-rings::after {inset: -31px; border-color: #b1eaff18}
+.deep-ocean:is([data-ui-state=speaking],[data-ui-state=user_speaking]) .call-rings {border-color: #a5f6dd88; box-shadow: 0 0 38px #89efd05c; animation: call-ripple 1.65s ease-in-out infinite}
+.deep-ocean:is([data-ui-state=thinking],[data-ui-state=preparing],[data-ui-state=reconnecting]) .call-rings {animation: call-breathe 2s ease-in-out infinite}
+@keyframes call-ripple {50% {transform: scale(1.08); opacity: .68}}
+@keyframes call-breathe {50% {opacity: .44}}
+.call-focus h2 {margin: clamp(13px, 4dvh, 30px) 0 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: clamp(25px, 5vw, 34px); line-height: 1.2; font-weight: 650}
+.deep-ocean #status {min-height: 23px; color: #c5e0e9; font-size: 14px}
+.call-wave {display: flex; align-items: center; justify-content: center; gap: 4px; height: 24px; margin-top: 9px}
+.call-wave i {width: 3px; height: 3px; border-radius: 4px; background: #9bcad9; opacity: .75}
+.call-wave i:is(:nth-child(2),:nth-child(4)) {--wave-height: 17px}
+.call-wave i:nth-child(3) {--wave-height: 23px}
+.deep-ocean:is([data-ui-state=speaking],[data-ui-state=user_speaking]) .call-wave i {
+  height: max(3px, calc(var(--wave-height, 11px) * var(--call-volume,.3)));
+  background: var(--call-mint); opacity: 1;
+}
+.deep-ocean[data-ui-state=thinking] .call-wave i {animation: call-breathe 1s ease-in-out infinite alternate}
+.deep-ocean[data-ui-state=thinking] .call-wave i:nth-child(even) {animation-delay: .18s}
+.call-caption {
+  display: flex; width: min(90%, 500px); min-height: 44px; align-items: center; justify-content: center; gap: 9px;
+  margin: 0 auto; color: #d3e5eb; font-size: 13px; text-align: center;
+}
+.call-caption p {min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0}
+.call-caption button,.call-history .conversation-heading button {background: #c6f3ff13; color: #c7e9ed; border: 1px solid transparent; padding: 0 10px; white-space: nowrap}
+.call-caption button:hover,.call-history .conversation-heading button:hover {background: #c6f3ff26}
+.deep-ocean .call-history {
+  position: absolute; z-index: 4; top: 67px; bottom: 104px; left: 50%; transform: translateX(-50%);
+  width: min(94%, 560px); padding: 13px 16px; border: 1px solid var(--line); border-radius: 20px;
+  background: #102531; box-shadow: 0 12px 44px #0007;
+}
+.deep-ocean .call-history .transcript {flex: 1; min-height: 0}
+.deep-ocean .call-history .conversation-heading h2 {margin: 0; font-size: 16px}
+.deep-ocean .call-history .stage-note {margin: 0}
+.deep-ocean .call-dock {
+  position: relative; inset: auto; transform: none; height: auto; width: 100%; overflow: visible;
+  flex-direction: row; align-items: center; justify-content: center; gap: clamp(12px, 5vw, 29px);
+  background: transparent; border: 0;
+  padding: 9px 16px calc(18px + var(--safe-bottom));
+}
+.call-control {
+  display: grid; justify-items: center; gap: 6px; min-width: 65px; min-height: 72px; padding: 0; border: 0;
+  background: transparent; color: #d4eaf0; font-size: 12px;
+}
+.call-control:disabled {opacity: .42}
+.call-control:focus-visible {outline: 2px solid #a5f1fa; outline-offset: 4px}
+.call-disc {
+  display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%;
+  background: #d2f3ff12; border: 1px solid #c6f3ff28; transition: background .16s, transform .16s;
+}
+.call-disc svg {width: 22px; height: 22px}
+.call-control:not(:disabled):hover .call-disc {background: #d2f3ff26; transform: translateY(-2px)}
+.call-control[aria-pressed=true] .call-disc {background: #8ce9ce33; border-color: #9aeeda77; color: #e6fff7}
+.call-control .mic-slash {visibility: hidden}
+.call-control[aria-pressed=true] .mic-slash {visibility: visible}
+.deep-ocean #start .call-disc {width: 63px; height: 63px; background: var(--call-mint); border-color: #bdf7e2; color: #13362d}
+.deep-ocean #start .call-icon path {fill: currentColor}
+.deep-ocean #start:is([data-mode=end],[data-mode=cancel]) .call-disc {background: #db546c; border-color: #ffd5dd50; color: #fff}
+.deep-ocean #start:is([data-mode=end],[data-mode=cancel]) .call-icon {display: none}
+.deep-ocean #start:is([data-mode=end],[data-mode=cancel]) .hangup-icon {display: block}
+.deep-ocean[data-notice=true] .app {padding-top: 43px}
+.deep-ocean #notice {width: min(calc(var(--viewport-width) - 24px), 650px); top: calc(var(--viewport-top) + max(8px,var(--safe-top)))}
+.deep-ocean #settings-sheet {background: #112630; color: var(--text)}
+.deep-ocean #settings-sheet[open] {animation: settings-shade-in 140ms ease-out both}
+.deep-ocean #settings-sheet[open].settings-closing {animation: settings-shade-out 120ms ease-in both}
+.deep-ocean .sheet-header h2 {font-size: 21px; margin: 0}
+.deep-ocean .sheet-header button {width: 44px; min-width: 44px; display: grid; place-items: center; padding: 0}
+.deep-ocean .setting select {background: #203b4b; color: var(--text)}
+.deep-ocean .setting small,.deep-ocean .mic-meter,.sensitivity-scale {color: var(--muted)}
+.sensitivity-scale {display: flex; justify-content: space-between; margin: 0 0 8px; font-size: 12px}
+@media (min-width: 700px) {
+  .deep-ocean #settings-sheet {
+    left: auto; right: max(20px, env(safe-area-inset-right)); top: calc(var(--viewport-top) + max(20px,var(--safe-top)));
+    width: 385px; transform: none;
+  }
+}
+@media (max-width: 699px), (max-height: 550px) {
+  .deep-ocean .app {width: 100%; height: var(--viewport-height); margin: 0; border: 0; border-radius: 0}
+  .deep-ocean .app-header {min-height: 57px; padding: max(6px,var(--safe-top)) 15px 5px}
+  .deep-ocean .call-history {top: 57px}
+}
+@media (max-width: 699px) {
+  .deep-ocean #settings-sheet {
+    top: auto; bottom: 0; left: 0; width: 100%; max-width: none; max-height: min(86dvh,730px);
+    transform: none; border-radius: 21px 21px 0 0; padding-bottom: var(--safe-bottom);
+  }
+}
+@media (max-height: 440px) {
+  .call-portrait {width: 68px}
+  .call-rings::after {display: none}
+  .call-focus h2 {margin-top: 8px}
+  .call-wave {margin-top: 1px; height: 11px}
+  .deep-ocean .call-dock {padding-top: 4px; padding-bottom: calc(6px + var(--safe-bottom))}
+  .call-control {min-height: 58px; gap: 2px}
+  .call-control .call-disc,.deep-ocean #start .call-disc {width: 44px; height: 44px}
+  .deep-ocean .call-history {bottom: 70px}
+}

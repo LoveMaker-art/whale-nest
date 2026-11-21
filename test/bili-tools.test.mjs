@@ -1,0 +1,33 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createBiliFeatures} from '../src/bili-tools.mjs';
+import {createCompanionPolicy} from '../src/companion-policy.mjs';
+import {qrPng} from '../src/qr-png.mjs';
+import {createBiliRules} from '../src/bili-rules.mjs';
+import {seedBiliAccount} from './bili-test-helper.mjs';
+async function fixture(t){const dataDir=await mkdtemp(join(tmpdir(),'whalenest-bili-tools-'));t.after(()=>rm(dataDir,{recursive:true,force:true}));const route={channel:'clawchat',account:'a',sender:'owner',conversation:'dm',kind:'private'},options={instanceId:'test',dataDir,cwd:dataDir,owners:[route],clawchat:{route},activities:{enabled:true,maxDailyBackgroundModelCalls:0}},policy=createCompanionPolicy(options,route),calls=[];
+ const account={getCookie:()=>'',status:()=>({state:'logged-out'}),getDeviceId:()=> 'fixture-device',whoami:async()=>({ok:true,state:'logged-out'}),receipts:()=>[],mutate:async(input,action)=>{calls.push(input);return {ok:true,state:'confirmed',receipt:await action({uid:'123'})};},start:async id=>({id}),poll:async id=>({id})};
+ const http={request:async()=>({bvid:'BV1xx411c7mD',aid:123,cid:456,title:'实际视频'}),reply:async(aid,text,opts)=>{calls.push({aid,text,...opts});return {rpid:'456'};},topic:async id=>({id,name:'真实话题'}),uploadImage:async(bytes,input)=>{calls.push({size:bytes.length,mime:input.mime});return {img_src:'https://i0.hdslb.com/image.png',img_width:1,img_height:1};},sendDynamic:async(text,opts)=>{calls.push({text,...opts});return {publicationState:'scheduled',draftId:'789'};}};
+ const activities={run:async args=>args,list:()=>[]},tools=createBiliFeatures(options,route,{activities,policy,account,http,now:()=>1700000000000}).tools('session');
+ const ctx={callId:'tool',agent:{session:{seq:2,eventAt:n=>n===0?{type:'user/message',data:{source:{kind:'user'}}}:n===1?{type:'assistant/message',data:{message:{id:'message',content:[{type:'tool-call',id:'tool'}]}}}:{type:'user/message',data:{source:{kind:'time-context'}}}}}};
+ return {dataDir,options,route,http,ctx,calls,policy,call:(name,args={})=>tools.find(t=>t.name===name).execute(args,ctx)};
+}
+test('legacy direction, reply IDs and config frequency map to the new shared activity policy',async t=>{const f=await fixture(t);assert.equal((await f.call('bili_scan',{direction:'鲸鱼'})).query,'鲸鱼');assert.equal((await f.call('bili_scan',{bvid:'BV1xx411c7mD'})).link,'BV1xx411c7mD');
+ assert.equal((await f.call('bili_reply',{bvid:'BV1xx411c7mD',text:'明确回复',rpid:'789',force:true})).state,'confirmed');assert.deepEqual(f.calls.at(-1),{aid:123,text:'明确回复',root:'789',parent:'789'});
+ assert.equal((await f.call('bili_config',{patch:{perDay:2,gapMin:120}})).ok,true);assert.equal(f.policy.status().settings.maxBrowsePerDay,2);assert.equal(f.policy.status().settings.cooldownMinutes,120);assert.equal(f.policy.status().dailyModelRequestLimit,0);
+ assert.equal((await f.call('bili_config',{patch:{autoComment:true}})).ok,false);assert.equal(f.policy.status().dailyModelRequestLimit,0);
+});
+test('legacy image strings, topicId and scheduleTime preserve image upload and scheduled-result semantics',async t=>{const f=await fixture(t),file=join(f.dataDir,'fixture.png');await writeFile(file,qrPng('https://www.bilibili.com/'));
+ const result=await f.call('bili_send_dynamic',{text:'授权的正文',images:file,topicId:42,scheduleTime:1700000600,force:true});assert.equal(result.receipt.publicationState,'scheduled');const sent=f.calls.at(-1);assert.equal(sent.scheduleTime,1700000600);assert.equal(sent.topic.name,'真实话题');assert.equal(sent.pictures.length,1);assert.ok(f.calls.some(c=>c.mime==='image/png'));
+});
+test('a scheduled source cannot spoof manual owner authority using force',async t=>{const f=await fixture(t);f.ctx.agent.session.eventAt=n=>n===0?{type:'user/message',data:{source:{kind:'schedule'}}}:null;
+ assert.equal((await f.call('bili_login_start')).ok,false);assert.equal((await f.call('bili_reply',{bvid:'BV1xx411c7mD',text:'不应发送',force:true})).ok,false);assert.equal(f.calls.length,0);
+});
+test('manual force can authorize the disabled dynamic switch but cannot bypass account quotas',async t=>{
+ const f=await fixture(t),now=()=>1700000000000,rules=createBiliRules(f.options,f.route,{now});rules.configure({dynamicPerDay:1,dynamicGapMin:0});const account=seedBiliAccount(f.options,f.route,{now,mutationPolicy:rules}),features=createBiliFeatures(f.options,f.route,{rules,account,http:f.http,policy:f.policy,activities:{list:()=>[]},now});
+ const tool=features.tools('quota-native-session').find(t=>t.name==='bili_send_dynamic');f.ctx.agent.session.eventAt=n=>n===0?{type:'user/message',data:{source:{kind:'user'}}}:n===1?{type:'assistant/message',data:{message:{id:'message-'+f.ctx.callId,content:[{type:'tool-call',id:f.ctx.callId}]}}}:null;
+ assert.equal((await tool.execute({text:'not enabled'},f.ctx)).ok,false);assert.equal(f.calls.length,0);assert.equal((await tool.execute({text:'one',force:true},f.ctx)).state,'confirmed');f.ctx.callId='second';assert.equal((await tool.execute({text:'two',force:true},f.ctx)).state,'limited');assert.equal(f.calls.filter(c=>c.text).length,1);
+});

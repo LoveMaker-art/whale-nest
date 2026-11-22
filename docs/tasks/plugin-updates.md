@@ -55,10 +55,10 @@ Core插件存储位于实际配置文件的父目录下plugins/及plugins.lock.j
 
 ## 发行与实例配置
 
-管理员在实例 `instance.json` 配置 `pluginUpdates.repository`，值为鲸栖维护的公开 GitHub 仓库 `owner/repo`。`channel` 可选 `stable` 或 `beta`。`dshExecutable` 可指定实际 DSH 可执行文件的绝对路径，默认 `/opt/dsh/node_modules/.bin/dsh`。用户通过既有私聊接收或查询，账号绑定由宿主及网关提供。
+管理员在实例 `instance.json` 配置 `pluginUpdates.repository`，当前公开发行源为 `LoveMaker-art/whale-nest`。`channel` 可选 `stable` 或 `beta`。`dshExecutable` 可指定实际 DSH 可执行文件的绝对路径，默认 `/opt/dsh/node_modules/.bin/dsh`。用户通过既有私聊接收或查询，账号绑定由宿主及网关提供。
 
 每个发行使用与包版本匹配的 GitHub 不可变 Release。资产放同版 `distribution.json` 和一个 Linux x64 `.connect-plugin`，两者都使用 GitHub 返回的 SHA-256 摘要。构建命令可用第四个参数传入纯文本更新说明文件。启用不可变发行并校验 tag 和摘要后再作为更新源。当前固定的 Connect 解析器按发行选取插件资产，因此首版每个发行只放一个插件包。[GitHub 不可变发行](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases) · [GitHub Releases API](https://docs.github.com/en/rest/releases/releases?apiVersion=latest)
 
 ## 完成条件
 
-本地已验证实际 Connect 安装器的切换和失败回退。公开发行源配置和真实聊天更新验收由维护者在发行后完成。核对目标版本、独立进程执行、原私聊回执、重启后继续原会话，以及失败回退后保留配置和用户数据。
+本地已验证实际 Connect 安装器的切换和失败回退。测试机已从公开发行源发现 `1.0.0-beta.2`，并在原 ClawChat 私聊发出自动提醒。主人发送「检查更新」后，已经收到版本说明及 `确认更新 1.0.0-beta.2`。下一项验收由该私聊的确认消息触发，核对目标版本、独立进程执行、完成回执及原会话恢复。

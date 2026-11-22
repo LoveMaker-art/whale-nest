@@ -34,7 +34,7 @@ M3 本地二维码编码使用 [qrcode-generator 1.4.4](https://github.com/kazuh
 
 Aurabot 固定提交的完整 252 个原文件已纳入 [vendor/aurabot](../vendor/aurabot)，文件哈希记录在 [来源清单](../vendor/aurabot.provenance.json)，通过 npm run check:vendor 校验；适配代码放在 src，不改写原文件。Core 的研究快照仍位于忽略目录 .whale-nest/research/，不随产品交付；需要时从来源锁的固定提交获取。
 
-构建记录上游原提交、包内文件摘要和所需宿主版本。鲸栖自有代码的发布许可由项目维护者确定，各第三方许可适用于对应组件。
+构建记录上游原提交、包内文件摘要和所需宿主版本。鲸栖自有代码采用 [MIT 许可证](../LICENSE)。第三方组件沿用各自的许可与署名。
 
 ## 兼容 Core 桥
 

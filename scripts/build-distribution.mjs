@@ -51,10 +51,10 @@ export async function buildDistribution(destination,{target='linux-x64',version=
  for(const dir of ['src','vendor/aurabot','vendor/qrcode-generator','vendor/abcjs','vendor/platform-liveware','licenses'])await tree(dir);
  const lock=JSON.parse(await readFile(join(root,'upstream.lock.json')));
  const persona=lock.personaReference;
- for(const path of ['upstream.lock.json','vendor/aurabot.provenance.json',persona.localFile,persona.licenseFile,'integration/clawchat/LICENSE','integration/clawchat/SOURCE.json'])await add('artifacts/whalenest/'+path,join(root,path));
+ for(const path of ['LICENSE','upstream.lock.json','vendor/aurabot.provenance.json',persona.localFile,persona.licenseFile,'integration/clawchat/LICENSE','integration/clawchat/SOURCE.json'])await add('artifacts/whalenest/'+path,join(root,path));
  assert.equal(sources['artifacts/whalenest/'+persona.localFile],persona.sha256,'Default persona content differs from source lock');
  assert.equal(sources['artifacts/whalenest/'+persona.licenseFile],persona.licenseSha256,'Default persona license differs from source lock');
- files['artifacts/whalenest/package.json']={encoding:'utf8',content:JSON.stringify({name:'whalenest-companion-runtime',private:true,type:'module',version})};
+ files['artifacts/whalenest/package.json']={encoding:'utf8',content:JSON.stringify({name:'whalenest-companion-runtime',private:true,type:'module',version,license:'MIT'})};
  manifest.artifacts=[{target,entry:'artifacts/'+target+'.mjs',integrity:integrity(entry)}];
  const bundle={format:'clawchat-connect-plugin-bundle-v1',manifest,files};
  const path=join(destination,'whalenest-companion-'+version+'-'+target+'.connect-plugin');

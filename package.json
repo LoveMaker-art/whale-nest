@@ -1,6 +1,7 @@
 {
   "name": "whale-nest",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "基于 DSH 的云端陪伴插件，支持 ClawChat 和 QQ",

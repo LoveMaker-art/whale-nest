@@ -4,7 +4,7 @@
 
 | 对象 | 版本及范围 |
 | --- | --- |
-| 测试版 | `1.0.0-beta.1`，Linux x64，面向 ClawChat 预装实例。干净检出已构建并核对复现摘要，Connect 安装器在 Linux x64 临时目录成功登记。[版本说明](releases/1.0.0-beta.1.md) |
+| 测试版 | `1.0.0-beta.2`，Linux x64，面向 ClawChat 预装实例。安装包随附 MIT 许可证和第三方声明。[版本说明](releases/1.0.0-beta.2.md) |
 | DSH | `0.2.2-rc.1` |
 | ClawChat Connect | 现有已验证的 Core、媒体、续期、Liveware 和表情扩展。精确版本由发行清单记录。[来源](../integration/clawchat/core-media/README.md) |
 | 实机基线 | 测试机已启用音色兼容修订 `1.0.0-beta.1.1`。原 ClawChat 配对在线，QQ 等待登录，通话与歌曲入口的本机健康检查通过。下列功能实测包含开发版记录。Beta 本地全量回归 281 项通过，干净检出的安装和更新定向回归 10 项通过，两组用例有交集。 |

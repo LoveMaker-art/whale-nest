@@ -35,10 +35,10 @@ npm run test:deployment
 
 Node.js 24 执行 `npm ci` 后，运行 `npm run build:distribution`。默认版本来自根 `package.json`，产物保存在 `.whale-nest/distribution/`。可用第四个参数传入同版本的发行说明，将摘要保存在 `distribution.json`。
 
-首个测试版的完整构建命令如下。
+当前测试版的完整构建命令如下。
 
 ```sh
-npm run build:distribution -- .whale-nest/distribution linux-x64 1.0.0-beta.1 docs/releases/1.0.0-beta.1.md
+npm run build:distribution -- .whale-nest/distribution linux-x64 1.0.0-beta.2 docs/releases/1.0.0-beta.2.md
 ```
 
 GitHub 预发行标签使用 `v` 加完整版本号。发行资产包含同版本的 Linux x64 `.connect-plugin` 和 `distribution.json`。安装前核对 SHA-256、DSH、Connect Core 和实例数据格式。云端聊天更新对发行源的要求见[更新说明](tasks/plugin-updates.md#发行与实例配置)。

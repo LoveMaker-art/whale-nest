@@ -31,6 +31,8 @@ test('distribution moves to another folder, loads without source paths, retains 
   if(/\.(?:mjs|json)$/.test(path)&&!path.includes('/vendor/'))assert.ok(!bytes.toString().includes('/home/node/projects/whale-nest'),'no development absolute paths');
  }
  const packaged=join(target,'artifacts/whalenest');
+ assert.deepEqual(await readFile(join(packaged,'LICENSE')),await readFile(new URL('../LICENSE',import.meta.url)));
+ assert.equal(JSON.parse(await readFile(join(packaged,'package.json'))).license,'MIT');
  const {personaReference}=JSON.parse(await readFile(join(packaged,'upstream.lock.json')));
  const personaLicense=await readFile(join(packaged,personaReference.licenseFile));
  assert.equal(createHash('sha256').update(personaLicense).digest('hex'),personaReference.licenseSha256);

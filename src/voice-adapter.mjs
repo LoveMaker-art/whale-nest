@@ -4,7 +4,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import originalVoice from './aurabot-voice.generated.mjs';
 import {selectReplyItems} from './aurabot-expression.generated.mjs';
-import {createSpeechClient} from './speech.mjs';
+import {createSpeechClient,defaultPlatformVoice,platformVoiceIdPattern} from './speech.mjs';
 import {readState,writeState} from './state.mjs';
 import {hash} from './routing.mjs';
 import {nativeOperationId,requireManualOwnerTurn} from './native-tool.mjs';
@@ -17,9 +17,11 @@ import {parseWav} from '../vendor/aurabot/src/voice/wav.js';
 export function createVoiceAdapter(ctx,options,{getConfig,setConfig,getNative,expressionSettings,policy,fetchImpl=fetch}={}){
  const delivery=new AsyncLocalStorage(),toolCalls=new AsyncLocalStorage(),flights=new Map(),dir=join(options.dataDir,'voice');
  const enabled=options.speech?.enabled===true;
- const speech=createSpeechClient(options,fetchImpl,{getVoice:()=>getConfig().voice.platformVoice??options.speech.voice});
- const status=()=>({enabled,voice:getConfig().voice.platformVoice??options.speech?.voice??null,
-  verifiedVoices:[...new Set([options.speech?.voice,...(getConfig().voice.platformVoices??[])].filter(Boolean))],
+ const initialVoice=options.speech?.voice??(enabled?defaultPlatformVoice:null);
+ const currentVoice=()=>getConfig().voice.platformVoice??initialVoice;
+ const speech=createSpeechClient(options,fetchImpl,{getVoice:currentVoice});
+ const status=()=>({enabled,voice:currentVoice(),
+  verifiedVoices:[...new Set([initialVoice,...(getConfig().voice.platformVoices??[])].filter(Boolean))],
   voiceCatalog:'verified-on-this-backend',ttsModel:options.speech?.ttsModel??null,asrModel:options.speech?.asrModel??null});
  async function speak(text,request){
   assert.ok(request?.requestId,'语音合成需要持久调用标识');
@@ -81,7 +83,7 @@ export function createVoiceAdapter(ctx,options,{getConfig,setConfig,getNative,ex
   render:(_a,value)=>[{type:'text',text:JSON.stringify(value)}],
   async execute(args,exec){requireManualOwnerTurn(exec);const action=args.action??'status';assert.ok(['status','list','update'].includes(action),'Unknown voice action');
    if(action!=='update')return {ok:true,...status()};
-   assert.ok(enabled&&options.speech.ttsModel,'平台TTS尚未启用');assert.match(String(args.voice??''),/^[a-zA-Z0-9_-]{1,120}$/,'音色标识无效');
+   assert.ok(enabled&&options.speech.ttsModel,'平台TTS尚未启用');assert.match(String(args.voice??''),platformVoiceIdPattern,'音色标识无效');
    const previous=status(),requestId='whalenest-voice-check-'+hash([options.instanceId,nativeOperationId(exec)]);
    if(previous.voice!==args.voice){const checked=await speech.synthesize('你好，我是大肥鱼。',requestId,{voice:args.voice,signal:exec.signal});assert.equal(checked.voice,args.voice,'音色检查请求标识冲突');}
    const cfg=getConfig();setConfig({...cfg,voice:{...cfg.voice,platformVoice:args.voice,platformVoices:[...new Set([...previous.verifiedVoices,args.voice])]}});

@@ -3,6 +3,7 @@ import {randomUUID,timingSafeEqual} from 'node:crypto';
 import {join} from 'node:path';
 import {readState,writeState} from './state.mjs';
 import {selectFastVoiceModel} from './voice-model.mjs';
+import {defaultPlatformVoice} from './speech.mjs';
 
 const callIdPattern = /^vs_[a-f0-9]{32}$/;
 const clientIdPattern = /^[a-zA-Z0-9_-]{1,100}$/;
@@ -233,7 +234,7 @@ export async function startPlatformVoiceBridge(options,{secret,withPrivateVoiceS
       if (req.method === 'GET' && path === '/voice/v1/profile') return json(200,currentProfile());
       if (req.method === 'GET' && path === '/voice/v1/settings') {
         const voice = readState(join(options.dataDir,'aurabot/config.json'),null)?.voice?.platformVoice
-          ?? options.speech.voice ?? 'longanfengyue';
+          || options.speech.voice || defaultPlatformVoice;
         return json(200,{voice});
       }
       if (req.method === 'POST' && path === '/voice/v1/turns') return json(202,await submit(await readBody(req)));

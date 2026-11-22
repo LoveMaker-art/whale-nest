@@ -3,6 +3,7 @@ import {readFileSync,statSync,accessSync,constants} from 'node:fs';
 import {join,dirname,resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {hash,routeKey,senderKey,ownerScope} from './routing.mjs';
+import {defaultPlatformVoice} from './speech.mjs';
 const read=path=>JSON.parse(readFileSync(path,'utf8'));
 const sha=path=>createHash('sha256').update(readFileSync(path)).digest('hex');
 function supportsM3Writer(version,minimum){
@@ -80,7 +81,7 @@ export function enablePlatformSpeech(speech={}){
  assert.ok(!speech.provider||speech.provider==='clawling','Existing speech provider differs from the selected platform');
  const existing=Boolean(speech.ttsModel);
  return {...speech,enabled:true,provider:'clawling',asrModel:speech.asrModel||'fun-asr-flash',language:speech.language??'zh',
-  ttsModel:speech.ttsModel||'qwen-audio-3.0-tts-flash',voice:existing?(speech.voice||'longanfengyue'):'longanfengyue',
+  ttsModel:speech.ttsModel||'qwen-audio-3.0-tts-flash',voice:existing&&speech.voice?speech.voice:defaultPlatformVoice,
   responseFormat:existing?(speech.responseFormat??'pcm'):'pcm',sampleRate:speech.sampleRate??22050};
 }
 export function enablePlatformImage(image={}){

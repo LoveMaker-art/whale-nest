@@ -5,15 +5,19 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {normalize} from '../vendor/aurabot/src/core/config.js';
 import {createVoiceAdapter} from '../src/voice-adapter.mjs';
+import {defaultPlatformVoice} from '../src/speech.mjs';
 import {createExpressionSettings} from '../src/expression-settings.mjs';
 import {selectReplyItems} from '../src/aurabot-expression.generated.mjs';
 import {enablePlatformSpeech,protectVoiceRollback} from '../src/runtime-upgrade.mjs';
 
+const dottedVoice = 'qwen-audio-3.0-tts-flash-fixture';
 const exec=(id,kind='user')=>({callId:id,agent:{session:{seq:1,eventAt:n=>n===1?{type:'assistant/message',data:{message:{id:'message-'+id,content:[{type:'tool-call',id}]}}}:{type:'user/message',data:{source:{kind}}}}}});
-async function fixture(t){
+async function fixture(t,voice){
  const root=await mkdtemp(join(tmpdir(),'whalenest-shared-voice-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const path=join(root,'provider.json');await writeFile(path,JSON.stringify({models:{providers:{clawling:{apiKey:'fixture',baseUrl:'https://fixture.test/v1'}}}}));
- const options={instanceId:'one',dataDir:root,expressions:{enabled:true},speech:enablePlatformSpeech({providerConfigPath:path})};let cfg=normalize({});
+ const options={instanceId:'one',dataDir:root,expressions:{enabled:true},speech:enablePlatformSpeech({providerConfigPath:path})};
+ if(voice)options.speech.voice=voice;
+ let cfg=normalize({});
  const calls=[],wav=await readFile(new URL('fixtures/media/audio.wav',import.meta.url));
  const deps={getConfig:()=>cfg,setConfig:value=>{cfg=normalize(value);},getNative:()=>null,expressionSettings:createExpressionSettings(options,cfg),policy:{status:()=>({settings:{paused:false}})},
   fetchImpl:async(url,init)=>{calls.push({url,body:init.body});if(url.endsWith('transcriptions'))return Response.json({text:'来自真实音频的测试转写'});
@@ -23,12 +27,12 @@ async function fixture(t){
  return {root,options,deps,adapter,module,calls,wav,getConfig:deps.getConfig};
 }
 test('original voice.speak uses one platform backend and voice; updates affect only new requests across restart',async t=>{
- const f=await fixture(t);const old=await f.module.speak('你好',{requestId:'old'});assert.equal(old.engine,'platform');assert.equal(old.voice,'longanfengyue');
- const changed=await f.adapter.tool().execute({action:'update',voice:'verified-second'},exec('change'));assert.equal(changed.ok,true);assert.equal(f.getConfig().voice.platformVoice,'verified-second');
- const next=await f.module.speak('你好',{requestId:'next'});assert.equal(next.voice,'verified-second');
- const restarted=createVoiceAdapter({},f.options,f.deps);assert.equal((await restarted.speak('你好',{requestId:'old'})).voice,'longanfengyue');
- assert.equal((await restarted.speak('你好',{requestId:'next'})).voice,'verified-second');assert.equal(f.calls.length,3);
- await restarted.tool().execute({action:'update',voice:'invalid'},exec('bad'));assert.equal(f.getConfig().voice.platformVoice,'verified-second');
+ const f=await fixture(t);const old=await f.module.speak('你好',{requestId:'old'});assert.equal(old.engine,'platform');assert.equal(old.voice,defaultPlatformVoice);
+ const changed=await f.adapter.tool().execute({action:'update',voice:dottedVoice},exec('change'));assert.equal(changed.ok,true);assert.equal(f.getConfig().voice.platformVoice,dottedVoice);
+ const next=await f.module.speak('你好',{requestId:'next'});assert.equal(next.voice,dottedVoice);
+ const restarted=createVoiceAdapter({},f.options,f.deps);assert.equal((await restarted.speak('你好',{requestId:'old'})).voice,defaultPlatformVoice);
+ assert.equal((await restarted.speak('你好',{requestId:'next'})).voice,dottedVoice);assert.equal(f.calls.length,3);
+ await restarted.tool().execute({action:'update',voice:'invalid'},exec('bad'));assert.equal(f.getConfig().voice.platformVoice,dottedVoice);
  await restarted.tool().execute({action:'update',voice:'invalid'},exec('bad'));assert.equal(f.calls.length,4,'An unknown paid check is not retried');
  const blocked=await restarted.tool().execute({action:'update',voice:'x'},exec('background','schedule'));assert.match(JSON.stringify(blocked),/后台/);assert.equal(f.calls.length,4);
 });
@@ -70,7 +74,7 @@ test('rollback preserves the chosen voice/receipts and stops older QQ desktop TT
 });
 
 test('ClawChat and QQ share original mood-driven speech; disabled mood and other voices stay plain',async t=>{
- const f=await fixture(t);let label='超开心';
+ const f=await fixture(t,'longanfengyue');let label='超开心';
  f.deps.setConfig({...f.getConfig(),mood:{...f.getConfig().mood,enabled:true}});
  f.deps.getNative=()=>({modules:{use:id=>{assert.equal(id,'mood');return {label:()=>label};}}});
  const adapter=createVoiceAdapter({},f.options,f.deps);

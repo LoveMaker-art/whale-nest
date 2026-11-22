@@ -14,6 +14,7 @@ import { importLegacy, rollbackLegacy } from './migration.mjs';
 import { deliverIntent } from './delivery.mjs';
 import { mediaTools,createMediaSender } from './media-delivery.mjs';
 import {voiceTools} from './voice.mjs';
+import {defaultPlatformVoice} from './speech.mjs';
 import { createActivities } from './activities.mjs';
 import { createCompanionService,companionSettingsTool } from './companion-service.mjs';
 import {createSpeakUpAdapter} from './speakup-adapter.mjs';
@@ -134,7 +135,7 @@ export async function createCompanion(ctx, options, ports = {}) {
     if(cfg.modules?.diary?.enabled!==true)cfg=saveConfig({...cfg,modules:{...cfg.modules,diary:{...cfg.modules?.diary,enabled:true}}});
     if(cfg.modules?.speakup?.enabled!==true)cfg=saveConfig({...cfg,modules:{...cfg.modules,speakup:{...cfg.modules?.speakup,enabled:true}}});
     if(cfg.modules?.voice?.enabled!==true)cfg=saveConfig({...cfg,modules:{...cfg.modules,voice:{...cfg.modules?.voice,enabled:true}}});
-    if(options.speech?.enabled&&!cfg.voice.platformVoice)cfg=saveConfig({...cfg,voice:{...cfg.voice,platformVoice:options.speech.voice??'longanfengyue'}});
+    if(options.speech?.enabled&&!cfg.voice.platformVoice)cfg=saveConfig({...cfg,voice:{...cfg.voice,platformVoice:options.speech.voice||defaultPlatformVoice}});
     if(options.image?.enabled)cfg=saveConfig({...cfg,modules:{...cfg.modules,imagegen:{...cfg.modules?.imagegen,enabled:true}},imageGen:{...cfg.imageGen,enabled:true,img2img:true,ownerOnly:true,size:options.image.size??'1024x1024'}});
     if(options.singing?.enabled)cfg=saveConfig({...cfg,modules:{...cfg.modules,song:{...cfg.modules?.song,enabled:true,useBuiltin:true}}});
     if(options.qq?.nativeModules)cfg=saveConfig(enableQQNativeModules(cfg));

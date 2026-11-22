@@ -8,6 +8,8 @@ import {voiceTools} from '../src/voice.mjs';
 import {parseWav} from '../vendor/aurabot/src/voice/wav.js';
 import {enablePlatformSpeech} from '../src/runtime-upgrade.mjs';
 
+const initialVoice = 'qwen-audio-3.0-tts-flash-fy1ae4cdd1-95f01c83d3984a62bffbfcaae018a8cf';
+
 async function fixture(t){
  const root=await mkdtemp(join(tmpdir(),'whalenest-speech-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const provider=join(root,'provider.json');await writeFile(provider,JSON.stringify({models:{providers:{clawling:{apiKey:{source:'env',id:'SPEECH_TEST_KEY'},baseUrl:'https://speech.test/v1'}}}}));await writeFile(join(root,'.env'),'SPEECH_TEST_KEY=fixture-key\n');
@@ -15,7 +17,8 @@ async function fixture(t){
 }
 test('official PCM request becomes a playable WAV even if its first bytes resemble MPEG; concurrent/restarted requests reuse the receipt',async t=>{
  const f=await fixture(t),pcm=Buffer.from([255,255,20,0,30,0,40,0]);let calls=0;
- const fetcher=async(url,init)=>{calls++;assert.equal(url,'https://speech.test/v1/audio/speech');assert.equal(init.headers.authorization,'Bearer fixture-key');assert.equal(init.redirect,'error');assert.deepEqual(JSON.parse(init.body),{model:'qwen-audio-3.0-tts-flash',voice:'longanfengyue',input:'你好',response_format:'pcm',stream_format:'audio',sample_rate:22050,extra:{qwen:{sample_rate:22050}}});return new Response(pcm,{headers:{'content-type':'audio/pcm'}});};
+ delete f.options.speech.voice;
+ const fetcher=async(url,init)=>{calls++;assert.equal(url,'https://speech.test/v1/audio/speech');assert.equal(init.headers.authorization,'Bearer fixture-key');assert.equal(init.redirect,'error');assert.deepEqual(JSON.parse(init.body),{model:'qwen-audio-3.0-tts-flash',voice:initialVoice,input:'你好',response_format:'pcm',stream_format:'audio',sample_rate:22050,extra:{qwen:{sample_rate:22050}}});return new Response(pcm,{headers:{'content-type':'audio/pcm'}});};
  const client=createSpeechClient(f.options,fetcher),[a,b]=await Promise.all([client.synthesize('你好','same'),client.synthesize('你好','same')]);assert.deepEqual(a,b);assert.equal(calls,1);
  const wav=parseWav(await readFile(a.path));assert.equal(wav.rate,22050);assert.equal(wav.channels,1);assert.deepEqual(wav.data,pcm);
  assert.deepEqual(await createSpeechClient(f.options,fetcher).synthesize('你好','same'),a);assert.equal(calls,1);
@@ -42,12 +45,13 @@ test('voice tool is manual-only and uses a stable synthesis/delivery identity',a
  await tool.execute({text:'你好'},ctx('user'));await tool.execute({text:'你好'},ctx('user'));assert.equal(ids[0],ids[1]);
 });
 test('speech enablement keeps explicit settings and avoids the unverified placeholder voice',()=>{
- const next=enablePlatformSpeech({provider:'clawling',ttsModel:'',voice:'Cherry',providerConfigPath:'/private/provider.json'});assert.equal(next.voice,'longanfengyue');assert.equal(next.responseFormat,'pcm');assert.equal(next.providerConfigPath,'/private/provider.json');
+ const next=enablePlatformSpeech({provider:'clawling',ttsModel:'',voice:'Cherry',providerConfigPath:'/private/provider.json'});assert.equal(next.voice,initialVoice);assert.equal(next.responseFormat,'pcm');assert.equal(next.providerConfigPath,'/private/provider.json');
  const old={provider:'clawling',ttsModel:'chosen-model',voice:'chosen-voice',responseFormat:'wav',sampleRate:24000};assert.equal(enablePlatformSpeech(old).voice,'chosen-voice');assert.equal(enablePlatformSpeech(old).responseFormat,'wav');assert.equal(old.voice,'chosen-voice');assert.throws(()=>enablePlatformSpeech({provider:'other'}),/differs/);
 });
 
 test('verified emotion keeps the speaker, preserves plain text identity and never rebills after mood changes or restart',async t=>{
  const f=await fixture(t),bodies=[],pcm=Buffer.from([1,0,2,0,3,0,4,0]);
+ f.options.speech.voice='longanfengyue';
  const fetcher=async(_url,init)=>{bodies.push(JSON.parse(init.body));return new Response(pcm,{headers:{'content-type':'audio/pcm'}});};
  const client=createSpeechClient(f.options,fetcher);
  const excited=await client.synthesize('你回来啦','excited',{emotion:'excited'});

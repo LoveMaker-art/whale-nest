@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {createServer} from 'node:http';
 import {setTimeout as delay} from 'node:timers/promises';
 import {startPlatformVoiceLiveware} from '../src/platform-voice-liveware.mjs';
+import {defaultPlatformVoice} from '../src/speech.mjs';
 import {connectPlatformVoice,connectPlatformVoiceHttp} from './platform-voice-client.mjs';
 
 test('official page and gateway use the verified DSH lane, shared voice, playback receipts and cancellation',{timeout:30000},async t=>{
@@ -35,12 +36,12 @@ test('official page and gateway use the verified DSH lane, shared voice, playbac
   const provider = join(root,'provider.json');
   await writeFile(provider,JSON.stringify({models:{providers:{clawling:{apiKey:'fixture',
     baseUrl:'http://127.0.0.1:'+platform.address().port+'/v1'}}}}));
+  const verifiedVoice = 'qwen-audio-3.0-tts-flash-fixture';
   await mkdir(join(root,'aurabot'));
-  await writeFile(join(root,'aurabot/config.json'),JSON.stringify({voice:{platformVoice:'longanfengyue'}}));
   const route={account:'verified',conversation:'private',sender:'owner'};
   const publicOrigin='https://app-fixture.apps.clawling.io';
   const options={dataDir:root,cwd:root,clawchat:{route},speech:{enabled:true,providerConfigPath:provider,
-    asrModel:'fixture-asr',ttsModel:'fixture-tts',voice:'FallbackVoice'},realtime:{port:0,publicOrigin,python:process.env.WHALENEST_TEST_PYTHON}};
+    asrModel:'fixture-asr',ttsModel:'fixture-tts'},realtime:{port:0,publicOrigin,python:process.env.WHALENEST_TEST_PYTHON}};
   let playback, voiceActive=false, prepared=0, profileReads=0, resolveProfile;
   const profile = new Promise(resolve=>{resolveProfile=resolve;});
   service=await startPlatformVoiceLiveware(options,{readProfile:()=>{profileReads++;return profile;},listModels:async()=>[
@@ -106,7 +107,7 @@ test('official page and gateway use the verified DSH lane, shared voice, playbac
   assert.ok(client.frames.some(frame=>frame.type==='subtitle'&&frame.text==='你好，我在这里。'));
   assert.ok(client.frames.some(frame=>frame.type==='audio'&&frame.pcm.length>0));
   assert.ok(!JSON.stringify(client.frames).includes('private reasoning'));
-  assert.equal(speechRequests[0].voice,'longanfengyue');
+  assert.equal(speechRequests[0].voice,defaultPlatformVoice);
   assert.equal(speechRequests.length,1);
   client.upload('first',pcm);
   await delay(150);
@@ -129,10 +130,12 @@ test('official page and gateway use the verified DSH lane, shared voice, playbac
   const status='/startup-status?stage=4&socket=1&mic=1';
   assert.equal((await fetch(origin+status)).status,403);
   assert.equal((await fetch(origin+status,{headers:{'x-clawchat-user-id':route.sender}})).status,200);
+  await writeFile(join(root,'aurabot/config.json'),JSON.stringify({voice:{platformVoice:verifiedVoice}}));
   transcript='你好大肥鱼';
   client=await connectPlatformVoice(origin,route.sender,{startupFallback:true,browserOrigin:publicOrigin});
   client.upload('fallback',pcm);
   await client.waitFor(frame=>frame.type==='turn_complete'&&frame.client_turn_id==='fallback');
+  assert.equal(speechRequests[1].voice,verifiedVoice);
   assert.ok(client.frames.some(frame=>frame.type==='audio'&&frame.pcm.length>0));
   await client.close();
   for(let i=0;i<30&&voiceActive;i++)await delay(25);

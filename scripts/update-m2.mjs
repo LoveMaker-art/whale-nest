@@ -219,7 +219,7 @@ for(const file of Object.keys(plan.inputs).filter(path=>path.startsWith(home+'/'
 }
 const candidate={...plan.instance,
  media:{maxCount:4,maxBytesEach:16*1024*1024,maxBytesTotal:32*1024*1024,...plan.instance.media},
- speech:{enabled:false,provider:'clawling',providerConfigPath:join(home,'.clawchat-dsh/config.json'),asrModel:'fun-asr-flash',ttsModel:'',voice:'Cherry',...plan.instance.speech}};
+ speech:{enabled:false,provider:'clawling',providerConfigPath:join(home,'.clawchat-dsh/config.json'),asrModel:'fun-asr-flash',ttsModel:'',...plan.instance.speech}};
 delete candidate.management;
 if(withSpeech)candidate.speech=enablePlatformSpeech(candidate.speech);
 if(withImages)candidate.image=enablePlatformImage({providerConfigPath:candidate.speech.providerConfigPath,...candidate.image});

@@ -7,6 +7,9 @@ import { createHash } from 'node:crypto';
 import {readPlatformProvider} from './platform-provider.mjs';
 import {buildWav,parseWav} from '../vendor/aurabot/src/voice/wav.js';
 
+export const defaultPlatformVoice = 'qwen-audio-3.0-tts-flash-fy1ae4cdd1-95f01c83d3984a62bffbfcaae018a8cf';
+export const platformVoiceIdPattern = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,119}$/;
+
 const flights=new Map(),digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 
 export function createSpeechClient(options, fetchImpl = fetch, {getVoice} = {}) {
@@ -45,8 +48,8 @@ export function createSpeechClient(options, fetchImpl = fetch, {getVoice} = {}) 
       assert.ok(typeof requestId==='string'&&requestId&&requestId.length<=256,'语音请求需要稳定标识');signal?.throwIfAborted();
       const { speech,base } = await route(); assert.ok(speech.ttsModel, '尚未配置语音合成模型');
       const format=speech.responseFormat??'pcm',sampleRate=speech.sampleRate??22050;
-      const voice=requestedVoice??getVoice?.()??speech.voice??'longanfengyue';
-      assert.ok(typeof voice==='string'&&/^[a-zA-Z0-9_-]{1,120}$/.test(voice),'音色标识无效');
+      const voice=requestedVoice??getVoice?.()??speech.voice??defaultPlatformVoice;
+      assert.ok(typeof voice==='string'&&platformVoiceIdPattern.test(voice),'音色标识无效');
       // These tags are restricted to the platform model/voice verified by
       // listening acceptance. Other combinations keep their plain input.
       const tag=['excited','sad'].includes(requestedEmotion)?'['+requestedEmotion+']':'';

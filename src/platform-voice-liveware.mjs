@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {readPlatformProvider} from './platform-provider.mjs';
 import {startPlatformVoiceBridge} from './platform-voice-bridge.mjs';
+import {defaultPlatformVoice} from './speech.mjs';
 import {writeState} from './state.mjs';
 
 const run = promisify(execFile);
@@ -66,7 +67,7 @@ export async function startPlatformVoiceLiveware(options,{withPrivateVoiceSessio
       stopped.then(()=>clearTimeout(timer));
     });
     child.stdin.end(JSON.stringify({port,base,key,secret:secret.toString(),owner:options.clawchat.route.sender,public_origin:publicOrigin,
-      asr_model:speech.asrModel,tts_model:speech.ttsModel,voice:speech.voice??'longanfengyue',
+      asr_model:speech.asrModel,tts_model:speech.ttsModel,voice:speech.voice||defaultPlatformVoice,
       sample_rate:speech.sampleRate??22050,default_avatar:defaultAvatar,bridge:bridge.port,data_dir:join(options.dataDir,'realtime/platform')}));
     const listening = await ready;
     writeState(join(options.dataDir,'realtime/server.json'),{

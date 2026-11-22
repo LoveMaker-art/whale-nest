@@ -15,7 +15,7 @@
 | 原voice.speak及兼容构建 | 增加平台后端接缝，调用同一个speech.synthesize，返回原Hub所需文件与实际格式；稳定调用ID随执行入口传入，不靠文本或时间猜身份。 |
 | 原Hub语音入站 | 保留get_record获取/解码能力，接同一个speech.transcribe；选定平台后不再同时调用QQ转写与本地模型。CC继续走现有prepareRuntimeInput。 |
 | speech.mjs | 保留认证、接口、PCM封装和生成缓存；接运行时音色读取。ASR沿已有输入记录去重，QQ补相同语义的入站识别记录，避免回放重新转写。 |
-| 原配置及现有管理工具 | 原aurabot/config.json的voice.platformVoice作为当前平台音色唯一可写值；兼容配置校验和保存。首次取现有实例speech.voice，不替换声音；旧值只作迁移输入，两端管理均改同一值。 |
+| 原配置及现有管理工具 | 原aurabot/config.json的voice.platformVoice作为当前平台音色唯一可写值；兼容配置校验和保存。已保存的音色优先，其次读取实例的 speech.voice，缺省时使用项目初始音色。日常语音与实时通话读取同一值。 |
 | voice.mjs、原Hub与[expressions.mjs](../../src/expressions.mjs) | 各自获取可信Session/调用身份后，调用同一voice能力；只在平台格式和实际投递上不同。未获发送确认保留可读文字。 |
 
 音色在请求开始时固定。改音色只影响后续新请求，既有音频与未知回执保留原音色，不能因设置变化自动重新合成。音色只接受当前后端实际支持的选择；不可用时说明，不伪报保存成功。
@@ -28,7 +28,7 @@ expressions/settings.json是共同表达设置的权威来源，两端管理更�
 
 基础语音15%、表情35%，自动语音最多80字。手动已发媒体不再自动补发，明确文字偏好优先；关闭随机语音不阻止后续明确语音请求。此接缝同时服务[表情设计](stickers.md)，不建立通用表达计划引擎或第二套心情。
 
-companion_voice在两端主人私聊提供status/list/update。实机模型目录没有返回音色枚举，list只列本实例已验证音色；update对新音色做一次固定短语的真实合成检查，成功后才持久化，检查属于前台TTS用量。默认仍为longanfengyue。
+companion_voice在两端主人私聊提供status/list/update。实机模型目录没有返回音色枚举，list只列本实例已验证音色；update对新音色做一次固定短语的真实合成检查，成功后才持久化，检查属于前台TTS用量。新实例的初始音色为 `qwen-audio-3.0-tts-flash-fy1ae4cdd1-95f01c83d3984a62bffbfcaae018a8cf`，使用 `qwen-audio-3.0-tts-flash` 合成。
 
 兼容构建从原Hub提取aurabot-expression.generated.mjs，QQ与CC均调用这一个选择函数；expressions/settings.json保持唯一表达偏好。QQ输入识别、随机选择及语音发送按原消息/回合身份保存，未知不自动换ID重试。旧版回退保留文件与回执，将当前音色投影给旧CC客户端并关闭尚无平台接缝的旧QQ voice，避免启动桌面TTS；重新升级恢复原模块。
 

@@ -209,7 +209,7 @@ class Config:
                 or self.tts_ws_cancel_s > 5 or self.tts_sample_rate not in (8000, 16000, 22050, 24000, 44100, 48000)
                 or not isinstance(self.tts_model, str) or not self.tts_model.strip() or len(self.tts_model) > 256
                 or any(ord(c) < 32 or ord(c) == 127 for c in self.tts_model)
-                or not isinstance(self.tts_voice, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', self.tts_voice)):
+                or not isinstance(self.tts_voice, str) or not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}', self.tts_voice)):
             raise ConfigError('invalid_tts_config')
         if self.port >= 65536:
             raise ConfigError('invalid_port')

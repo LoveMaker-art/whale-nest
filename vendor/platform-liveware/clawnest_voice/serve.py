@@ -294,6 +294,8 @@ class Server:
         digest = hashlib.sha256()
         for name, body in sorted(self.assets.items()):
             digest.update(name.encode() + b'\0' + body + b'\0')
+        if self.default_avatar is not None:
+            digest.update(b'default-avatar.png\0' + self.default_avatar)
         self.build_id = digest.hexdigest()[:12]
         self.http_voice = HttpVoiceTransport(manager, self.build_id)
         for name in ('page.html', 'classic.html'):

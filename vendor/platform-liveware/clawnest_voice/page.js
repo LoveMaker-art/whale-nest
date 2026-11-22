@@ -796,14 +796,16 @@ function renderConnectionLamp(name, fatal) {
   viewText('connection-status', label);
 }
 async function loadAgentProfile() {
-  const avatar = $('agent-avatar'), fallback = avatar.src;
+  const avatar = $('agent-avatar');
+  const fallback = new URL(basePath() + avatar.dataset.fallback, location.href).href;
+  avatar.addEventListener('load', () => { avatar.hidden = false; }, {once:true});
   avatar.addEventListener('error', () => {
     if (avatar.src !== fallback) avatar.src = fallback;
   });
   for (let attempt = 0; attempt < 12; attempt++) {
     try {
       const response = await fetch(basePath() + 'profile', {credentials:'same-origin',cache:'no-store'});
-      if (!response.ok) return;
+      if (!response.ok) break;
       const profile = await response.json();
       if (profile.name && profile.name !== agentDisplayName) {
         agentDisplayName = profile.name;
@@ -811,11 +813,12 @@ async function loadAgentProfile() {
         viewText('mic-sensitivity-title', t('让{agent}更容易听到你').replace('{agent}', () => agentDisplayName));
         updateMicSettings();
       }
-      if (profile.avatar) avatar.src = profile.avatar;
-      if (!profile.pending) return;
-    } catch (_) { return; }
-    await new Promise(resolve => setTimeout(resolve,750));
+      if (profile.avatar) { avatar.src = profile.avatar; return; }
+      if (!profile.pending) break;
+    } catch (_) { break; }
+    if (attempt < 11) await new Promise(resolve => setTimeout(resolve,750));
   }
+  avatar.src = fallback;
 }
 function showCaptionHistory(show) {
   $('call-history').hidden = !show;

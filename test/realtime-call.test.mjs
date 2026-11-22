@@ -4,9 +4,12 @@ import {mkdtemp,rm,readFile,writeFile,mkdir,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer} from 'node:http';
+import {runInNewContext} from 'node:vm';
 import {setTimeout as delay} from 'node:timers/promises';
 import {startPlatformVoiceLiveware} from '../src/platform-voice-liveware.mjs';
 import {defaultPlatformVoice} from '../src/speech.mjs';
+import {extendRuntimeEntry} from '../src/runtime-extension.mjs';
+import {prepareConnect} from '../scripts/prepare-connect.mjs';
 import {connectPlatformVoice,connectPlatformVoiceHttp} from './platform-voice-client.mjs';
 
 test('official page and gateway use the verified DSH lane, shared voice, playback receipts and cancellation',{timeout:30000},async t=>{
@@ -86,10 +89,30 @@ test('official page and gateway use the verified DSH lane, shared voice, playbac
   assert.equal((await fetch(origin+'/default-avatar.png')).status,403);
   const avatar=await fetch(origin+'/default-avatar.png',{headers});
   assert.equal(avatar.headers.get('content-type'),'image/png');
-  assert.equal(Buffer.from(await avatar.arrayBuffer()).subarray(1,4).toString(),'PNG');
+  assert.deepEqual(Buffer.from(await avatar.arrayBuffer()),await readFile(new URL('../src/assets/whalenest-avatar.png',import.meta.url)));
   const page=await (await fetch(origin,{headers})).text();
   assert.match(page,/<title>鲸栖通话<\/title>/);
   assert.match(page,/鲸栖通话<\/h1>/);
+  const portrait=page.match(/<img id="agent-avatar"[^>]*>/)?.[0]??'';
+  assert.match(portrait,/\bhidden\b/);
+  assert.doesNotMatch(portrait,/\ssrc=/,'The browser must wait for the account profile before displaying any portrait');
+  const fallback=portrait.match(/data-fallback="([^"]+)"/)?.[1];
+  assert.match(fallback,/^default-avatar\.png\?v=[0-9a-f]{12}$/);
+  const pageScript=await (await fetch(origin+'/page.js',{headers})).text();
+  const script=pageScript.slice(pageScript.indexOf('async function loadAgentProfile()'),pageScript.indexOf('function showCaptionHistory('));
+  const avatarLoads=[],avatarEvents={};
+  const image={dataset:{fallback},hidden:true,set src(value){avatarLoads.push(value);},get src(){return avatarLoads.at(-1);},
+    addEventListener(name,callback){avatarEvents[name]=callback;}};
+  const correctedAvatar='https://media.clawling.chat/current.png';
+  const queuedProfiles=[{pending:true},{name:'',avatar:correctedAvatar,pending:false}];
+  await runInNewContext(script+'\nloadAgentProfile()',{
+    $:()=>image,URL,location:{href:origin+'/'},basePath:()=>'/',setTimeout:callback=>callback(),
+    fetch:async()=>({ok:true,json:async()=>queuedProfiles.shift()}),
+  });
+  assert.deepEqual(avatarLoads,[correctedAvatar]);
+  assert.equal(image.hidden,true,'Do not reveal the browser image until it has loaded');
+  avatarEvents.load();
+  assert.equal(image.hidden,false);
   assert.match(await (await fetch(origin+'/classic',{headers})).text(),/<title>鲸栖通话<\/title>/);
   for (const id of ['agent-avatar','agent-name','mic-toggle','captions-toggle','text-sync']) assert.match(page,new RegExp('id="'+id+'"'));
   const readProfile=async()=>await (await fetch(origin+'/profile',{headers})).json();
@@ -184,4 +207,73 @@ test('official page and gateway use the verified DSH lane, shared voice, playbac
   client.send({type:'barge_in',client_turn_id:'https-cancel'});
   for(let i=0;i<70&&cancelCount<3;i++)await delay(20);
   assert.equal(cancelCount,3);
+});
+
+test('first binding starts and publishes both private Liveware apps without a chat turn',{timeout:18000},async t=>{
+  const root=await mkdtemp(join(tmpdir(),'whalenest-liveware-first-binding-'));
+  const directory=join(root,'companion/aurabot-v1');
+  await mkdir(directory,{recursive:true});
+  let adapter;
+  t.after(async()=>{await adapter?.close();await rm(root,{recursive:true,force:true});});
+  const instancePath=join(directory,'instance.json');
+  const providerPath=join(root,'provider.json');
+  const connectBin=join(root,'connect');
+  const commands=join(root,'commands.jsonl');
+  const route={channel:'clawchat',kind:'private',account:'verified',conversation:'private',sender:'owner'};
+  const template={instanceId:'provisioned',home:root,dataDir:directory,cwd:root,clawchat:{firstBinding:true,
+    delivery:{connectBin,configPath:join(root,'connect.json')}},
+    speech:{providerConfigPath:providerPath,asrModel:'fixture-asr',ttsModel:'fixture-tts'},
+    realtime:{port:0,python:process.env.WHALENEST_TEST_PYTHON},
+    singing:{playback:{port:0}}};
+  await writeFile(providerPath,JSON.stringify({models:{providers:{clawling:{apiKey:'fixture',baseUrl:'http://127.0.0.1:1/v1'}}}}));
+  const templatePath=join(root,'instance-template.json'),preparation=join(root,'prepared');
+  await writeFile(templatePath,JSON.stringify(template));
+  await prepareConnect(templatePath,preparation);
+  const options=JSON.parse(await readFile(join(preparation,'instance.json'),'utf8'));
+  assert.ok(options.realtime.enabled&&options.singing.enabled&&options.singing.playback.enabled);
+  await writeFile(instancePath,JSON.stringify(options));
+  await writeFile(connectBin,'#!'+process.execPath+'\n'+
+    `const fs=require('node:fs');const [channel,type,action,...args]=process.argv.slice(2);
+      const get=flag=>args[args.indexOf(flag)+1];
+      if(channel!=='liveware')process.exit(1);
+      fs.appendFileSync(${JSON.stringify(commands)},JSON.stringify({type,action,args})+'\\n');
+      const key=action==='create'?(get('--name')==='鲸栖通话'?'call':'songs'):get('--app-id');
+      const result=action==='create'?{appId:key,name:get('--name')}:
+        {appId:key,publicUrl:'https://app-'+key+'.apps.clawling.io/',registeredInClawChat:true};
+      console.log(JSON.stringify({status:'succeeded',result}));`,{mode:0o700});
+  let provider;
+  const base={activate(context){context.hostCapabilities.get('runtime-provider').register({create:()=>({
+    async prepare(){
+      await writeFile(join(directory,'first-binding.json'),JSON.stringify({id:'verified-first-binding'}));
+      await writeFile(instancePath,JSON.stringify({...options,owners:[route],clawchat:{...options.clawchat,route}}));
+    },
+  })});}};
+  await extendRuntimeEntry(base).activate({hostCapabilities:{get:()=>({register:value=>{provider=value;}})}});
+  adapter=provider.create({homePath:root},{withPrivateVoiceSession:async()=>{}});
+  await assert.rejects(readFile(commands),{code:'ENOENT'});
+  await adapter.prepare();
+  const load=async name=>JSON.parse(await readFile(join(directory,name),'utf8'));
+  let call,song;
+  for(let i=0;i<50&&!(call&&song);i++){
+    call=await load('call-liveware.json').catch(()=>null);
+    song=await load('song-liveware.json').catch(()=>null);
+    if(!(call&&song))await delay(50);
+  }
+  assert.equal(call?.url,'https://app-call.apps.clawling.io/');
+  assert.equal(song?.url,'https://app-songs.apps.clawling.io/');
+  assert.equal(call.owner,route.sender);
+  assert.equal(song.binding,route.account);
+  const invocations=async()=> (await readFile(commands,'utf8')).trim().split('\n').map(JSON.parse);
+  const initial=await invocations();
+  assert.equal(initial.length,4);
+  for(const item of initial.filter(row=>row.action==='create'))assert.ok(item.args.includes('private'));
+  for(const item of initial.filter(row=>row.action==='bind')){
+    const target=item.args[item.args.indexOf('--upstream')+1];
+    assert.match(target,/^http:\/\/127\.0\.0\.1:\d+$/);
+    assert.equal((await fetch(target+'/healthz')).status,200);
+  }
+  await adapter.prepare();
+  await adapter.close();
+  adapter=undefined;
+  assert.deepEqual(await invocations(),initial);
 });

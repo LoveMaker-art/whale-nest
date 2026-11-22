@@ -11,7 +11,7 @@
     "url": "https://apps-nest.clawling.com/api/v1/apps/clawnest-voice/versions/0.1.11/download",
     "sha256": "7bc03977b6232d0238f339003bbbb7c7c811dfaefa4d6191920c465507383b05",
     "commit": "4c8ae57adcc987b18fb094aa9793500cb849bcc4",
-    "adapted": ["gateway.py", "quota.py", "serve.py", "upstream.py", "page.html", "page.js", "classic-page.js", "i18n.js"],
+    "adapted": ["gateway.py", "quota.py", "serve.py", "upstream.py", "page.html", "page.css", "page.js", "classic-page.js", "i18n.js"],
     "transport": ["dsh_http.py", "dsh-http.js"],
     "entry": "dsh_runtime.py"
   }

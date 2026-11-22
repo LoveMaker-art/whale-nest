@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { resolve, join, isAbsolute } from 'node:path';
+import { dirname, resolve, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildConnectBridge } from './build-connect.mjs';
 import { prepareProfile } from '../src/profile.mjs';
+import { enablePlatformSinging, enablePlatformSpeech } from '../src/runtime-upgrade.mjs';
 
 export async function prepareConnect(configPath, destination) {
   configPath = resolve(configPath); destination = resolve(destination);
@@ -15,14 +16,21 @@ export async function prepareConnect(configPath, destination) {
   if (unpaired) {
     assert.ok(!options.owners?.length && !options.clawchat.legacySnapshotPath, 'An unpaired instance must have no copied owner or legacy session');
     assert.ok(isAbsolute(options.clawchat.delivery.configPath) && isAbsolute(options.clawchat.delivery.connectBin), 'The preinstalled instance needs Connect paths');
+    const providerConfigPath=options.speech?.providerConfigPath??join(dirname(options.home),'.clawchat-dsh/config.json');
+    options.realtime={enabled:options.speech?.enabled!==false,...options.realtime};
+    if(options.realtime.enabled && options.speech?.enabled!==false)
+      options.speech=enablePlatformSpeech({providerConfigPath,...options.speech});
+    options.singing={enabled:true,...options.singing,playback:{enabled:options.singing?.enabled!==false,...options.singing?.playback}};
+    if(options.singing.enabled)options.singing=enablePlatformSinging({providerConfigPath,...options.singing});
   } else {
     assert.ok(options.owners?.length && options.clawchat?.route?.channel === 'clawchat' && options.clawchat.route.kind === 'private',
       'A verified ClawChat private route is required');
   }
   await mkdir(destination, { recursive: true, mode: 0o700 });
   const entry = await buildConnectBridge(destination);
-  await writeFile(join(destination, 'instance.json'), JSON.stringify(options, null, 2), { mode: 0o600 });
-  await prepareProfile(options.home, configPath, { bridgeEntry: entry, externalOverlay: true });
+  const preparedConfig=join(destination, 'instance.json');
+  await writeFile(preparedConfig, JSON.stringify(options, null, 2), { mode: 0o600 });
+  await prepareProfile(options.home, preparedConfig, { bridgeEntry: entry, externalOverlay: true });
   const plan = { schema: 1, state: 'prepared-not-active', bridgeEntry: entry, profile: 'whalenest', home: options.home,
     connectionOwner: 'existing ClawChat Core', automaticTaskCreation: false, accountBindingChanged: false,
     removeAfterCutover: ['dsh-mnemon', 'dsh-feiyu-mood', 'dsh-bili-subagent'],

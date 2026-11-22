@@ -262,6 +262,7 @@ body[data-animation=thinking] .water-rings{display:none}
 .call-focus {display: grid; justify-items: center; align-content: center; overflow: hidden; padding: 9px 20px; text-align: center}
 .call-portrait {position: relative; isolation: isolate; width: clamp(80px, 24dvh, 146px); aspect-ratio: 1}
 .call-portrait img {display: block; width: 100%; height: 100%; border: 2px solid #b8eff736; border-radius: 50%; object-fit: cover; box-shadow: 0 8px 44px #04182561}
+.call-portrait img[hidden] {display: none}
 .call-rings {position: absolute; z-index: -1; inset: -13px; border: 1px solid #b1eaff3b; border-radius: 50%; box-shadow: 0 0 38px #91deff22}
 .call-rings::before,.call-rings::after {content: ""; position: absolute; inset: -16px; border: 1px solid #b1eaff26; border-radius: inherit}
 .call-rings::after {inset: -31px; border-color: #b1eaff18}

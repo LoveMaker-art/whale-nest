@@ -18,7 +18,7 @@
 </header>
 <div class="error-card" id="notice" aria-label="通知"><span class="notice-icon" aria-hidden="true">!</span><p id="error" role="status" aria-live="polite"></p><button class="error-action" id="error-action" hidden>知道了</button><button class="notice-close" id="notice-close" aria-label="关闭通知"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
 <section class="call-focus" aria-label="通话对象">
-  <div class="call-portrait"><div class="call-rings" aria-hidden="true"></div><img id="agent-avatar" src="default-avatar.png" alt="" referrerpolicy="no-referrer"></div>
+  <div class="call-portrait"><div class="call-rings" aria-hidden="true"></div><img id="agent-avatar" data-fallback="default-avatar.png?v=__VOICE_BUILD_ID__" alt="" referrerpolicy="no-referrer" hidden></div>
   <h2 id="agent-name">语音通话</h2>
   <p id="status" role="status" aria-live="polite" aria-atomic="true">点击拨打</p>
   <p class="sr-only" id="hint">点一下，开启麦克风。</p>

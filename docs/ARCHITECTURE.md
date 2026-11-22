@@ -9,7 +9,7 @@ flowchart TB
     CC[ClawChat] <--> CORE[原Connect连接与认证]
     CORE <--> CCA[ClawChat Runtime Adapter]
     CCA <--> CCS[ClawChat Session]
-    QQ[QQ] <--> GW[待实配的OneBot网关]
+    QQ[QQ] <--> GW[宿主提供的 OneBot 网关]
     GW <--> HUB[Aurabot原QQ Hub]
     HUB <--> QQS[QQ Session]
     LW[ClawNest Voice Liveware] <--> CALL[平台语音网关与 DSH 适配]
@@ -23,7 +23,7 @@ flowchart TB
     OUT --> HUB
 ```
 
-一个实例允许多个Session，每个Session保持唯一写入者。原QQ Hub与ClawChat分别管理来源会话，共用一份模块实例和持久业务状态；不同用户实例隔离数据、凭据、任务与额度。图中QQ与通话是设计和代码接缝，不代表真实账号或端到端链路已验。
+一个实例允许多个会话，每个会话保持唯一写入者。原 QQ Hub 与 ClawChat 分别管理来源会话，共用一份模块实例和持久业务状态。不同用户实例隔离数据、凭据、任务与额度。QQ 扫码登录和主人关联由宿主网关与鲸栖协作完成，双端聊天和通话的实际验收范围见当前状态。[QQ 接入](tasks/M4-qq-dual-platform.md) · [功能验收](STATUS.md#功能交付)
 
 ## 改造边界与唯一状态
 
@@ -102,4 +102,4 @@ Core桥从原生持久日志恢复已完成调度回合，意图与重放检查�
 
 鲸栖通过 `.connect-plugin` 注册 Runtime，并为支持的 DSH 和 ClawChat Connect 版本维护安装和兼容条件。安装与更新校验包来源、版本及配置继承。会话、业务数据和凭据存放在宿主配置指定的目录，和插件代码分别保存。[插件更新方案](tasks/plugin-updates.md)
 
-模型服务统一使用平台后端；不在租赁实例安装推理模型或接入外部模型订阅。同机QQ网关需按实际资源实测，不能根据宿主总内存推算2GiB容器容量；真实网关选择及用户实例插件更新尚须分别核实和验收。
+模型服务统一使用平台后端。首发以 2 GiB 实例为目标，DSH 与 QQ 网关同机运行时，以实例实际的容器内存配额核验资源占用。各版本的部署与更新验收见当前状态。[QQ 网关运维](DEVELOPMENT.md#qq测试网关运维) · [当前状态](STATUS.md)

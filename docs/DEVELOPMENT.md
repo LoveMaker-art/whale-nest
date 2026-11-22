@@ -6,15 +6,20 @@
 
 | 位置 | 职责 |
 | --- | --- |
-| [companion](../src/companion.mjs)、[原宿主构建](../scripts/build-aurabot-host.mjs) | 模块装配、原QQ宿主及会话接线 |
-| [runtime-extension](../src/runtime-extension.mjs)、[connect-bridge](../src/connect-bridge.mjs) | ClawChat输入、原DSH执行及受控工具 |
+| [companion](../src/companion.mjs)、[aurabot-native](../src/aurabot-native.mjs) | 陪伴模块装配、原 Aurabot 宿主启动及会话接线 |
 | [routing](../src/routing.mjs)、[companion-policy](../src/companion-policy.mjs) | 可信身份、目标与共同任务/预算 |
-| [delivery](../src/delivery.mjs)、[media-delivery](../src/media-delivery.mjs) | 稳定投递、平台确认及未知回执 |
 | [update-m2](../scripts/update-m2.mjs)、[runtime-upgrade](../src/runtime-upgrade.mjs) | 当前原实例更新、兼容迁移与回退 |
 | [build-distribution](../scripts/build-distribution.mjs) | Linux x64运行包、来源/许可及文件摘要 |
 | [test](../scripts/test.mjs)、[package.json](../package.json) | 测试集合、串行资源约束与命令 |
 
-Aurabot原文件保持来源校验，适配放src或构建器；不直接编辑vendor或生成产物。逐项模块设计见[功能索引](technical/README.md)。
+### 对话代码路径
+
+- **ClawChat 私聊。** Connect Core 接收消息并维护原会话。`runtime-extension.mjs` 核对绑定和会话来源，准备文本与附件。`connect-bridge.mjs` 在原生 DSH 会话中挂载陪伴能力，普通回复沿原 Runtime 返回 Connect Core，由 Core 发回私聊。[Runtime 适配](../src/runtime-extension.mjs) · [会话桥](../src/connect-bridge.mjs)
+- **QQ 聊天。** 宿主的 OneBot 网关把消息交给 Aurabot 宿主和 QQ Hub。Hub 按聊天选择 DSH 会话，并经 OneBot 将普通回复发回原聊天。扫码、主人关联和重连从 `qq-connection.mjs` 查起。[运行中的 QQ Hub](../src/aurabot-hub.generated.mjs) · [QQ 接入](../src/qq-connection.mjs)
+- **通知和媒体回执。** 从 `routing.mjs` 查投递目标。待投递的后台通知由 `connect-bridge.mjs` 取出，并按目标调用 ClawChat 或 QQ 出口。`delivery.mjs` 记录这些通知的结果，工具媒体发送由 `media-delivery.mjs` 处理。[目标选择](../src/routing.mjs) · [通知投递](../src/connect-bridge.mjs) · [通知回执](../src/delivery.mjs) · [媒体投递](../src/media-delivery.mjs)
+- **本地隔离验证。** `npm start` 经 `scripts/start.mjs` 启动本地 DSH 宿主，`host.mjs` 将标准输入中的 `receive` 请求传给 `companion.mjs`。[启动脚本](../scripts/start.mjs) · [本地宿主](../src/host.mjs)
+
+`vendor/aurabot/` 保存固定上游源码，`src/aurabot-*.generated.*` 是兼容构建生成的运行文件。修改行为时从对应适配器或生成脚本入手。各模块的原始实现和适配入口可在功能索引中查找。[原宿主构建](../scripts/build-aurabot-host.mjs) · [功能索引](technical/README.md)
 
 ## 本地检查与回归
 
@@ -38,7 +43,7 @@ Node.js 24 执行 `npm ci` 后，运行 `npm run build:distribution`。默认版
 当前测试版的完整构建命令如下。
 
 ```sh
-npm run build:distribution -- .whale-nest/distribution linux-x64 1.0.0-beta.2 docs/releases/1.0.0-beta.2.md
+npm run build:distribution -- .whale-nest/distribution linux-x64 1.0.0-beta.3 docs/releases/1.0.0-beta.3.md
 ```
 
 GitHub 预发行标签使用 `v` 加完整版本号。发行资产包含同版本的 Linux x64 `.connect-plugin` 和 `distribution.json`。安装前核对 SHA-256、DSH、Connect Core 和实例数据格式。云端聊天更新对发行源的要求见[更新说明](tasks/plugin-updates.md#发行与实例配置)。
@@ -123,9 +128,9 @@ Core桥从原生已完成调度日志恢复投递意图及检查点，不重新�
 
 平台准备全新用户实例时，在实际 `DSH_HOME/companion/aurabot-v1/instance.json` 的 `clawchat` 段设置 `"firstBinding": true`，沿用实例内 Connect 程序和配置的绝对路径。新实例的 `owners` 为空，由 Connect 在配对后提供身份。准备未绑定的桥时可将同一实例配置传给 `prepare:connect`。已有绑定实例沿正常更新流程保留其身份和资料。
 
-首发预置同时启用 `singing.enabled`、`singing.playback.enabled` 和 `realtime.enabled`，准备平台写歌和 ASR/TTS 接线。用现有更新入口准备源实例时，使用 `--media-core --speech --songs --song-liveware --realtime`。以用户实例的配对身份核对[歌曲作品页](#歌曲-liveware)和[私有通话入口](tasks/realtime-call.md#接入与验收)，验收两项功能在首次开通后可用。
+用 `prepare:connect` 处理未绑定模板时，输出的 `instance.json` 默认开启写歌、歌曲作品页和实时通话，并准备平台模型接线。预装实例使用这份配置经过支持 Liveware 中继的 Connect 启动。用现有更新入口准备源实例时，使用 `--media-core --speech --songs --song-liveware --realtime`。首次绑定核验主人后，两个本地服务启动，并通过原 Connect 绑定登记私有入口。已登记的私有入口分别保存在 `dataDir/call-liveware.json` 和 `dataDir/song-liveware.json`。验收时在原私聊打开[歌曲作品页](#歌曲-liveware)和[通话入口](tasks/realtime-call.md#接入与验收)。
 
-Connect 完成配对并准备 DSH 时，桥从本机 Connect 数据库核对原生绑定、安装主人和私聊，写入实例路由。握手成功后，插件经既有 Connect 工具生成并投递开场白，读取并按需初始化 Agent 头像。首配记录保存在 `dataDir/first-binding.json`。开场白在这次用户开通中最多调用一次模型。内存保护或模型失败时仍发送文字兜底并处理头像。头像使用随包的[小鲸鱼 PNG](../src/assets/whalenest-avatar.png)。未知发送结果按原请求核对回执。真实平台验收从新配对码开始，查看手机端头像和首条文字，再发送一条普通聊天消息并重启复查。[开通体验](tasks/feature-experience-review.md#3-开场白与头像)
+Connect 完成配对并准备 DSH 时，桥从本机 Connect 数据库核对原生绑定、安装主人和私聊，写入实例路由。握手成功后，插件经既有 Connect 工具生成并投递开场白，读取并按需初始化 Agent 头像。首配记录保存在 `dataDir/first-binding.json`。开场白在这次用户开通中最多调用一次模型。内存保护或模型失败时仍发送文字兜底并处理头像。头像使用随包的[鲸鱼娘头像 PNG](../src/assets/whalenest-avatar.png)。未知发送结果按原请求核对回执。真实平台验收从新配对码开始，查看手机端头像和首条文字，再发送一条普通聊天消息并重启复查。[开通体验](tasks/feature-experience-review.md#3-开场白与头像)
 
 ## ClawChat 对话自测
 

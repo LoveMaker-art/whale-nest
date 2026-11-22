@@ -8,6 +8,7 @@ import {qqManagementFallback} from './qq-management-message.mjs';
 import {withRequiredCommands} from './reply-notice.mjs';
 import { startPlatformVoiceLiveware } from './platform-voice-liveware.mjs';
 import { startSongPlayback } from './song-playback.mjs';
+import { publishFirstLiveware } from './first-liveware.mjs';
 import { fastVoiceModel } from './voice-model.mjs';
 
 function adaptImages(input, models) {
@@ -44,33 +45,49 @@ export function extendRuntimeEntry(base) {
                 const home = configuration.homePath || process.env.DSH_HOME || join(homedir(), '.dsh');
                 return JSON.parse(readFileSync(join(home, 'companion/aurabot-v1/instance.json'), 'utf8'));
               };
-              let callServer, songServer=Promise.resolve(null), closing=false;
-              function startCallGateway() {
-                if(callServer||closing)return;
-                const options=readOptions();
-                if(!options.realtime?.enabled||!options.clawchat?.route)return;
-                callServer=startPlatformVoiceLiveware(options,{
+              let callServer, songServer, publication, closing=false;
+              const publicationAbort=new AbortController();
+              function startLiveware(options) {
+                if(closing||!options.clawchat?.route)return;
+                if(!callServer&&options.realtime?.enabled)callServer=startPlatformVoiceLiveware(options,{
                   withPrivateVoiceSession:instance?.withPrivateVoiceSession,listModels:()=>adapter.listModels?.()??[],
-                }).catch(error=>{console.error('[whalenest-call] platform gateway unavailable: '+error.message);return null;});
-              }
-              try {
-                const options=readOptions();
-                startCallGateway();
-                if(options.singing?.playback?.enabled) songServer=startSongPlayback(options).catch(error=>{
-                  console.error('[whalenest-song] Liveware playback unavailable: '+error.message);
+                }).catch(error=>{
+                  console.error('[whalenest-call] platform gateway unavailable: '+error.message);
+                  callServer=undefined;
                   return null;
                 });
-              } catch {}
+                if(!songServer&&options.singing?.playback?.enabled)songServer=startSongPlayback(options).catch(error=>{
+                  console.error('[whalenest-song] Liveware playback unavailable: '+error.message);
+                  songServer=undefined;
+                  return null;
+                });
+              }
+              function publishLiveware(options) {
+                if(closing||publication||options.clawchat?.firstBinding!==true)return;
+                publication=Promise.allSettled([['call',callServer],['song',songServer]].map(async ([kind,start])=>{
+                  const server=await start;
+                  if(server&&!publicationAbort.signal.aborted)
+                    await publishFirstLiveware(options,kind,server.port,publicationAbort.signal);
+                })).then(results=>{
+                  if(!closing&&results.some(result=>result.status==='rejected'))
+                    console.error('[whalenest-liveware] First-binding publication requires reconciliation');
+                }).finally(()=>{publication=undefined;});
+              }
+              try { startLiveware(readOptions()); } catch {}
               return new Proxy(adapter, { get(target, key) {
                 if(key==='close')return async()=>{
                   closing=true;
+                  publicationAbort.abort();
+                  await publication;
                   try { await Promise.allSettled([callServer,songServer].map(async server=>(await server)?.close())); }
                   finally { await target.close?.(); }
                 };
-                if(key==='prepare'&&typeof target.prepare==='function')return async()=>{
-                  const result=await target.prepare();
+                if(key==='prepare'&&typeof target.prepare==='function')return async(...args)=>{
+                  const result=await target.prepare(...args);
                   // First binding is resolved inside the DSH bridge.
-                  startCallGateway();
+                  const options=readOptions();
+                  startLiveware(options);
+                  publishLiveware(options);
                   return result;
                 };
                 if (key === 'listModels' && typeof target.listModels === 'function') return async (...args) => {

@@ -1,26 +1,47 @@
 {
-  "version": "0.1.0-beta.9-whalenest.media.3",
-  "upstreamCommit": "b540bc211dc924d0200e6f71c18082de490d68f4",
-  "target": "linux-x64-baseline",
-  "binarySha256": "879c00f247f88e34740e6fab91d60439f847d41b39b399d7d39894507112b43c",
-  "patchSha256": "7b90a8659c24d6818a17fb493c537044fe700934465414447ea263f7b676e9fa",
-  "offlineTests": {
-    "passed": 158,
-    "failed": 0,
-    "suites": 9
-  },
-  "typecheck": "passed",
-  "skillsManifestSha256": "551be0609b50d57f0031920c1dc8a7d48e8ec0597ae325d6e00043c0e681af27",
+  "version": "0.1.0-beta.9-whalenest.0.2.23.2",
+  "platformVersion": "0.2.23",
+  "upstreamCommit": "adfec616c51f61ee6cccf8ce08dd99b80c825c50",
   "repository": "https://github.com/x-metheus/clawchat-plugin-connect",
-  "license": "MIT",
+  "patch": "core-extension.patch",
+  "patchSha256": "60a2294d0c017a11a883e510741eb372bd902f12aeb7d34a0d4035b89ac8fa72",
+  "binarySha256": "b834a8c7bd87242c30e7c5e337bc513907d504a3a1d5e79c6c9c7d2daaf88b25",
+  "skillsManifestSha256": "64f73457dd5ccad784bbedb4916ee597d19c3cee43f8475033a235e6f7f36e18",
+  "target": "bun-linux-x64-baseline",
+  "compiler": "Bun 1.4.4",
+  "officialFixes": {
+    "modelInput": "3a0ced15",
+    "replayDone": "43718d4f",
+    "credentialRenewal": "0.2.20",
+    "rePairIdentity": "6f2ff74",
+    "mediaUploadUrl": "60c2c04"
+  },
   "hostRuntime": {
-    "patch": "input.1",
-    "upstreamCommit": "b540bc211dc924d0200e6f71c18082de490d68f4",
-    "originalFile": "runtime-lib.original.mjs",
     "sourcePath": "platform/deepseek-harness/lib.mjs",
-    "sourceSha256": "153b3200aa410a4fc0d228cfada2d97b138d0c9e96ebd707321939365b1cdde2",
-    "patchedSha256": "9e67dcf3b8f1f923688757a3828477db857464434da66b8ab6a3efd181339c81",
-    "coreBinaryChanged": false,
-    "status": "implemented; active deployment tracked in docs/STATUS.md"
-  }
+    "sha256": "23bd794c98a1685c92d069498885ad14344e820e053eaa5e87758eadaa9c60b5",
+    "files": {
+      "runtime/browser-assistant-stream.mjs": "16c5bebfeb7418fb52cee23510bf01f7eb990bbc03c2bf31900c27f089f02383",
+      "runtime/browser-chat.mjs": "9fddd001224387b445f6bb92b68ac6a8d22f080685fd4499147b38aab0d48e4a",
+      "runtime/cli.mjs": "903d87ba1146cc1125847a182cf19c1fe1cccd1a9422858d56b8e6ef2d421df2",
+      "runtime/dsh-bridge.sh": "5bad5f7a2957dc8a4936414aa27bab3458bdfe3d398a9e707c3d491d45bd592f",
+      "runtime/greeting.mjs": "808cee3470bca56d1ff044a333e549413beafaaccb16c27f8d891f9dab681fbd",
+      "runtime/lib.mjs": "23bd794c98a1685c92d069498885ad14344e820e053eaa5e87758eadaa9c60b5",
+      "runtime/media-upload-url.mjs": "387864c60dcf2d66e278012d187bde0a4739cd649c1ceb68d1dcce92a09659a5",
+      "runtime/permission-mode.mjs": "412c367e0f89f2d56e14d9a36857b4506c19c94a28a1377c34cda751b58bd88d",
+      "runtime/update-skill.mjs": "55c06b74b19742ea6007a92abd190d5805527b73e8078ec3ac73b867d5285f7b",
+      "runtime/web-activity.mjs": "88d0ff653f9eb0660ef01c37b9f045c2b29678623a4d1506b0dc7b3a5f3ecbca"
+    }
+  },
+  "coreCapabilities": [
+    "clawchat_send_media",
+    "clawchat_get_agent_permissions",
+    "withPrivateVoiceSession",
+    "afterClawChatReply"
+  ],
+  "integrationPackage": {
+    "sha256": "dd4d7c834c7eba04889423c18c13d1e59844a9e11d2a809a46d95ebb6741fb65",
+    "host": "dsh-0.2.2-rc.5-node24-host3-state1-deps9bfda3adfab4becf"
+  },
+  "officialCoreVersion": "0.1.0-beta.9",
+  "skillsConnectVersion": "0.1.0-beta.9"
 }

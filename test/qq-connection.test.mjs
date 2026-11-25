@@ -351,12 +351,12 @@ test('transition refuses live writer and recovers failed boot without erasing la
   assert.equal(readState(file).transition.state,'failed');
 });
 
-test('Core reload uses only the current plugin and binding; timeout remains uncertain and is not retried',async t=>{
+test('a historical unknown Core configure is held without replaying its request',async t=>{
   const f=fixture(t),file=qqManagementFile(f.options),id='reload-one';
   const coreFile=f.options.clawchat.delivery.configPath;
   writeState(coreFile,{agents:{'local-agent':{runtime:{pluginId:'whalenest.runtime.deepseek-harness'},runtimeConfig:{instancePath:f.configPath}}}});
   writeState(join(f.root,'connect/plugins.lock.json'),{plugins:{'whalenest.runtime.deepseek-harness':{status:'active',installationConfiguration:{},capabilityConfigurations:{}}}});
-  writeState(file,{schema:1,instanceId:f.options.instanceId,transition:{id,state:'queued',actor:f.actor().route,instanceId:f.options.instanceId,configPath:f.configPath}});
+  writeState(file,{schema:1,instanceId:f.options.instanceId,transition:{id,state:'queued',reloadState:'uncertain',actor:f.actor().route,instanceId:f.options.instanceId,configPath:f.configPath}});
   let requests=0;
   await reloadQQConnection(f.configPath,id,{fetchImpl:async(url,init)=>{
     requests++;assert.match(url,/127\.0\.0\.1:47822.*configure$/);
@@ -365,5 +365,5 @@ test('Core reload uses only the current plugin and binding; timeout remains unce
     throw Error('uncertain-network');
   }});
   assert.equal(readState(file).transition.reloadState,'uncertain');
-  await reloadQQConnection(f.configPath,id,{fetchImpl:()=>{requests++;}});assert.equal(requests,1);
+  await reloadQQConnection(f.configPath,id,{fetchImpl:()=>{requests++;}});assert.equal(requests,0);
 });

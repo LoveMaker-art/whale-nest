@@ -12,6 +12,7 @@ import {verifyLiveTools,verifyLiveModules} from './lib/live-tools.mjs';
 import {readBridgeHistory} from '../src/bridge-history.mjs';
 import {waitForSdkExit} from '../src/recovery.mjs';
 import {routeKey, senderKey} from '../src/routing.mjs';
+import {voiceModelOverlay,fastVoiceModel} from '../src/voice-model.mjs';
 process.umask(0o077);
 const [instancePath, bridgePath, outputPath, dialoguePath] = process.argv.slice(2);
 const instance = JSON.parse(await readFile(instancePath));
@@ -23,13 +24,13 @@ try {
   privateSessionId=database.prepare(`SELECT runtime_session_id AS id FROM runtime_sessions
     WHERE chat_id=? AND agent_id=? AND is_current=1 ORDER BY updated_at DESC LIMIT 1`).get(route.conversation,route.account)?.id;
 } finally {database.close();}
-const release = dirname(dirname(platform.agents.dsh.runtimeConfig.executablePathOverride));
+const release = dirname(instance.clawchat.delivery.connectBin);
 const { nativeModel, modelPatch } = await import(pathToFileURL(join(release, 'runtime/lib.mjs')));
 const model = nativeModel();
 await waitForSdkExit(instance, 0);
 const overlay = outputPath + '.overlay.json';
-await writeFile(overlay, JSON.stringify([{ insert: [{ id: 'clawchat-connect-bridge', name: resolve(bridgePath),
-  config: { home: instance.home, profile: 'sdk', build: 'whalenest-live-m1' } }] }]), { mode: 0o600 });
+await writeFile(overlay, JSON.stringify([...voiceModelOverlay({modelPatchFile:modelPatch}),{id:'sdk-jsonrpc-server',disabled:true},{ insert: [{ id: 'clawchat-connect-bridge', name: resolve(bridgePath),
+  config: { home: instance.home, profile: 'sdk', build: 'whalenest-live-m1', maxFrameBytes: 16 * 1024 * 1024 } }] }]), { mode: 0o600 });
 const child = spawn(process.execPath, ['/opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js',
   '--profile', 'sdk', '--patch', modelPatch, '--patch', overlay], {
   cwd: instance.cwd, env: { ...model.env, DSH_HOME: instance.home,
@@ -68,6 +69,11 @@ try {
   await wait(() => frames.find(f => f.type === 'hello'));
   const models = await request('models');
   assert.ok(JSON.stringify(models).includes(model.provider) && JSON.stringify(models).includes(model.model), 'Existing provider/model must be available');
+  if (instance.realtime?.enabled && voiceModelOverlay({modelPatchFile:modelPatch}).length) {
+    const callModel = models.find(item => item.provider === fastVoiceModel.provider && item.id === fastVoiceModel.model);
+    assert.ok(callModel?.reasoning?.efforts?.some(effort => effort.id === 'off'), 'Call model overlay must retain reasoning off');
+    report.callModelOverlay = {provider:callModel.provider,model:callModel.id,reasoningEffort:'off'};
+  }
   const legacyPath = instance.clawchat.legacySnapshotPath;
   const old = legacyPath ? JSON.parse(await readFile(legacyPath)) : null;
   const state = JSON.parse(await readFile(join(instance.dataDir, 'runtime.json')));

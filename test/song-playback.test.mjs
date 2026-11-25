@@ -3,16 +3,55 @@ import test from 'node:test';
 import {mkdir,mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import {ownerScope} from '../src/routing.mjs';
 import {createSongClient} from '../src/song-client.mjs';
 import {songPlaybackUrl,startSongPlayback} from '../src/song-playback.mjs';
+
+test('an asynchronous public identity lookup leaves health and stored audio available while the page waits',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'whalenest-song-identity-'));
+  let server,finishIdentity,identityStarted;
+  t.after(async()=>{finishIdentity?.(null);await server?.close();await rm(root,{recursive:true,force:true});});
+  const route={channel:'clawchat',account:'dsh',sender:'owner',kind:'private',conversation:'dm'};
+  const options={instanceId:'async-song-identity',dataDir:root,owners:[route],clawchat:{route},
+    singing:{enabled:true,playback:{enabled:true,port:0}}};
+  const id='whalenest-song-'+'c'.repeat(64),path=join(root,'media/outgoing/songs',id+'.wav');
+  const audio=Buffer.from('stored song audio');
+  await mkdir(join(root,'media/outgoing/songs'),{recursive:true});await writeFile(path,audio);
+  const client=createSongClient(options);
+  client.save({scope:ownerScope(options),requestId:id,state:'saved',parameters:{title:'已有歌曲'},durationMs:1000,
+    artifact:{path,mime:'audio/wav',size:audio.length}});
+  const started=new Promise(resolve=>{identityStarted=resolve;});
+  const identity=new Promise(resolve=>{finishIdentity=resolve;});
+  let lookups=0;
+  server=await startSongPlayback(options,{client,readAgentId:()=>{lookups++;identityStarted();return identity;}});
+  const origin='http://127.0.0.1:'+server.port,headers={'x-clawchat-user-id':'owner'};
+  const page=fetch(origin,{headers}).then(response=>response.text());
+  await started;
+  assert.equal(await (await fetch(origin+'/healthz',{signal:AbortSignal.timeout(2000)})).text(),'ok');
+  const stream=await fetch(origin+'/song/'+id+'/stream',{headers,signal:AbortSignal.timeout(2000)});
+  assert.equal(stream.status,200);assert.deepEqual(Buffer.from(await stream.arrayBuffer()),audio);
+  assert.equal(lookups,1,'Audio and health must not wait for another identity lookup');
+  finishIdentity('usr_public_agent');
+  assert.match(await page,/"agentId":"usr_public_agent"/);
+});
 
 test('private song playback reuses stored audio, reads the original score once, and supports Range and seek',async t=>{
   const root = await mkdtemp(join(tmpdir(),'whalenest-song-page-'));
   t.after(()=>rm(root,{recursive:true,force:true}));
   const route = {channel:'clawchat',account:'test-binding',sender:'owner',kind:'private',conversation:'direct'};
-  const options = {instanceId:'song-liveware-test',dataDir:root,owners:[route],clawchat:{route},
+  const configPath = join(root,'connect.json');
+  const stateDbPath = join(root,'connect.db');
+  const options = {instanceId:'song-liveware-test',dataDir:root,owners:[route],clawchat:{route,delivery:{configPath}},
     singing:{enabled:true,providerConfigPath:join(root,'provider.json'),playback:{enabled:true,port:0}}};
+  const connect = new DatabaseSync(stateDbPath);
+  t.after(()=>connect.close());
+  connect.exec(`CREATE TABLE installation_owner (id INTEGER, owner_user_id TEXT);
+    CREATE TABLE activations (user_id TEXT, owner_user_id TEXT, conversation_id TEXT,
+      activated_at TEXT, platform TEXT, local_agent_id TEXT, access_token TEXT);
+    INSERT INTO installation_owner VALUES(1, 'owner');
+    INSERT INTO activations VALUES('usr_agent', 'owner', 'different-chat', 'now', 'clawchat-connect', 'test-binding', 'fixture');`);
+  await writeFile(configPath,JSON.stringify({stateDbPath}));
   await writeFile(options.singing.providerConfigPath,JSON.stringify({models:{providers:{clawling:{apiKey:'fixture',baseUrl:'https://music.invalid/v1'}}}}));
   const id = 'whalenest-song-' + 'b'.repeat(64);
   const dir = join(root,'media/outgoing/songs'), path = join(dir,id+'.wav');
@@ -27,6 +66,18 @@ test('private song playback reuses stored audio, reads the original score once, 
     reads++;
     return new Response(score);
   }});
+  const server = await startSongPlayback(options,{client});
+  t.after(()=>server.close());
+  const origin = 'http://127.0.0.1:'+server.port;
+  const owner = {'x-clawchat-user-id':route.sender};
+  const empty = await fetch(origin,{headers:owner});
+  assert.match(empty.headers.get('content-type'),/^text\/html/);
+  const emptyHtml = await empty.text();
+  assert.match(emptyHtml,/<title>鲸栖歌曲<\/title>/);
+  assert.match(emptyHtml,/"projects":\[\]/);
+  assert.match(emptyHtml,/"route":"#\/"/);
+  assert.match(emptyHtml,/"agentId":null/,'A different private conversation cannot determine the chat link');
+  assert.equal((await fetch(origin)).status,404);
   const record = {scope:ownerScope(options),requestId:id,jobId:'old-job',origin:'https://music.invalid',state:'saved',
     parameters:{title:'一首 <旧歌>',style:'夜曲 & 民谣',lyrics:'一行\n<script>alert(1)</script>'},
     durationMs:88000,artifact:{path,mime:'audio/wav',size:audio.length}};
@@ -37,15 +88,19 @@ test('private song playback reuses stored audio, reads the original score once, 
   assert.equal(songPlaybackUrl(options,record),null);
   await writeFile(publication,JSON.stringify({binding:route.account,owner:route.sender,url:'https://app-test.apps.clawling.io/'}));
   assert.equal(songPlaybackUrl(options,record),'https://app-test.apps.clawling.io/song/'+id);
-  const server = await startSongPlayback(options,{client});
-  t.after(()=>server.close());
-  const base = 'http://127.0.0.1:' + server.port + '/song/' + id;
-  const owner = {'x-clawchat-user-id':route.sender};
+  connect.exec("UPDATE activations SET conversation_id = 'direct'");
+  const home = await fetch(origin,{headers:owner,redirect:'manual'});
+  assert.equal(home.status,200,'The app opens its home even when a recording exists');
+  const homeHtml = await home.text();
+  assert.match(homeHtml,/"route":"#\/"/);
+  assert.match(homeHtml,/"agentId":"usr_agent"/);
+  const base = origin + '/song/' + id;
   assert.equal((await fetch(base)).status,404);
   assert.equal((await fetch(base+'/stream',{headers:{'x-clawchat-user-id':'unlinked'}})).status,404);
   assert.equal((await fetch(base+'/score')).status,404);
   const page = await fetch(base,{headers:owner});
   const html = await page.text();
+  assert.ok(html.includes('"route":"#/p/'+id+'/v1"'));
   assert.match(html,/一首 \\u003c旧歌>/);
   assert.match(html,/夜曲 & 民谣/);
   assert.match(html,/\\u003cscript>alert\(1\)\\u003c\/script>/);
@@ -58,6 +113,7 @@ test('private song playback reuses stored audio, reads the original score once, 
   const dataUrl = new URL('/api/data',base);
   assert.equal((await fetch(dataUrl)).status,404);
   const data = await (await fetch(dataUrl,{headers:owner})).json();
+  assert.equal(data.agentId,'usr_agent');
   assert.equal(data.projects[0].takes[0].dur,'1:28');
   assert.equal(data.projects[0].takes[0].lyrics.sections[0].lines[1],'<script>alert(1)</script>');
   assert.deepEqual(await (await fetch(dataUrl+'?v='+data.v,{headers:owner})).json(),{unchanged:true});
@@ -74,7 +130,12 @@ test('private song playback reuses stored audio, reads the original score once, 
   assert.equal((await fetch(base+'/stream',{headers:{...owner,range:'bytes=2000000-'}})).status,416);
   const head = await fetch(base+'/stream',{method:'HEAD',headers:owner});
   assert.equal(head.headers.get('content-length'),String(audio.length));
+  assert.equal(head.headers.get('content-disposition'),null);
   assert.equal((await head.arrayBuffer()).byteLength,0);
+  const downloadUrl = base+'/stream?download=1';
+  assert.equal((await fetch(downloadUrl)).status,404);
+  const download = await fetch(downloadUrl,{headers:owner,method:'HEAD'});
+  assert.equal(download.headers.get('content-disposition'),'attachment; filename="song.wav"');
   const firstScore = await fetch(base+'/score',{headers:owner});
   assert.equal(await firstScore.text(),score);
   const again = await fetch(base+'/score',{headers:owner});
@@ -99,8 +160,13 @@ test('private song playback reuses stored audio, reads the original score once, 
   assert.equal(demoPage.status,200);
   const demoHtml = await demoPage.text();
   assert.doesNotMatch(demoHtml,/仅主人可见/);
+  assert.doesNotMatch(demoHtml,/usr_agent/);
   assert.ok(!demoHtml.includes(privateId));
   assert.deepEqual((await (await fetch(dataUrl)).json()).projects.map(song=>song.slug),[id]);
+  const demoRoot = await fetch(origin,{redirect:'manual'});
+  assert.equal(demoRoot.status,302);
+  assert.equal(demoRoot.headers.get('location'),'/song/'+id);
+  assert.equal((await fetch(downloadUrl,{method:'HEAD'})).headers.get('content-disposition'),null);
   assert.equal((await fetch(base+'/stream',{headers:{range:'bytes=0-29'}})).status,206);
   assert.equal((await fetch(privateUrl)).status,404);
   assert.equal((await fetch(privateUrl,{headers:owner})).status,404);

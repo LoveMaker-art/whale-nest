@@ -4,13 +4,113 @@ import {mkdtemp,rm,readFile,writeFile,mkdir,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer} from 'node:http';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {runInNewContext} from 'node:vm';
 import {setTimeout as delay} from 'node:timers/promises';
 import {startPlatformVoiceLiveware} from '../src/platform-voice-liveware.mjs';
 import {defaultPlatformVoice} from '../src/speech.mjs';
 import {extendRuntimeEntry} from '../src/runtime-extension.mjs';
+import {serveLiveware} from '../src/liveware-service.mjs';
 import {prepareConnect} from '../scripts/prepare-connect.mjs';
 import {connectPlatformVoice,connectPlatformVoiceHttp} from './platform-voice-client.mjs';
+
+test('optional companion settings cannot fail official preparation or model discovery',async t=>{
+  const home = await mkdtemp(join(tmpdir(),'whalenest-optional-call-'));
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  let provider, closed=false;
+  const base = {activate(context) {
+    context.hostCapabilities.get('runtime-provider').register({create:()=>({
+      prepare:async()=> 'official-ready',
+      listModels:async()=>[{id:'model',selection:{provider:'fixture',model:'chat'}}],
+      close:async()=>{closed=true;},
+    })});
+  }};
+  await extendRuntimeEntry(base).activate({hostCapabilities:{get:()=>({register:value=>{provider=value;}})}});
+  const adapter = provider.create({homePath:home},{});
+  assert.equal(await adapter.prepare(),'official-ready');
+  assert.equal((await adapter.listModels())[0].id,'model');
+  await adapter.close();
+  assert.equal(closed,true);
+});
+
+for (const [kind,unavailable] of [['call','song-playback.mjs'],['song','platform-voice-liveware.mjs']]) {
+  test(kind+' Liveware remains healthy when the other backend cannot load',{timeout:20000},async t=>{
+    const root = await mkdtemp(join(tmpdir(),'whalenest-isolated-liveware-'));
+    t.after(()=>rm(root,{recursive:true,force:true}));
+    const reservation = createServer();
+    await new Promise(resolve=>reservation.listen(0,'127.0.0.1',resolve));
+    const port = reservation.address().port;
+    await new Promise(resolve=>reservation.close(resolve));
+    const provider = join(root,'provider.json');
+    await writeFile(provider,JSON.stringify({models:{providers:{clawling:{apiKey:'fixture',baseUrl:'http://127.0.0.1:1/v1'}}}}));
+    const route = {channel:'clawchat',kind:'private',account:'agent',conversation:'private',sender:'owner'};
+    const config = join(root,'instance.json');
+    await writeFile(config,JSON.stringify({dataDir:root,cwd:root,owners:[route],clawchat:{route},
+      realtime:{enabled:true,port,python:process.env.WHALENEST_TEST_PYTHON},
+      speech:{enabled:true,providerConfigPath:provider,asrModel:'fixture-asr',ttsModel:'fixture-tts'},
+      singing:{enabled:true,providerConfigPath:provider,playback:{enabled:true,port}},
+    }));
+    const source = new URL('../src/liveware-service.mjs',import.meta.url).href;
+    const script = `
+      import {registerHooks} from 'node:module';
+      import assert from 'node:assert/strict';
+      registerHooks({resolve(specifier,context,next) {
+        if (specifier.endsWith(${JSON.stringify(unavailable)})) throw Error('unavailable unrelated backend');
+        return next(specifier,context);
+      }});
+      const {serveLiveware} = await import(${JSON.stringify(source)});
+      const stop = new AbortController();
+      const running = serveLiveware(${JSON.stringify(kind)},${JSON.stringify(config)},stop.signal,50);
+      let failure, healthy=false;
+      running.catch(error=>{failure=error;});
+      try {
+        for (let n=0;n<80 && !healthy;n++) {
+          if (failure) throw failure;
+          try { healthy=(await fetch('http://127.0.0.1:'+${port}+'/healthz',{signal:AbortSignal.timeout(1000)})).ok; } catch {}
+          if (!healthy) await new Promise(resolve=>setTimeout(resolve,50));
+        }
+        assert.ok(healthy);
+      } finally {
+        stop.abort();
+        await running.catch(error=>{if(error.name!=='AbortError')throw error;});
+      }
+      console.log('isolation-ok');
+    `;
+    assert.match(execFileSync(process.execPath,['--input-type=module','-e',script],{encoding:'utf8',timeout:15000}),/isolation-ok/);
+  });
+}
+
+test('HTTPS polls keep queued playback ahead over a 1200 ms relay round trip',()=>{
+  const result = execFileSync(process.env.WHALENEST_TEST_PYTHON ?? 'python3',['-B','-c',`
+import asyncio
+import json
+from types import SimpleNamespace
+from clawnest_voice.config import Config
+from clawnest_voice.dsh_http import HttpCall
+
+async def run():
+    config = Config()
+    call = HttpCall('fixture')
+    call.session = SimpleNamespace(closed=False)
+    await call.emit({'type': 'segment_start'})
+    for i in range(23):
+        await call.emit({'type': 'audio', 'seq': i}, bytes(config.audio_frame_bytes))
+    page = await call.poll(0)
+    audio = [frame['seq'] for frame in page['frames'] if frame['type'] == 'audio']
+    duration = len(audio) * config.audio_frame_bytes * 1000 / (2 * config.tts_sample_rate)
+    next_page = await call.poll(page['after'])
+    remaining = [frame['seq'] for frame in next_page['frames']]
+    print(json.dumps({'duration': duration, 'audio': audio, 'cursor': page['after'], 'remaining': remaining}))
+
+asyncio.run(run())
+`],{encoding:'utf8',cwd:fileURLToPath(new URL('../vendor/platform-liveware/',import.meta.url))});
+  const page = JSON.parse(result);
+  assert.ok(page.duration >= 1200, 'A 1200 ms round trip outruns the queued PCM in one page');
+  assert.deepEqual([...page.audio,...page.remaining], Array.from({length:23},(_, index)=>index));
+  assert.ok(page.remaining.length>0,'A slow client still receives bounded responses');
+  assert.equal(page.cursor, page.audio.length+1);
+});
 
 test('official page and gateway use the verified DSH lane, shared voice, playback receipts and cancellation',{timeout:30000},async t=>{
   const root = await mkdtemp(join(tmpdir(),'whalenest-platform-voice-'));
@@ -93,12 +193,31 @@ test('official page and gateway use the verified DSH lane, shared voice, playbac
   const page=await (await fetch(origin,{headers})).text();
   assert.match(page,/<title>鲸栖通话<\/title>/);
   assert.match(page,/鲸栖通话<\/h1>/);
+  assert.match(page,/dsh-http\.js/);
+  assert.equal((await fetch(origin+'/voice-http/start',{method:'POST',body:'{}'})).status,403);
   const portrait=page.match(/<img id="agent-avatar"[^>]*>/)?.[0]??'';
   assert.match(portrait,/\bhidden\b/);
   assert.doesNotMatch(portrait,/\ssrc=/,'The browser must wait for the account profile before displaying any portrait');
   const fallback=portrait.match(/data-fallback="([^"]+)"/)?.[1];
   assert.match(fallback,/^default-avatar\.png\?v=[0-9a-f]{12}$/);
   const pageScript=await (await fetch(origin+'/page.js',{headers})).text();
+  const transports=[];
+  const timers=new Map();
+  const context={
+    running:true,paused:false,reconnects:0,preferHttps:false,micPrepare:null,
+    ws:undefined,socketUpgradeTimer:undefined,connectionDeadline:undefined,
+    location:{pathname:'/',protocol:'https:',host:'app-fixture.apps.clawling.io'},t:text=>text,
+    state(){},notice(){},releaseMedia:action=>action(),
+    setTimeout(callback,ms){timers.set(ms,callback);return ms;},
+    clearTimeout(ms){timers.delete(ms);},
+    WebSocket:class { constructor(){transports.push('websocket');} close(){} },
+    DshHttpVoiceSocket:class { constructor(){transports.push('https');} },
+  };
+  runInNewContext(pageScript.slice(pageScript.indexOf('function connect()'),pageScript.indexOf('async function begin()'))
+    +'\nconnect();',context);
+  assert.deepEqual(transports,['websocket']);
+  timers.get(2000)();
+  assert.deepEqual(transports,['websocket','https']);
   const script=pageScript.slice(pageScript.indexOf('async function loadAgentProfile()'),pageScript.indexOf('function showCaptionHistory('));
   const avatarLoads=[],avatarEvents={};
   const image={dataset:{fallback},hidden:true,set src(value){avatarLoads.push(value);},get src(){return avatarLoads.at(-1);},
@@ -155,66 +274,67 @@ test('official page and gateway use the verified DSH lane, shared voice, playbac
   assert.equal((await fetch(origin+status,{headers:{'x-clawchat-user-id':route.sender}})).status,200);
   await writeFile(join(root,'aurabot/config.json'),JSON.stringify({voice:{platformVoice:verifiedVoice}}));
   transcript='你好大肥鱼';
-  client=await connectPlatformVoice(origin,route.sender,{startupFallback:true,browserOrigin:publicOrigin});
-  client.upload('fallback',pcm);
-  await client.waitFor(frame=>frame.type==='turn_complete'&&frame.client_turn_id==='fallback');
+  client=await connectPlatformVoice(origin,route.sender,{browserOrigin:publicOrigin});
+  client.upload('new-voice',pcm);
+  await client.waitFor(frame=>frame.type==='turn_complete'&&frame.client_turn_id==='new-voice');
   assert.equal(speechRequests[1].voice,verifiedVoice);
   assert.ok(client.frames.some(frame=>frame.type==='audio'&&frame.pcm.length>0));
-  await client.close();
-  for(let i=0;i<30&&voiceActive;i++)await delay(25);
-  assert.equal(voiceActive,false);
-  const unauthenticated=await fetch(origin+'/voice-http/start',{method:'POST',body:'{}'});
-  assert.equal(unauthenticated.status,403);
-  client=await connectPlatformVoiceHttp(origin,route.sender,{browserOrigin:publicOrigin,chunked:true,dropFirstWriteReceipt:true});
-  assert.equal(client.session.downstream_transport,'https');
-  client.upload('https',pcm);
-  await client.waitFor(frame=>frame.type==='turn_complete'&&frame.client_turn_id==='https');
-  assert.ok(client.frames.some(frame=>frame.type==='subtitle'));
-  assert.ok(client.frames.some(frame=>frame.type==='audio'&&frame.pcm.length>0));
-  assert.ok(client.lostReceipt);
-  assert.equal(speechRequests.length,3);
+  assert.equal(speechRequests.length,2);
   transcript='流式测试';
-  client.upload('https-stream',pcm);
-  await client.waitFor(frame=>frame.type==='audio'&&frame.client_turn_id==='https-stream',1600);
-  assert.ok(!client.frames.some(frame=>frame.type==='generation_done'&&frame.client_turn_id==='https-stream'));
+  client.upload('sse-stream',pcm);
+  await client.waitFor(frame=>frame.type==='audio'&&frame.client_turn_id==='sse-stream',1600);
+  assert.ok(!client.frames.some(frame=>frame.type==='generation_done'&&frame.client_turn_id==='sse-stream'));
   releaseStream();
-  await client.waitFor(frame=>frame.type==='turn_complete'&&frame.client_turn_id==='https-stream');
-  assert.equal(client.frames.filter(frame=>frame.type==='subtitle'&&frame.client_turn_id==='https-stream').map(frame=>frame.text).join(''),
+  await client.waitFor(frame=>frame.type==='turn_complete'&&frame.client_turn_id==='sse-stream');
+  assert.equal(client.frames.filter(frame=>frame.type==='subtitle'&&frame.client_turn_id==='sse-stream').map(frame=>frame.text).join(''),
     '海面上的风很轻。浪花正在醒来。');
   transcript='等一下';
   const thinking=new Promise(resolve=>{stopPrompt=resolve;});
-  client.upload('https-thinking',pcm);
+  client.upload('sse-thinking',pcm);
   await thinking;
   client.send({type:'barge_in',source:'vad_confirmed'});
   await delay(150);
   release();
-  const afterNoise=await client.waitFor(frame=>['clear','turn_complete'].includes(frame.type)&&frame.client_turn_id==='https-thinking');
+  const afterNoise=await client.waitFor(frame=>['clear','turn_complete'].includes(frame.type)&&frame.client_turn_id==='sse-thinking');
   assert.equal(afterNoise.type,'turn_complete','Local microphone detection must not cancel a reply before playback');
   assert.equal(cancelCount,1);
   transcript='流式测试';
-  client.upload('https-audible',pcm);
-  const audible=await client.waitFor(frame=>frame.type==='audio'&&frame.client_turn_id==='https-audible');
-  client.send({type:'audio_started',client_turn_id:'https-audible',segment_id:audible.segment_id});
+  client.upload('sse-audible',pcm);
+  const audible=await client.waitFor(frame=>frame.type==='audio'&&frame.client_turn_id==='sse-audible');
+  client.send({type:'audio_started',client_turn_id:'sse-audible',segment_id:audible.segment_id});
   client.send({type:'barge_in',source:'vad_confirmed'});
-  await client.waitFor(frame=>frame.type==='clear'&&frame.client_turn_id==='https-audible');
+  await client.waitFor(frame=>frame.type==='clear'&&frame.client_turn_id==='sse-audible');
   releaseStream();
   for(let i=0;i<70&&cancelCount<2;i++)await delay(20);
   assert.equal(cancelCount,2);
   transcript='等一下';
-  const httpsPending=new Promise(resolve=>{stopPrompt=resolve;});
-  client.upload('https-cancel',pcm);
-  await httpsPending;
-  client.send({type:'barge_in',client_turn_id:'https-cancel'});
+  const cancelPending=new Promise(resolve=>{stopPrompt=resolve;});
+  client.upload('sse-cancel',pcm);
+  await cancelPending;
+  client.send({type:'barge_in',client_turn_id:'sse-cancel'});
   for(let i=0;i<70&&cancelCount<3;i++)await delay(20);
   assert.equal(cancelCount,3);
+  await client.close();
+  client=undefined;
+  for(let i=0;i<30&&voiceActive;i++)await delay(25);
+  assert.equal(voiceActive,false);
+  transcript='你好大肥鱼';
+  client=await connectPlatformVoiceHttp(origin,route.sender,{browserOrigin:publicOrigin,chunked:true,dropFirstWriteReceipt:true});
+  assert.equal(client.session.downstream_transport,'https');
+  client.upload('https',pcm);
+  await client.waitFor(frame=>frame.type==='turn_complete'&&frame.client_turn_id==='https');
+  assert.ok(client.frames.some(frame=>frame.type==='audio'&&frame.pcm.length>0));
+  assert.ok(client.lostReceipt);
+  assert.equal(speechRequests.at(-1).voice,verifiedVoice);
 });
 
-test('first binding starts and publishes both private Liveware apps without a chat turn',{timeout:18000},async t=>{
+test('independent call gateway and song publication start on first binding and survive a Runtime stop',{timeout:18000},async t=>{
   const root=await mkdtemp(join(tmpdir(),'whalenest-liveware-first-binding-'));
   const directory=join(root,'companion/aurabot-v1');
   await mkdir(directory,{recursive:true});
   let adapter;
-  t.after(async()=>{await adapter?.close();await rm(root,{recursive:true,force:true});});
+  const stop = new AbortController(), services = [];
+  t.after(async()=>{stop.abort();await Promise.allSettled(services);await adapter?.close();await rm(root,{recursive:true,force:true});});
   const instancePath=join(directory,'instance.json');
   const providerPath=join(root,'provider.json');
   const connectBin=join(root,'connect');
@@ -250,22 +370,23 @@ test('first binding starts and publishes both private Liveware apps without a ch
   })});}};
   await extendRuntimeEntry(base).activate({hostCapabilities:{get:()=>({register:value=>{provider=value;}})}});
   adapter=provider.create({homePath:root},{withPrivateVoiceSession:async()=>{}});
+  for (const kind of ['call', 'song']) services.push(serveLiveware(kind, instancePath, stop.signal, 50));
   await assert.rejects(readFile(commands),{code:'ENOENT'});
   await adapter.prepare();
   const load=async name=>JSON.parse(await readFile(join(directory,name),'utf8'));
-  let call,song;
-  for(let i=0;i<50&&!(call&&song);i++){
-    call=await load('call-liveware.json').catch(()=>null);
+  let gateway,song;
+  for(let i=0;i<50&&!(gateway&&song);i++){
+    gateway=await load('realtime/server.json').catch(()=>null);
     song=await load('song-liveware.json').catch(()=>null);
-    if(!(call&&song))await delay(50);
+    if(!(gateway&&song))await delay(50);
   }
-  assert.equal(call?.url,'https://app-call.apps.clawling.io/');
+  assert.ok(gateway?.port>0);
   assert.equal(song?.url,'https://app-songs.apps.clawling.io/');
-  assert.equal(call.owner,route.sender);
+  await assert.rejects(load('call-liveware.json'),{code:'ENOENT'},'Official Exposure owns call publication');
   assert.equal(song.binding,route.account);
   const invocations=async()=> (await readFile(commands,'utf8')).trim().split('\n').map(JSON.parse);
   const initial=await invocations();
-  assert.equal(initial.length,4);
+  assert.equal(initial.length,2);
   for(const item of initial.filter(row=>row.action==='create'))assert.ok(item.args.includes('private'));
   for(const item of initial.filter(row=>row.action==='bind')){
     const target=item.args[item.args.indexOf('--upstream')+1];
@@ -275,5 +396,10 @@ test('first binding starts and publishes both private Liveware apps without a ch
   await adapter.prepare();
   await adapter.close();
   adapter=undefined;
+  assert.equal((await fetch('http://127.0.0.1:'+gateway.port+'/healthz')).status,200);
+  for(const item of initial.filter(row=>row.action==='bind')){
+    const target=item.args[item.args.indexOf('--upstream')+1];
+    assert.equal((await fetch(target+'/healthz')).status,200);
+  }
   assert.deepEqual(await invocations(),initial);
 });

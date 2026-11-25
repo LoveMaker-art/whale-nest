@@ -1,15 +1,15 @@
-import { installCompanion } from './whalenest-companion.mjs';
-import { createReadStream, createWriteStream } from "node:fs";
+import { close, createReadStream, write } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { registerClawChatApprovalPolicy } from "./deepseek-harness-tool-policy.mjs";
 import { registerQuestionProviderWhenProfileReady } from "./deepseek-harness-question-provider.mjs";
+import { encodeBridgeFrame } from "./deepseek-harness-frame.mjs";
+import { pageHistoryEvents } from "./deepseek-harness-history.mjs";
 
 const PROTOCOL_NAME = "clawchat-connect-dsh-bridge";
-const PROTOCOL_MAJOR = 1;
-const MAX_FRAME_BYTES = 1_048_576;
+const PROTOCOL_MAJOR = 2;
 const MAX_PENDING_REQUESTS = 128;
 const dshRequire = createRequire(process.argv[1]);
 const [{ contentHasImage, createUserMessage }, { installModelSelection }, skillModule, presetModule] =
@@ -25,11 +25,31 @@ const outputFd = Number(process.env.CONNECT_DSH_BRIDGE_FD_OUT ?? "3");
 const inputFd = Number(process.env.CONNECT_DSH_BRIDGE_FD_IN ?? "4");
 
 export const name = "clawchat-connect-deepseek-harness-bridge";
-export const inject = ["agents", "agentLoop", "sessions", "sessionPersistence", "llm", "schedule"];
+export const inject = ["agents", "agentLoop", "sessions", "sessionPersistence", "llm"];
 
 export async function apply(ctx, config = {}) {
+  const maxFrameBytes = requiredPositiveInteger(config.maxFrameBytes, "Bridge maxFrameBytes");
   const inputStream = createReadStream(null, { fd: inputFd, autoClose: true });
-  const outputStream = createWriteStream(null, { fd: outputFd, autoClose: true });
+  // Writes go straight to the descriptor at no file offset and loop over partial writes and EAGAIN.
+  // fs.WriteStream retries a large write at an offset and fails with ESPIPE ("invalid seek") on a pipe once frames
+  // reach megabytes.
+  const writeAll = (buffer) =>
+    new Promise((resolve, reject) => {
+      let offset = 0;
+      const step = () => {
+        write(outputFd, buffer, offset, buffer.length - offset, null, (error, written) => {
+          if (error) {
+            if (error.code === "EAGAIN") setTimeout(step, 2);
+            else reject(error);
+            return;
+          }
+          offset += written;
+          if (offset < buffer.length) step();
+          else resolve();
+        });
+      };
+      step();
+    });
   const lines = createInterface({ input: inputStream, crlfDelay: Number.POSITIVE_INFINITY });
   const handles = new Map();
   const pendingInteractions = new Map();
@@ -39,16 +59,34 @@ export async function apply(ctx, config = {}) {
   let writeTail = Promise.resolve();
   let requestTail = Promise.resolve();
 
+  const logBridge = (message) => {
+    try {
+      process.stderr.write(`[clawchat-dsh-bridge] ${message}\n`);
+    } catch {}
+  };
+  const terminate = (reason) => {
+    logBridge(`terminating: ${reason}`);
+    process.kill(process.pid, "SIGTERM");
+  };
+
+  // Never throws: every failure, including an unrepresentable frame, is a rejected promise.
   const send = (frame) => {
-    const encoded = `${JSON.stringify(frame)}\n`;
-    if (Buffer.byteLength(encoded) > MAX_FRAME_BYTES) {
-      throw bridgeError("frame-too-large", `Bridge frame exceeds ${MAX_FRAME_BYTES} bytes`);
+    let encoded;
+    try {
+      const result = encodeBridgeFrame(frame, maxFrameBytes);
+      encoded = result.encoded;
+      if (result.degraded) {
+        logBridge(
+          `${frame.type} frame degraded from ${result.degraded.originalBytes} to ${result.degraded.bytes} bytes` +
+            `${result.degraded.placeholder ? " (placeholder)" : ` (${result.degraded.fields} truncated fields)`}`,
+        );
+      }
+    } catch (error) {
+      return Promise.reject(error);
     }
     writeTail = writeTail.then(
       () =>
-        new Promise((resolve, reject) => {
-          outputStream.write(encoded, (error) => (error ? reject(error) : resolve()));
-        }),
+        writeAll(Buffer.from(encoded)),
     );
     return writeTail;
   };
@@ -84,7 +122,15 @@ export async function apply(ctx, config = {}) {
         },
       });
     });
-    await send({ type: "interaction", id, sessionId, request });
+    response.catch(() => undefined);
+    try {
+      await send({ type: "interaction", id, sessionId, request });
+    } catch (error) {
+      const pending = pendingInteractions.get(id);
+      pendingInteractions.delete(id);
+      pending?.reject(error);
+      throw error;
+    }
     return await response;
   };
 
@@ -106,7 +152,6 @@ export async function apply(ctx, config = {}) {
           description: request.reason ?? `Allow ${request.toolName} for this turn?`,
           options: [
             { id: "approve-once", label: "Approve once" },
-            { id: "approve-session", label: "Allow this exact operation in this session" },
             { id: "deny", label: "Deny" },
           ],
         },
@@ -114,7 +159,6 @@ export async function apply(ctx, config = {}) {
       );
       if (response?.kind !== "approval") return "unavailable";
       if (response.optionId === "approve-once") return "allowed-once";
-      if (response.optionId === "approve-session") return approvalPolicy.allowForSession(request) ? "allowed-once" : "rejected";
       if (response.optionId === "cancel") return "cancelled";
       return "rejected";
     } catch {
@@ -174,8 +218,9 @@ export async function apply(ctx, config = {}) {
   const offEvents = ctx.on("session/event", (session, event) => {
     if (!handles.has(String(session.id))) return;
     approvalPolicy.observe(handles.get(String(session.id)).agent, event);
-    void send({ type: "event", sessionId: String(session.id), event }).catch(() => {
-      process.kill(process.pid, "SIGTERM");
+    // Oversized events degrade inside send(); a rejection here means the pipe itself failed, which is fatal.
+    send({ type: "event", sessionId: String(session.id), event }).catch((error) => {
+      terminate(`event write failed: ${error?.message ?? error}`);
     });
   });
 
@@ -268,10 +313,7 @@ export async function apply(ctx, config = {}) {
       },
     };
   };
-  let markBridgeInstalled;
-  const bridgeInstalled = new Promise(resolve => { markBridgeInstalled = resolve; });
   const hello = questionRegistration.ready.then(async (questions) => {
-    await bridgeInstalled;
     if (disposed) return;
     workspaceRegistry = ctx.get("workspaceRegistry");
     agentDefaultModel = ctx.root.get("agentDefaultModel");
@@ -284,6 +326,7 @@ export async function apply(ctx, config = {}) {
         name: PROTOCOL_NAME,
         major: PROTOCOL_MAJOR,
         build: requiredString(config.build, "Bridge build"),
+        maxFrameBytes,
       },
       home: requiredString(config.home, "DSH Home"),
       profile: optionalString(config.profile) ?? null,
@@ -310,9 +353,16 @@ export async function apply(ctx, config = {}) {
       },
     });
   });
-  void hello.catch(() => {
-    if (!disposed) process.kill(process.pid, "SIGTERM");
+  void hello.catch((error) => {
+    if (!disposed) terminate(`hello failed: ${error?.message ?? error}`);
   });
+
+  const loadHistory = async (sessionId) => {
+    const handle = handles.get(sessionId);
+    if (handle) return { header: handle.agent.session.header, events: sessionEvents(handle.agent.session) };
+    const inspection = await inspectPersistedSession(ctx.sessionPersistence, sessionId);
+    return { header: inspection.meta, events: [...inspection.events] };
+  };
 
   const methods = {
     async create(params) {
@@ -425,7 +475,10 @@ export async function apply(ctx, config = {}) {
           { type: "text", text },
           ...imageRefs.map((attachment) => ({ type: "image", attachment })),
         ],
-        source: { kind: "user", connectInputId: inputId },
+        source: { kind: "user", connectInputId: inputId,
+          ...(['client','clawchat'].includes(params.inputOrigin) ? {connectInputOrigin:params.inputOrigin} : {}),
+          ...(optionalString(params.clawchatTurnContext) ? {clawchatTurnContext:params.clawchatTurnContext} : {}),
+        },
       });
       if (params.mode === "steer") handle.agent.steer(message);
       else handle.agent.followup(message);
@@ -616,31 +669,12 @@ export async function apply(ctx, config = {}) {
       );
     },
 
+    // Always one bounded window of the newest events (see pageHistoryEvents); never the whole Session.
     async history(params) {
       const sessionId = requestString(params, "sessionId");
-      const handle = handles.get(sessionId);
-      if (handle) {
-        return { header: handle.agent.session.header, events: sessionEvents(handle.agent.session) };
-      }
-      const inspection = await inspectPersistedSession(ctx.sessionPersistence,sessionId);
-      return { header: inspection.meta, events: [...inspection.events] };
+      const { header, events } = await loadHistory(sessionId);
+      return { header, ...pageHistoryEvents(events, params) };
     },
-
-    async reconcile(params) {
-      const sessionId = requestString(params, "sessionId");
-      const inputId = requestString(params, "inputId");
-      const history = await methods.history({ sessionId });
-      const event = history.events.find(
-        (candidate) =>
-          candidate.type === "user/message" &&
-          candidate.data?.source?.kind === "user" &&
-          candidate.data.source.connectInputId === inputId,
-      );
-      return event
-        ? { outcome: "accepted", inputId, messageId: String(event.data.id), eventSeq: event.seq }
-        : { outcome: "absent" };
-    },
-
 
     async archive(params) {
       const sessionId = requestString(params, "sessionId");
@@ -683,14 +717,6 @@ export async function apply(ctx, config = {}) {
     },
   };
 
-  const companion = await installCompanion(ctx, {
-    handles, ready: hello, configPath: config.companionConfigPath,
-    activate(sessionId) {
-      const operation = requestTail.then(() => methods.resume({ sessionId }));
-      requestTail = operation.catch(() => {});
-      return operation;
-    },
-  });
   const processRequest = async (request) => {
     if (!request || typeof request !== "object" || Array.isArray(request)) {
       throw bridgeError("malformed-request", "Bridge request must be an object");
@@ -702,8 +728,6 @@ export async function apply(ctx, config = {}) {
     if (!method) throw bridgeError("method-not-found", `Unsupported Bridge method: ${request.method}`);
     const params = optionalObject(request.params) ?? {};
     const result = await method(params);
-    try { await companion.record(request.method, params); }
-    catch (error) { console.error('[whalenest-companion] route registration failed:', error.code ?? error.name); }
     await send({ type: "response", id: request.id, ok: true, result });
     if (request.method === "shutdown") {
       lines.close();
@@ -714,19 +738,20 @@ export async function apply(ctx, config = {}) {
   };
 
   lines.on("line", (line) => {
-    if (Buffer.byteLength(line) > MAX_FRAME_BYTES) {
-      process.kill(process.pid, "SIGTERM");
+    const lineBytes = Buffer.byteLength(line);
+    if (lineBytes > maxFrameBytes) {
+      terminate(`incoming frame of ${lineBytes} bytes exceeds the ${maxFrameBytes}-byte limit`);
       return;
     }
     if (pendingRequests >= MAX_PENDING_REQUESTS) {
-      process.kill(process.pid, "SIGTERM");
+      terminate(`more than ${MAX_PENDING_REQUESTS} pending Bridge requests`);
       return;
     }
     let request;
     try {
       request = JSON.parse(line);
     } catch {
-      process.kill(process.pid, "SIGTERM");
+      terminate("incoming frame is not valid JSON");
       return;
     }
     pendingRequests += 1;
@@ -735,7 +760,7 @@ export async function apply(ctx, config = {}) {
         .catch(async (error) => {
           const id = request && typeof request === "object" && typeof request.id === "string" ? request.id : "";
           if (!id) {
-            process.kill(process.pid, "SIGTERM");
+            terminate("incoming request has no id");
             return;
           }
           await send({
@@ -748,6 +773,10 @@ export async function apply(ctx, config = {}) {
             },
           });
         })
+        .catch((error) => {
+          // The error response itself could not be written: the pipe is gone, which is fatal.
+          terminate(`response write failed: ${error?.message ?? error}`);
+        })
         .finally(() => {
           pendingRequests -= 1;
         });
@@ -758,11 +787,9 @@ export async function apply(ctx, config = {}) {
     }
   });
 
-  markBridgeInstalled();
   return async () => {
     if (disposed) return;
     disposed = true;
-    companion.dispose();
     offEvents();
     approvalPolicy.dispose();
     await questionRegistration.dispose();
@@ -777,7 +804,7 @@ export async function apply(ctx, config = {}) {
     await Promise.all(owned.map(async (handle) => await handle.dispose()));
     await requestTail.catch(() => undefined);
     await writeTail.catch(() => undefined);
-    await new Promise((resolve) => outputStream.end(resolve));
+    await new Promise((resolve) => close(outputFd, () => resolve()));
   };
 }
 function sessionEvents(session){
@@ -816,6 +843,11 @@ function requestString(value, key, allowEmpty = false) {
     throw bridgeError("malformed-request", `${key} must be a ${allowEmpty ? "string" : "non-empty string"}`);
   }
   return result;
+}
+
+function requiredPositiveInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${label} is required`);
+  return value;
 }
 
 function requiredString(value, label) {

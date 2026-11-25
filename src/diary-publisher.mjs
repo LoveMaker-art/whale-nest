@@ -6,11 +6,12 @@ import {promisify} from 'node:util';
 import {hash,routeKey,senderKey,ownerScope,resolveDeliveryTarget} from './routing.mjs';
 import {readState,writeState} from './state.mjs';
 import {resolveAudience} from '../vendor/aurabot/src/features/qzone-audience.js';
+import {createClawChatCore} from './clawchat-core.mjs';
 
 const exec=promisify(execFile);
 /** Publishes an explicitly approved projection of public activity facts.
  * Credentials and transport remain owned by the existing Core. */
-export function createDiaryPublisher(options,route,{diary,run=exec,now=Date.now,getQzone}={}){
+export function createDiaryPublisher(options,route,{diary,run=exec,now=Date.now,getQzone,readStatus=(name,id)=>createClawChatCore(options).toolStatus(name,id)}={}){
  assert.ok(resolveDeliveryTarget(options,{origin:route}).ok,'发布档案仅限已关联主人私聊');
  const scope=ownerScope(options),cc=options.clawchat.route,legacy=hash([options.instanceId,routeKey(cc),senderKey(cc)]),file=join(resolve(options.dataDir),'diary-publications.json');
  const state=readState(file,{schema:2,scope,identityScope:legacy,records:{}});assert.ok(state.scope===scope||state.schema===1&&state.scope===legacy,'发布档案归属不符');
@@ -53,7 +54,7 @@ export function createDiaryPublisher(options,route,{diary,run=exec,now=Date.now,
   const work=call('clawchat_create_moment',{text:record.text},record.id).then(response=>settle(record,response));flights.set(record.id,work);try{return await work;}finally{flights.delete(record.id);}
  }
  async function check(date){const records=Object.values(state.records).filter(r=>r.date===date&&(r.platform??'clawchat')==='clawchat').sort((a,b)=>b.revision-a.revision);const record=records[0];if(!record)return {ok:false,state:'not-published',message:'该日日记没有动态提交记录。'};
-  if(record.state!=='confirmed')try{const {stdout}=await run(delivery.connectBin,['tool','status',record.id,'--agent',route.account,'--config',delivery.configPath],{timeout:15000,maxBuffer:1024*1024});settle(record,JSON.parse(stdout));}catch{}
+  if(record.state!=='confirmed')try{settle(record,await readStatus('clawchat_create_moment',record.id));}catch{}
   if(record.state==='confirmed'){const response=await call('clawchat_list_moments',{limit:100},'whalenest-moment-read-'+randomUUID());const rows=response.result?.moments;
    return {...view(record),readback:response.status==='succeeded'&&Array.isArray(rows)&&rows.some(row=>row.id===record.momentId&&row.text===record.text)?'matched':'unconfirmed'};
   }return view(record);

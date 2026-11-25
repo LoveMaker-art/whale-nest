@@ -8,6 +8,7 @@ import {promisify} from 'node:util';
 import {readState,writeState} from './state.mjs';
 import {hash,routeKey,senderKey} from './routing.mjs';
 import {sniffMedia} from './media.mjs';
+import {createClawChatCore} from './clawchat-core.mjs';
 import {defineTool,str,int} from '../vendor/aurabot/src/tools/tools.js';
 
 const exec=promisify(execFile),flights=new Map();
@@ -15,9 +16,9 @@ const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const contains=(root,path)=>{const rel=relative(root,path);return !rel.startsWith('..')&&!isAbsolute(rel);};
 const kindOf=mime=>mime.startsWith('audio/')?'audio':mime.startsWith('video/')?'video':mime.startsWith('image/')?'image':'file';
 
-/** Owns media snapshots, durable receipts and CLI recovery. The current Core
+/** Owns media snapshots, durable receipts and read-only recovery. The current Core
  * remains the only connection owner. A status lookup never creates a send. */
-export function createMediaSender(options,route,{sessionId,run=exec}={}) {
+export function createMediaSender(options,route,{sessionId,run=exec,readStatus=(name,id)=>createClawChatCore(options).toolStatus(name,id)}={}) {
  assert.equal(routeKey(route),routeKey(options.clawchat?.route),'Unverified media route');
  assert.equal(senderKey(route),senderKey(options.clawchat.route),'Unverified media sender');
  assert.ok(route.channel==='clawchat'&&route.kind==='private'&&options.owners.some(o=>senderKey(o)===senderKey(route)),'Owner private route required');
@@ -60,7 +61,7 @@ export function createMediaSender(options,route,{sessionId,run=exec}={}) {
   assert.match(requestId,/^whalenest-media-[a-f0-9]{64}$/,'Invalid media request ID');
   const record=readState(fileFor(requestId),null);assert.ok(record&&record.scope===scope,'Unknown media receipt in this session');
   if(record.state==='confirmed'||record.state==='failed')return view(record);
-  try {const {stdout}=await run(delivery.connectBin,['tool','status',requestId,'--agent',route.account,'--config',delivery.configPath],{timeout:15000,maxBuffer:1024*1024,signal});return settle(record,JSON.parse(stdout));}
+  try {signal?.throwIfAborted();return settle(record,await readStatus('clawchat_send_media',requestId));}
   catch{return view(record);}
  }
  return {

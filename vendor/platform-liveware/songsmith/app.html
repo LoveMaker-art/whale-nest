@@ -1004,7 +1004,7 @@ function secLabel(tag){
 function timingTag(o){
   const tm = o && o.timing;
   if (!tm || !tm.kind) return "";
-  const src = (o.src || o.audio || "").split("/").pop();
+  const src = o.src || o.audio || "";
   if (tm.kind === "measured"){
     const pct = tm.covered != null ? Math.round(tm.covered * 100) : null;
     return `<span class="tmtag ok" title="${esc(T("tmMeasuredTitle", {
@@ -1061,6 +1061,17 @@ function lyricsText(ly){
 function toHer(draft){
   if (!DATA.agentId) return null;
   return `clawchat://u/${encodeURIComponent(DATA.agentId)}?chat=1&draft=${encodeURIComponent(draft)}`;
+}
+async function studioWrite(path, query){
+  const params = new URLSearchParams(query);
+  params.set("token", DATA.actionToken);
+  const send = () => fetch(path + "?" + params, {method:"POST", cache:"no-store"});
+  const answer = await send();
+  if (answer.status !== 405) return answer;
+  await reloadData();
+  if (!DATA.actionToken || DATA.actionToken === params.get("token")) return answer;
+  params.set("token", DATA.actionToken);
+  return send();
 }
 
 function hash(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return Math.abs(h); }
@@ -1139,14 +1150,12 @@ async function coverUpload(idx){
       const kb = Math.round(buf.length / 1024);
       toast(T("coverPushing", {pct: 0, kb}));
       await coverPush(p, id, buf, done => toast(T("coverPushing", {pct: Math.round(done / buf.length * 100), kb})));
-      const j = await (await fetch("/api/cover?" + new URLSearchParams({op:"commit", project:p.slug, id}),
-                                  {cache:"no-store"})).json();
+      const j = await (await studioWrite("/api/cover", {op:"commit", project:p.slug, id})).json();
       if (!j.ok) throw new Error(coverErr(j.error));
       toast(T("coverDone"));
       refreshData("landed");
     } catch (err){
-      await fetch("/api/cover?" + new URLSearchParams({op:"abort", project:p.slug, id}),
-                  {cache:"no-store"}).catch(() => {});
+      await studioWrite("/api/cover", {op:"abort", project:p.slug, id}).catch(() => {});
       toast(String((err && err.message) || err));
     }
   };
@@ -1195,7 +1204,7 @@ async function coverChunk(p, id, off, part){
      或者身子不是 JSON（隧道的错误页正是这样），一律当这一档太大 —— 降档是廉价的，
      而把它读成网络抖动会死在原地，2026-09-20 的封面全灭就是这么来的。*/
   let res;
-  try { res = await fetch("/api/cover?" + q, {cache:"no-store"}); }
+  try { res = await studioWrite("/api/cover", q); }
   catch (e){ throw Object.assign(new Error(T("coverNetDown")), {kind: "net"}); }
   let j = null;
   try { j = JSON.parse(await res.text()); } catch (e){ /* 不是 JSON：隧道的错误页 */ }
@@ -1293,8 +1302,11 @@ function toast(msg){
   const el = $("toast"); el.textContent = msg; el.className = "toast on";
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.className = "toast", 1400);
 }
-function copyText(text, done){
-  navigator.clipboard.writeText(text).then(() => toast(done || T("copied"))).catch(() => toast(T("copyFailed")));
+async function copyText(text, done){
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(done || T("copied"));
+  } catch { toast(T("copyFailed")); }
 }
 
 /* page: 项目里某一版的二级页 —— {kind:"lyrics"|"share", t:版本下标}；refine 是精修页 */
@@ -1345,16 +1357,16 @@ function applyRoute(h){
   const parts = h.replace(/^#\/?/, "").split("/").filter(Boolean);
   state.refine = null; state.page = null; state.line = null; state.song = null;
   pendingHash = null;
-  if (!parts.length || !["mine","p"].includes(parts[0])) { state.tab = "mine"; state.project = null; return; }
+  if (DATA.demo && parts[0] !== "p") { state.tab = "mine"; state.project = null; return; }
   // 一首歌自己的一页。转发进来的人手上只有这条地址 —— 他没逛过发现页，
   // 所以数据还没到就先记下这条链接，一刷新再落（同项目页那套 pendingHash）。
-  if (parts[0] === "s") {
+  if (!DATA.demo && parts[0] === "s") {
     const sid = decodeURIComponent(parts[1] || "");
     state.tab = "discover"; state.song = sid; state.project = null;
     if (!(DATA.shared || []).some(x => x.sid === sid)) pendingHash = h;
     return;
   }
-  if (parts[0] === "p") {
+  if (!DATA.guest && parts[0] === "p") {
     const slug = decodeURIComponent(parts[1]||"");
     const i = (DATA.projects||[]).findIndex(p => slugOf(p) === slug);
     state.tab = "mine";
@@ -1366,7 +1378,8 @@ function applyRoute(h){
     if (!m) return;
     const ti = (DATA.projects[i].takes||[]).findIndex((t, k) => vOf(t, k) === +m[1]);
     if (ti < 0) { pendingHash = h; return; }
-    if (parts[3] === "lyrics") state.page = {kind: "lyrics", t: ti};
+    if (parts[3] === "lyrics" || !DATA.demo && parts[3] === "share") state.page = {kind:parts[3], t:ti};
+    else if (!DATA.demo && parts[3] === "refine") enterRefine(i, ti);
     // 光秃秃的 /v<N> = **听这一版**，不是进工作台（2026-09-17 改判）。
     // 原先无后缀就是精修页，于是三件各自都对的事叠成了一个坑：launcher 的 ✦ 瓦片打开的是
     // `lastUrl`（「cold 重开落点」），她出歌时发的正是 `/v<N>`，而 `/v<N>` 落在精修页 ——
@@ -1375,9 +1388,9 @@ function applyRoute(h){
     else pendingTake = ti;
     return;
   }
-  state.tab = ["create","mine","discover"].includes(parts[0]) ? parts[0] : "home";
-  state.create = state.tab === "create" && ["hum", "draw"].includes(parts[1]) ? parts[1] : "quiz";   // #/create/hum 是她能发的门
-  if (state.tab === "discover") state.minePage = ["shared", "liked"].includes(parts[1]) ? parts[1] : null;
+  state.tab = DATA.guest ? "discover" : ["create","mine","discover"].includes(parts[0]) ? parts[0] : "home";
+  state.create = state.tab === "create" && ["hum", "draw"].includes(parts[1]) ? parts[1] : "quiz";
+  if (state.tab === "discover") state.minePage = ["shared","liked"].includes(parts[1]) && !(DATA.guest && parts[1] === "shared") ? parts[1] : null;
   else { state.tags = []; state.filterOpen = false; }   // 筛选是发现页的临时态，走开就清 —— 回来不该是空的一屏
   state.project = null;
 }
@@ -1875,7 +1888,7 @@ function renderPanel(){
 }
 
 /* ── 顶栏 ── */
-const TABS = [{id:"mine",label:T("tabMine")}];
+const TABS = [{id:"create",label:T("tabCreate")}, {id:"mine",label:T("tabMine")}, {id:"discover",label:T("tabDiscover")}];
 function takeSub(p, t){
   const j = parentOf(p, t), from = j >= 0 ? T("fromVersion", {n: vOf(p.takes[j], j)}) : "";
   // 旋律是他自己的（哼的 / 画的）：写在这一版的副标题上 —— 参与感的回执（design.md §10）。
@@ -1980,7 +1993,7 @@ function enterRefine(pi, ti){
   const key = k0 && (k0.id || k0.audio);
   if (!state.pending || state.pending.key !== key) {   // 换了一版才清，回头接着写
     state.notes = {};
-    state.keepScore = !!(k0 && (k0.segments||[]).length);
+    state.keepScore = !!(k0 && hasScore(k0));
   }
   state.pending = k0 ? {p:pi, t:ti, key, title:p0.title, v:vOf(k0, ti), score:k0.score} : null;
 }
@@ -2030,14 +2043,15 @@ function syncBrandBeat(ev){
 ["playing","waiting","pause","ended","emptied","error"].forEach(ev => au.addEventListener(ev, syncBrandBeat));
 
 function renderTop(){
-  $("top").innerHTML = `<button class="brand" data-tab="mine">${brandMark()}<b>${esc(DATA.title)}</b></button>
-    <div class="tabs">${TABS.map(t =>
+  const single = DATA.demo ? "mine" : DATA.guest ? "discover" : null;
+  const tabs = single ? TABS.filter(t => t.id === single) : TABS;
+  $("top").innerHTML = `<button class="brand" data-tab="${single || "home"}">${brandMark()}<b>${esc(DATA.title)}</b></button>
+    <div class="tabs">${tabs.map(t =>
       `<button class="tab" role="tab" aria-selected="${t.id===state.tab}" data-tab="${t.id}">${t.label}</button>`).join("")}</div>`;
 }
 
 /* ── ① 首页 ── */
 function renderHome(){
-  const yue = `<a href="https://github.com/multimodal-art-projection/YuE" target="_blank" rel="noopener">YuE2</a>`;
   return `<div class="hero">${logo(60)}
     <h1>${T("homeH1")}</h1>
     <p>${T("homeLede")}</p></div>
@@ -2049,8 +2063,7 @@ function renderHome(){
       <button class="navc" data-tab="discover"><span class="ic">${ICON.discover}</span>
         <b>${T("tabDiscover")}</b><span>${T("homeDiscoverSub")}</span></button>
     </div>
-    <p class="fine">${T("homeFine", {yue})}
-      ${DATA.isOwner ? ` · <a class="owner-link" href="/admin">${T("homeAdmin")}</a>` : ""}</p>`;
+    ${DATA.isOwner ? `<p class="fine"><a class="owner-link" href="/admin">${T("homeAdmin")}</a></p>` : ""}`;
 }
 
 /* ── ② 创作引导：每题都给选项（PM #2）── */
@@ -2094,13 +2107,13 @@ function waysBar(){
 }
 function renderCreate(){
   const st = state.quiz;
-  loadMelody().catch(() => {});                 // 进了创作页就把转写脚本备好，点「开始」时不用等
+  if (state.create !== "quiz") loadMelody().catch(() => {});
   if (state.create === "hum") return CREATE_HEAD() + swapBox(renderHum());
   if (state.create === "draw") return CREATE_HEAD() + swapBox(renderDraw());
   if (st.step >= QUIZ.length) return renderSeed();
   const cur = QUIZ[st.step], list = answerList(cur);
   const isOn = (o) => list.includes(o);
-  const freeText = list.filter(x => !cur.opts.includes(x)).join(T("optSep"));
+  const freeText = st.draft?.[cur.k] ?? list.filter(x => !cur.opts.includes(x)).join(T("optSep"));
   const mel = state.melody;
   return CREATE_HEAD() + swapBox((mel ? `
     <p class="mel-line">${T("melLine", {verb: melVerb(mel)})}
@@ -2138,17 +2151,18 @@ function seedText(){
   // 歌唱哪种语言默认跟界面语言走（PM 2026-09-22），所以「默认不必写进话里」这条
   // 省略规则也跟着走：韩语界面下选了韩语不写，中文界面下选了中文不写。
   if (a.lang && a.lang !== T("quizLangDefault")) bits.push(T("seedLangSung", {lang: a.lang}));
-  // 旋律是他自己哼的 / 画的：开场白点名编号，她按 hums/<编号>.abc 照谱写词、出歌（SKILL.md「When they hum」）
   const mel = state.melody;
   if (mel) {
     const p = {verb: melVerb(mel), id: mel.id};
-    return bits.length ? T("seedWithMelody", {...p, bits: I18N.joinList(bits)})
-                       : T("seedWithMelodyBare", p);
+    const draft = bits.length ? T("seedWithMelody", {...p,bits:I18N.joinList(bits)}) : T("seedWithMelodyBare", p);
+    const plan = mel.mode === "whole" && mel.lyricPlan ? "\n" + T("privateLyricPlan", {plan:mel.lyricPlan}) : "";
+    return T("privateWritePrefix") + draft + plan + "\n〔旋律:" + mel.id + ":" + mel.mode + "〕";
   }
-  return bits.length ? T("seedFull", {bits: I18N.joinList(bits)}) : T("seedBlank");
+  return bits.length ? T("privateWritePrefix") + I18N.joinList(bits) : T("privateWriteBare");
 }
 function renderSeed(){
   const text = seedText(), mel = state.melody;
+  const link = toHer(text);
   const answered = Object.values(state.quiz.a).some(v => Array.isArray(v) ? v.length : v);
   return `<h2 class="big">${T("seedH")}</h2>
     <div class="seed-out">
@@ -2156,8 +2170,16 @@ function renderSeed(){
         <button class="copy" data-copy="${esc(text)}">${T("copy")}</button></div>
       <div class="seed-b">${esc(text)}</div>
     </div>
+    ${mel ? `<div class="field">
+      <div class="tagrow" aria-label="${esc(T("privateMelodyMode"))}">
+        <button class="tag" data-melody-mode="whole" aria-pressed="${mel.mode==="whole"}">${T("privateMelodyWhole")}</button>
+        <button class="tag" data-melody-mode="graft" aria-pressed="${mel.mode==="graft"}">${T("privateMelodyGraft")}</button>
+      </div>
+      ${mel.mode==="graft" ? `<p class="note">${T("privateMelodyTwoJobs")}</p>` : ""}
+    </div>` : ""}
+    ${DATA.whalenest ? `<p class="fine">${T(link ? "privateDraftSend" : "privateDraftCopy")}</p>` : ""}
     <div class="quiz-nav">
-      ${toHer(text) ? `<a class="btn" href="${esc(toHer(text))}">${ICON.send}<span>${T("sendToHer")}</span></a>` : ""}
+      ${link ? `<a class="btn" href="${esc(link)}">${ICON.send}<span>${T(DATA.whalenest ? "privateDraftChat" : "sendToHer")}</span></a>` : ""}
       <button class="btn ghost" data-nav="restart">${answered ? T("seedRedo") : T("seedStart")}</button>
       ${mel ? `<button class="quiz-skip" data-nav="dropmelody">${T("melDropLong")}</button>` : ""}
     </div>`;
@@ -2325,11 +2347,11 @@ async function putMelody(kind, r){
   const bytes = new TextEncoder().encode(r.abc), id = Math.random().toString(36).slice(2, 10), CH = 3072;
   for (let off = 0; off < bytes.length; off += CH) {
     const slice = bytes.subarray(off, off + CH);
-    const j = await (await fetch("/api/hum?" + new URLSearchParams({ op:"chunk", id, off, data:b64(slice) }), { cache:"no-store" })).json();
+    const j = await (await studioWrite("/api/hum", { op:"chunk", id, off, data:b64(slice) })).json();
     if (!j.ok || j.n !== slice.length) throw new Error(j.error || "chunk");
   }
   const meta = { bpm:r.bpm, key:r.key, bars:r.bars, seconds:r.seconds, sections:r.sections, quality:r.quality };
-  const j = await (await fetch("/api/hum?" + new URLSearchParams({ op:"commit", id, kind, meta:JSON.stringify(meta) }), { cache:"no-store" })).json();
+  const j = await (await studioWrite("/api/hum", { op:"commit", id, kind, meta:JSON.stringify(meta) })).json();
   if (!j.ok) throw new Error(j.error || "commit");
   return j;
 }
@@ -2338,7 +2360,9 @@ async function tuneKeep(S, kind){
   S.saving = true; render();
   try {
     const j = await putMelody(kind, S.result);
-    state.melody = { id:j.id, kind };
+    const lyricPlan = (S.result.sections || []).map(section =>
+      "[" + section.tag + "] " + (section.phrases || []).map(phrase => phrase.notes).join("/")).join(" · ");
+    state.melody = {id:j.id,kind,mode:"graft",lyricPlan};
     S.saving = false;
     // 方式是叠加的，不是二选一（PM 2026-09-21）：旋律只解决曲调，写给谁、为什么仍然要问 ——
     // 存好就带着旋律回到引导题（答过的接着答，答完的直接到开场白），两样叠进同一句开场白。
@@ -2444,7 +2468,7 @@ function renderMine(){
   if (state.project != null) return renderProject();
   const ps = DATA.projects || [];
   if (!ps.length) return `<h2 class="big">${T("mineH")}</h2>` +
-    emptyBox(T("mineEmptyT"), T("mineEmptyS"));
+    emptyBox(T("mineEmptyT"), T("mineEmptyS"), DATA.demo ? null : {tab:"create", label:T("mineEmptyCta")});
   /* 卡片右下那枚 ⋯ 和项目页标题右边那枚是**同一个菜单**（openProjectMenu：换封面 / 删除项目），
      只是挪到列表上也能点 —— 改一张封面、删一个项目，不用先进去再退出来。
      它是 .proj 这个按钮【外面】的兄弟节点：.proj 是真 <button>，而这一页没有
@@ -2460,7 +2484,7 @@ function renderMine(){
               <span>${(p.takes||[]).length ? T("projTakes", {n: (p.takes||[]).length}) : T("projNoTakes")}</span>
               ${(p.takes||[]).some(t => t.shared)?`<span class="chip on">${T("projShared")}</span>`:""}</div>
           </div></button>
-        
+        ${!DATA.demo && p.takes.length ? `<button type="button" class="mini proj-more" data-projmore="${i}" data-stop="1" title="${esc(T("projMenuTitle"))}">${ICON.more}</button>` : ""}
       </div>`).join("")}</div>`;
 }
 function backBtn(nav, label){
@@ -2491,6 +2515,7 @@ function renderProject(){
     <div class="head">${art(p.title,"96px")}
       <div class="head-m"><h2 class="head-t">${esc(p.title)}</h2>
         ${p.brief ? `<div class="head-s">${esc(p.brief)}</div>` : ""}</div>
+      ${!DATA.demo && p.takes.length ? `<button type="button" class="mini" data-projmore="${state.project}" data-stop="1" title="${esc(T("projMenuTitle"))}">${ICON.more}</button>` : ""}
       </div>
     ${renderSongs(p)}`;
 }
@@ -2511,7 +2536,7 @@ function takeRow(p, t, i){
     <div class="song-r">
       <span class="dur">${esc(t.dur||"")}</span>
       <span class="mini ind ${playing?"on":cur?"cur":""}">${loading ? SPIN_S : playing ? EQ : PLAY_S}</span>
-      
+      ${DATA.demo ? "" : `<button class="mini" data-refine="${i}" data-stop="1" aria-pressed="${isRefining(pi,i)}" title="${esc(T("menuRefine"))}">${ICON.tune}</button>`}
       <span class="mini" data-more="${i}" data-stop="1" role="button" title="${esc(T("more"))}">${ICON.more}</span>
     </div></div>`;
 }
@@ -2531,11 +2556,16 @@ function openMenu(i, anchor, pi){
   const pj = pi == null ? state.project : pi;          // 队列面板里的一行可能不属于当前打开的项目
   const p = DATA.projects[pj], t = p && (p.takes||[])[i];
   if (!t) return;
-  const v = vOf(t, i), dl = toHer(T("askTakeFile", {title: p.title, v}));
   const pop = $("pop");
   pop.hidden = false; pop.className = "pop menu"; pop.dataset.kind = "menu"; pop.dataset.take = i; pop.dataset.proj = pj;
   pop.innerHTML = `
-    <button class="mitem" data-menu="lyrics:${i}">${ICON.lyr}<span>${T("menuLyrics")} / ${T("scoreBox")}</span></button>`;
+    ${DATA.demo ? "" : `<button class="mitem" data-menu="refine:${i}">${ICON.tune}<span>${T("menuRefine")}</span></button>`}
+    <button class="mitem" data-menu="lyrics:${i}">${ICON.lyr}<span>${T("menuLyrics")} / ${T("scoreBox")}</span></button>
+    ${DATA.demo ? "" : `
+      <button class="mitem" data-menu="share:${i}">${ICON.share}<span>${T("menuShare")}</span>${t.shared?`<b>${T("menuShared")}</b>`:""}</button>
+      <a class="mitem" data-menu="close" href="${esc(t.audio)}?download=1" download>${ICON.down}<span>${T("menuDownload")}</span></a>
+      <div class="mitem-sep"></div>
+      <button class="mitem bad" data-menu="del:${i}">${ICON.trash}<span>${T("menuDelTake")}</span></button>`}`;
   const r = anchor.getBoundingClientRect();
   pop.style.left = Math.max(12, Math.min(r.right - pop.offsetWidth, document.documentElement.clientWidth - pop.offsetWidth - 12)) + "px";
   const dock = document.querySelector(".dock").getBoundingClientRect().height;
@@ -2611,10 +2641,10 @@ async function delCall(kind, pi, ti){
   const gone = kind === "project" ? (p.takes || []).map(t => t.audio)
                                   : [((p.takes || [])[ti] || {}).audio];
   const q = kind === "project" ? {op: "project", project: slug}
-                               : {op: "take", audio: (gone[0] || "").split("/").pop()};
+                               : {op: "take", audio: gone[0] || ""};
   if (kind === "take" && !q.audio) return;
   try {
-    const r = await fetch("/api/delete?" + new URLSearchParams(q), {cache: "no-store"});
+    const r = await studioWrite("/api/delete", q);
     if (!r.ok) throw new Error("delete " + r.status);
     if (state.cur && gone.includes(state.cur.src)) stopPlayback();   // 正在放的那首被删了
     await reloadData(await r.json());
@@ -2641,7 +2671,7 @@ async function refineLyrics(src){
   if (!src || state.refining) return;
   state.refining = true;
   try {
-    const r = await fetch("/api/refine?" + new URLSearchParams({audio: src}), {cache: "no-store"});
+    const r = await studioWrite("/api/refine", {audio: src});
     if (!r.ok) throw new Error("refine " + r.status);
     await reloadData(await r.json());
     render();
@@ -2703,7 +2733,8 @@ function renderTakeLyrics(p, t, i){
   const ly = t.lyrics || p.lyrics, v = vOf(t, i);
   return takeHead(p, t, i, T("takeLyricsHead", {v}))
     + (ly ? lyricsCard(ly) : emptyBox(T("lyrEmptyT"), T("lyrEmptyS")))
-    + `<details class="scorebox" data-score="${esc(t.score)}"><summary>${T("scoreBox")}</summary><div class="abcbox" id="dsh-score"></div></details>`;
+    + (ly && !DATA.demo ? `<p class="after"><a class="copy" href="${esc(t.audio.replace(/\/stream$/, "/lyrics"))}" download>${ICON.down}<span>${T("download")}</span></a></p>` : "")
+    + scoreDetails(t);
 }
 /* ── 精修：一首歌一个页面（PM 2026-09-16）──
    入口在歌曲资产上和播放界面上，不在项目层 —— 「精修」修的是**这一版唱得怎么样**，
@@ -2713,12 +2744,18 @@ function refineTake(){
   const p = DATA.projects[state.refine.p];
   return [p, (p.takes||[])[state.refine.t]];
 }
-function hasScore(t){ return (t.segments||[]).length > 0; }
+function hasScore(t){ return !!t.score || (t.segments||[]).length > 0; }
+function scoreDetails(t){
+  if (!t.score) return "";
+  return `<details class="scorebox" data-score="${esc(t.score)}"><summary>${T("scoreBox")}</summary><div class="abcbox"></div>
+    ${DATA.demo ? "" : `<p class="after" data-score-download hidden><a class="copy" href="${esc(t.score)}?download=1" download>${ICON.down}<span>${T("scoreDownload")}</span></a></p>`}
+    </details>`;
+}
 
 function renderRefine(){
   const [p, t] = refineTake();
   if (!t) { state.refine = null; return renderMine(); }
-  const al = t.align || [];
+  const al = t.align || t.lyrics?.sections || [];
   const n = vOf(t, state.refine.t);
   const timed = al.some(a => a.lineT);
   return `${backBtn("unrefine", p.title)}
@@ -2751,7 +2788,8 @@ function renderRefine(){
           </div>`;
         }).join("")}
       </div>`).join("")}</div>
-    ${hasScore(t) ? `<details class="scorebox"><summary>${T("scoreBox")}</summary>
+    ${t.score ? scoreDetails(t) :
+      hasScore(t) ? `<details class="scorebox"><summary>${T("scoreBox")}</summary>
       ${t.segments.map(x => x.silent ? "" : `<div class="segline">
         <span class="sec-raw">${esc(T("scoreBar", {sec: secLabel(x.name), from: x.bar+1, to: x.bar+x.bars}))}</span>
         <div class="abcbox" id="abc-${x.id}"></div></div>`).join("")}
@@ -2826,10 +2864,11 @@ function draftText(){
   const out = items.map(n => T("draftLine",
     {sec: secLabel(n.tag), n: n.li+1, line: n.line, text: n.text.trim()}));
   if (state.keepScore && c.score)
-    out.push("", T("draftKeepScoreFile", {score: c.score}));
+    out.push("", T("draftKeepScore"));
   else if (state.keepScore)
     out.push("", T("draftKeepScore"));
-  return [T("draftHead", {title: c.title, v: c.v}), "", ...out].join("\n");
+  return [T("privateRevisePrefix") + T("draftHead", {title:c.title,v:c.v}), ...out,
+    "〔版本:" + c.key + ":" + (state.keepScore ? "keep" : "change") + "〕"].join("\n");
 }
 /* ── 建议气泡 + 它打开的那一层 ── */
 function renderBubble(){
@@ -2907,7 +2946,7 @@ function lineMeta(id){
   if (!state.refine) return null;
   const [, t] = refineTake();
   const [si, li] = id.split(":").map(Number);
-  const a = (t.align || [])[si];
+  const a = (t.align || t.lyrics?.sections || [])[si];
   return a ? {tag: a.tag, li, line: (a.lines[li]||"").trim()} : null;
 }
 
@@ -2926,7 +2965,7 @@ function shareDirty(p, t){
 function renderTakeShare(p, t, i){
   const s = shareFor(t), dirty = shareDirty(p, t), v = vOf(t, i);
   return takeHead(p, t, i, T("shareHead", {v})) + `<div class="form">
-    <p class="lede">${T("shareLede")}</p>
+    <p class="lede">${T(DATA.hasAudience ? "shareLede" : "privateDiscover")}</p>
     <div class="field"><label>${T("shareTitle")}</label>
       <input id="sh-title" value="${esc(s.title!=null?s.title:p.title)}" placeholder="${esc(T("shareTitlePh"))}"></div>
     <div class="field"><label>${T("shareDesc")} <span class="opt-req">${T("shareOptional")}</span></label>
@@ -3040,7 +3079,7 @@ function filterPanel(pool){
 }
 /* 选中的几枚标签连起来（空结果那一行要把「筛的是什么」说回来） */
 const pickedTags = () => state.tags.map(tagLabel).join(" · ");
-const MINE_PAGES = () => [["shared", T("minePageShared")], ["liked", T("minePageLiked")]];
+const MINE_PAGES = () => [...(DATA.guest ? [] : [["shared",T("minePageShared")]]), ["liked",T("minePageLiked")]];
 function renderDiscover(){
   const {all, mine, likes, list} = discoverRows();
   // 入口恒在（数字为 0 也在）—— 它是这两页唯一的门，藏起来就找不到了
@@ -3128,8 +3167,7 @@ async function likeCall(sh){
   sh.liked = want; sh.likes = Math.max(0, (sh.likes || 0) + (want ? 1 : -1));
   render();
   try {
-    const r = await fetch("/api/like?" + new URLSearchParams({op: want ? "set" : "unset", audio: sh.audio}),
-                          {cache: "no-store"});
+    const r = await studioWrite("/api/like", {op: want ? "set" : "unset", audio: sh.audio});
     if (!r.ok) throw new Error("like " + r.status);
     await reloadData(await r.json());
   } catch (_) {
@@ -3189,12 +3227,13 @@ async function commentAdd(){
   const sh = (DATA.shared || []).find(x => x.sid === state.song);
   const text = (state.cmDraft || "").trim();
   if (!sh || !text || state.cmBusy) return;
+  if (!state.cmAttempt || state.cmAttempt.sid !== sh.sid || state.cmAttempt.text !== text)
+    state.cmAttempt = {sid:sh.sid,text,request:crypto.randomUUID()};
   state.cmBusy = true; render();
   try {
-    const r = await fetch("/api/comment?" + new URLSearchParams({op:"add", audio:sh.audio, text}),
-                          {cache:"no-store"});
+    const r = await studioWrite("/api/comment", {op:"add",audio:sh.audio,text,request:state.cmAttempt.request});
     if (!r.ok) throw new Error("comment " + r.status);
-    state.cmDraft = "";
+    state.cmDraft = ""; state.cmAttempt = null;
     await reloadData(await r.json());
   } catch (_) {
     toast(T("commentFailed"));
@@ -3207,7 +3246,7 @@ async function commentAdd(){
    谁能删由服务端算好（`canDel`），这里只决定画不画按钮；真正的闸在 `_comment` 里。 */
 async function commentDel(id){
   try {
-    const r = await fetch("/api/comment?" + new URLSearchParams({op:"del", id}), {cache:"no-store"});
+    const r = await studioWrite("/api/comment", {op:"del", id});
     if (!r.ok) throw new Error("comment " + r.status);
     await reloadData(await r.json());
   } catch (_) {
@@ -3293,9 +3332,10 @@ document.addEventListener("click", (e) => {
   if (ref) { const i = +ref.dataset.refine;                 // 精修是开关：再点一次就回项目
     isRefining(state.project, i) ? leaveRefine() : openRefine(state.project, i); return; }
   if (e.target.closest("[data-stop]")) return;   // 下载链接：别把整行的播放也触发了
-  const t = e.target.closest("[data-tab],[data-nav],[data-opt],[data-proj],[data-play],[data-tagpick],[data-tagclear],[data-filteropen],[data-copy],[data-copylyr],[data-copydraft],[data-song],[data-copylink],[data-minepage],[data-lyr],[data-keepscore],[data-lplay],[data-closepop],[data-delnote],[data-backrefine],[data-step],[data-mode],[data-queue],[data-q],[data-way],[data-hum],[data-draw]");
+  const t = e.target.closest("[data-tab],[data-nav],[data-opt],[data-proj],[data-play],[data-tagpick],[data-tagclear],[data-filteropen],[data-copy],[data-copylyr],[data-copydraft],[data-song],[data-copylink],[data-minepage],[data-lyr],[data-keepscore],[data-lplay],[data-closepop],[data-delnote],[data-backrefine],[data-step],[data-mode],[data-queue],[data-q],[data-way],[data-hum],[data-draw],[data-melody-mode]");
   if (!t) return;
   const d = t.dataset;
+  if (d.melodyMode && state.melody) { state.melody.mode = d.melodyMode; render(); return; }
   if (d.way != null) { state.create = d.way; state.quiz.step = Math.min(state.quiz.step, QUIZ.length - 1); go(); return; }
   if (d.hum != null) { humAction(d.hum); return; }
   if (d.draw != null) { drawAction(d.draw); return; }
@@ -3303,7 +3343,7 @@ document.addEventListener("click", (e) => {
   // 所以 tab / page / project 一并交代 —— 只设 minePage 的话人还留在 mine 那边（同 openPage 那条判据）
   if (d.minepage != null) { state.tab = "discover"; state.minePage = d.minepage; state.song = null;
     state.page = null; state.project = null; state.refine = null; go(); return; }
-  if (d.copylink != null) { copyText(location.href, T("linkCopied")); return; }
+  if (d.copylink != null) { copyText(location.origin + "/#/s/" + encodeURIComponent(state.song), T("linkCopied")); return; }
   // 开词要退出精修（精修页本身就是这一版的词），也要收起队列 —— 都在 openDrawer 里
   if (d.lyr != null) { openDrawer("lyr"); return; }
   if (d.queue != null) { openDrawer("queue"); return; }
@@ -3381,11 +3421,29 @@ document.addEventListener("click", (e) => {
 /* 分享落在她工作区的 shared.json（serve.py /api/share，纯 GET）：刷新、换端都还在。
    服务端回整份 data，直接换上 —— 行上的「已分享」和发现页一次到位。 */
 async function shareCall(q){
-  const r = await fetch("/api/share?" + new URLSearchParams(q), {cache:"no-store"});
+  const r = await studioWrite("/api/share", q);
   if (!r.ok) throw new Error("share " + r.status);
   await reloadData(await r.json());
 }
 document.addEventListener("input", (e) => {
+  if (e.target.id === "qa") {
+    const current = QUIZ[state.quiz.step];
+    if (current) (state.quiz.draft ||= {})[current.k] = e.target.value;
+    return;
+  }
+  if (e.target.id === "sh-title" || e.target.id === "sh-desc") {
+    const p = DATA.projects[state.project], k = p?.takes?.[state.page?.t];
+    if (!k) return;
+    const draft = shareFor(k);
+    draft[e.target.id === "sh-title" ? "title" : "desc"] = e.target.value;
+    const send = $("sh-go");
+    if (send) {
+      const dirty = shareDirty(p,k);
+      send.disabled = !dirty || state.shareBusy;
+      send.textContent = T(k.shared ? dirty ? "shareUpdate" : "shareUnchanged" : "shareGo");
+    }
+    return;
+  }
   if (e.target.id !== "cm-in") return;
   state.cmDraft = e.target.value;
   // 就地更新，**不 render** —— 每敲一个字就重建整页的话，光标会被打回开头。
@@ -3410,9 +3468,10 @@ document.addEventListener("click", async (e) => {
   state.shareBusy = true; render();
   try {
     await shareCall({op:"set", audio:k.audio, title:s.title, desc:s.desc});
+    state.share = {key:null};
     state.shareDone = true; setTimeout(() => { state.shareDone = false; render(); }, 2600);
   } catch { toast(T("shareFailed")); }
-  state.shareBusy = false; state.share = {key:null}; render();
+  state.shareBusy = false; render();
 });
 
 /* 键盘：空格播放/暂停，左右 5 秒，数字键切版本（桌面工作台，design.md §4.3） */
@@ -3477,10 +3536,7 @@ function applyBusy(list){
 }
 /* 内容指纹：项目 / 版本 / 分享 / 在途行的**状态**，不含每秒都在变的 elapsed */
 function fingerprint(){
-  return JSON.stringify([(DATA.projects||[]).map(p => [p.slug, p.title,
-      (p.takes||[]).map(t => [t.id, t.v, t.shared, t.sharedTitle, t.sharedDesc]),
-      (p.busy||[]).map(j => [j.version, j.stage, j.queued, j.failed, j.error])]),
-    (DATA.shared||[]).map(x => [x.audio, x.title, x.desc])]);
+  return DATA.v;
 }
 function refreshData(reason){
   // 路由刚变 / 有歌刚落盘 / 还有链接没落到位：不节流；后台的 tick / focus 之类才受 1.5 秒间隔约束
@@ -3548,9 +3604,11 @@ async function reloadData(given){
     if (fresh && fresh.unchanged) return;   // 盘上没动：DATA 一个字不碰，调用方的 fingerprint 自然也不变
   }
   Object.assign(DATA, fresh);
+  if (DATA.guest && state.cur && !DATA.shared.some(song=>song.audio===state.cur.src)) stopPlayback();
   if (keep.slug != null) {
     const i = DATA.projects.findIndex(p => p.slug === keep.slug);
     state.project = i >= 0 ? i : null;
+    if (i < 0) { state.refine = null; state.page = null; state.pending = null; }
     if (i >= 0 && keep.takeId) {
       const t = (DATA.projects[i].takes||[]).findIndex(x => x.id === keep.takeId);
       if (keep.kind === "refine") {
@@ -3660,8 +3718,7 @@ function render(force){
   if (cmFocused) { const el = $("cm-in"); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   if (!state.refine) return;
   const box = document.querySelector(".scorebox");
-  if (box) box.ontoggle = () => drawScores();
-  drawScores();
+  if (box && !box.dataset.score) { box.ontoggle = () => drawScores(); drawScores(); }
 }
 document.addEventListener("toggle", async ({target}) => {
   if (!target.matches("details[data-score][open]") || target.dataset.drawn) return;
@@ -3675,6 +3732,8 @@ document.addEventListener("toggle", async ({target}) => {
     const abc = await response.text(), renderer = await loadScoreLibrary();
     host.textContent = "";
     renderer.renderAbc(host, abc, {responsive:"resize"});
+    const download = target.querySelector("[data-score-download]");
+    if (download) download.hidden = false;
   } catch {
     delete target.dataset.drawn;
     host.textContent = T("refineFailed");

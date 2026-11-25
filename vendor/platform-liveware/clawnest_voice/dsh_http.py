@@ -11,6 +11,8 @@ from collections import deque
 from .client_protocol import client_metadata, compatible
 from .upstream import VoiceError
 
+POLL_FRAME_LIMIT = 16
+
 
 async def read_message(reader, headers):
     limit = 32768
@@ -78,7 +80,9 @@ class HttpCall:
                 await asyncio.wait_for(self.changed.wait(), 0.45)
             except TimeoutError:
                 pass
-        next_frames = list(self.frames)[:6]
+        # Drain enough queued PCM to sustain playback over a slower relay.
+        # Each audio frame is capped at the gateway's 4 KiB PCM size.
+        next_frames = list(self.frames)[:POLL_FRAME_LIMIT]
         return {'after': next_frames[-1][0] if next_frames else cursor,
                 'frames': [data for _, data in next_frames], 'closed': self.session.closed}
 

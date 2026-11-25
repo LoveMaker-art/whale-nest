@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {bridgeDirectory,bootBridge} from './bridge-helper.mjs';
 import {buildDistribution,distributionVersion} from '../scripts/build-distribution.mjs';
-import {pluginId,updateCompatibility} from '../src/plugin-release.mjs';
+import {pluginId,updateCompatibility,updatePrerequisites,updateProtocol} from '../src/plugin-release.mjs';
 
 test('distribution moves to another folder, loads without source paths, retains external data on removal',async t=>{
  const dir=await mkdtemp(join(tmpdir(),'whalenest-package-'));t.after(()=>rm(dir,{recursive:true,force:true}));
@@ -20,9 +20,14 @@ test('distribution moves to another folder, loads without source paths, retains 
  assert.equal(metadata.version,bundle.manifest.version);
  assert.equal(metadata.sha256,createHash('sha256').update(bundleBytes).digest('hex'));
  assert.deepEqual(metadata.compatibility,updateCompatibility);
+ assert.deepEqual(metadata.prerequisites,updatePrerequisites);
+ assert.equal(metadata.updateProtocol,updateProtocol);
  assert.equal(metadata.notes,notes);
- assert.ok(bundle.manifest.capabilities.every(c=>c.type==='runtime'));
- assert.ok(!bundle.manifest.dependencies.some(d=>d.id==='managed-web-app-provider'));
+ assert.deepEqual(bundle.manifest.capabilities.map(c=>c.type),['runtime','managed-web-app']);
+ assert.ok(bundle.manifest.dependencies.some(d=>d.id==='managed-web-app-provider'));
+ assert.equal(bundle.manifest.capabilities[1].id,'whalenest-liveware');
+ assert.deepEqual(Buffer.from(bundle.files['artifacts/official-runtime-provider.mjs'].content,'base64'),
+  await readFile(new URL('../integration/clawchat/base/linux-x64.mjs',import.meta.url)),'Official provider must remain byte-identical');
  assert.ok(!Object.keys(bundle.files).some(p=>p.includes('/whalenest/web/')||/(?:^|\/)(?:management|management-provider)\.mjs$/.test(p)));
  const target=join(dir,'installed-elsewhere');
  for(const [path,entry]of Object.entries(bundle.files)){
@@ -40,9 +45,13 @@ test('distribution moves to another folder, loads without source paths, retains 
  const entry=bundle.manifest.artifacts[0];const bytes=await readFile(join(target,entry.entry));
  assert.equal(entry.integrity,'sha256-'+createHash('sha256').update(bytes).digest('base64'));
  const runtime=await import(pathToFileURL(join(target,entry.entry)).href);
- let runtimeProvider;
- await runtime.default.activate({installationConfiguration:{},hostCapabilities:{get:id=>{assert.equal(id,'runtime-provider','plugin must not request a standalone web capability');return {register:provider=>{runtimeProvider=provider;}}}}});
+ let runtimeProvider,managedProvider;
+ await runtime.default.activate({installationConfiguration:{},hostCapabilities:{get:id=>{
+  assert.ok(['runtime-provider','managed-web-app-provider'].includes(id));
+  return {register:provider=>{if(id==='runtime-provider')runtimeProvider=provider;else managedProvider=provider;}};
+ }}});
  assert.equal(runtimeProvider.capabilityId,'deepseek-harness');
+ assert.equal(managedProvider.capabilityId,'whalenest-liveware');
  const fixture=await bridgeDirectory();fixture.entryOverride=join(target,'artifacts/deepseek-harness-bridge.mjs');fixture.options.management={enabled:true};
  await mkdir(join(fixture.options.home,'companion/aurabot-v1'),{recursive:true});
  await writeFile(join(fixture.options.home,'companion/aurabot-v1/instance.json'),JSON.stringify(fixture.options));

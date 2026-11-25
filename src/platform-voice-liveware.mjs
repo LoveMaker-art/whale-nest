@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {execFile,spawn} from 'node:child_process';
 import {randomBytes,randomUUID} from 'node:crypto';
+import {linkSync,lstatSync,mkdirSync,readFileSync,unlinkSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
@@ -31,13 +32,42 @@ function profileReader({delivery,route}) {
   };
 }
 
-export async function startPlatformVoiceLiveware(options,{withPrivateVoiceSession,listModels,readProfile=profileReader(options.clawchat),port=options.realtime?.port??8897}={}) {
+export const voiceSessionPort = options => options.realtime?.bridgePort ?? 8896;
+
+function voiceSessionSecret(options) {
+  const directory = join(options.dataDir, 'realtime');
+  mkdirSync(directory, {recursive:true, mode:0o700});
+  const file = join(directory, 'session-secret');
+  try { lstatSync(file); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    const temporary = file + '.' + randomUUID();
+    try {
+      writeFileSync(temporary, randomBytes(32).toString('hex'), {flag:'wx', mode:0o600});
+      try { linkSync(temporary, file); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+    } finally { unlinkSync(temporary); }
+  }
+  const info = lstatSync(file);
+  assert.ok(info.isFile() && !(info.mode & 0o077), 'Call session credentials must stay private');
+  const secret = readFileSync(file);
+  assert.match(secret.toString(), /^[a-f0-9]{64}$/);
+  return secret;
+}
+
+export async function startRuntimeVoiceSession(options, {withPrivateVoiceSession,listModels}) {
+  const port = voiceSessionPort(options);
+  assert.ok(Number.isInteger(port) && port > 0 && port <= 65535 && port !== (options.realtime.port ?? 8897), 'Invalid call session port');
+  return startPlatformVoiceBridge(options, {secret:voiceSessionSecret(options), withPrivateVoiceSession, listModels,
+    readProfile:profileReader(options.clawchat), port});
+}
+
+export async function startPlatformVoiceLiveware(options,{withPrivateVoiceSession,listModels,readProfile=profileReader(options.clawchat),
+  port=options.realtime?.port??8897,bridgePort}={}) {
   assert.ok(Number.isInteger(port) && port >= 0 && port <= 65535,'Invalid call port');
   const publicOrigin = verifiedRealtimePublicOrigin(options.realtime?.publicOrigin);
   const {speech} = options;
   const {base,key} = await readPlatformProvider(speech);
-  const secret = Buffer.from(randomBytes(32).toString('hex'));
-  const bridge = await startPlatformVoiceBridge(options,{secret,withPrivateVoiceSession,listModels,readProfile});
+  const secret = bridgePort === undefined ? Buffer.from(randomBytes(32).toString('hex')) : voiceSessionSecret(options);
+  const bridge = bridgePort === undefined ? await startPlatformVoiceBridge(options,{secret,withPrivateVoiceSession,listModels,readProfile}) : null;
   const child = spawn(options.realtime?.python ?? 'python3',['-B','-m','clawnest_voice.dsh_runtime'],{
     cwd:gatewayDirectory,stdio:['pipe','pipe','inherit'],
   });
@@ -68,7 +98,7 @@ export async function startPlatformVoiceLiveware(options,{withPrivateVoiceSessio
     });
     child.stdin.end(JSON.stringify({port,base,key,secret:secret.toString(),owner:options.clawchat.route.sender,public_origin:publicOrigin,
       asr_model:speech.asrModel,tts_model:speech.ttsModel,voice:speech.voice||defaultPlatformVoice,
-      sample_rate:speech.sampleRate??22050,default_avatar:defaultAvatar,bridge:bridge.port,data_dir:join(options.dataDir,'realtime/platform')}));
+      sample_rate:speech.sampleRate??22050,default_avatar:defaultAvatar,bridge:bridge?.port??bridgePort,data_dir:join(options.dataDir,'realtime/platform')}));
     const listening = await ready;
     writeState(join(options.dataDir,'realtime/server.json'),{
       pid:child.pid,port:listening,state:'ready',provider:'clawnest-voice',at:new Date().toISOString(),
@@ -76,13 +106,13 @@ export async function startPlatformVoiceLiveware(options,{withPrivateVoiceSessio
     let closing;
     const close = ()=>closing??=(async()=>{
       try { await stopChild(); }
-      finally { await bridge.close(); }
+      finally { await bridge?.close(); }
     })();
     stopped.then(()=>{void close().catch(()=>{});});
-    return {port:listening,close};
+    return {port:listening,close,stopped};
   } catch (error) {
     try { await stopChild(); }
-    finally { await bridge.close(); }
+    finally { await bridge?.close(); }
     throw error;
   }
 }

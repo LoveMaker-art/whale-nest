@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { accessSync, constants, readFileSync, statSync, mkdtempSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import {configuredConnectExecutable} from './clawchat-core.mjs';
 
 const pluginId = 'whalenest.runtime.deepseek-harness';
 const digest = file => createHash('sha256').update(readFileSync(file)).digest('hex');
@@ -26,8 +27,6 @@ export function inspectLiveUpdate({ root, home, workspace, health, state, execut
   for (const [name, file] of Object.entries(executables)) {
     assert.ok(statSync(file).isFile(), 'Missing executable: ' + name); accessSync(file, constants.X_OK);
   }
-  const connectBin = join(dirname(dirname(config.agents.dsh.runtimeConfig.executablePathOverride)), 'clawchat-connect');
-  accessSync(connectBin, constants.X_OK);
   accessSync(join(home, '.dsh/companion'), constants.W_OK);
   const legacyFile = join(home, '.dsh/companion/config.json');
   const legacy = read(legacyFile);
@@ -39,6 +38,8 @@ export function inspectLiveUpdate({ root, home, workspace, health, state, execut
   const instancePath = join(home, '.dsh/companion/aurabot-v1/instance.json');
   const candidatePath = alreadyActive ? instancePath : join(root, '.whale-nest/cutover-preparation/instance.json');
   const candidate = read(candidatePath);
+  const connectBin = configuredConnectExecutable(candidate, config);
+  accessSync(connectBin, constants.X_OK);
   assert.equal(candidate.clawchat.route.sender, state.ownerId, 'Candidate owner mismatch');
   assert.equal(candidate.clawchat.route.conversation, state.conversationId, 'Candidate conversation mismatch');
   if (alreadyActive) assert.equal(resolve(candidate.cwd), resolve(workspace), 'Installed workspace mismatch');

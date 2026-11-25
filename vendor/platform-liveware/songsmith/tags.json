@@ -1,0 +1,192 @@
+[
+  [
+    [
+      "cantonese",
+      "lang.yue"
+    ],
+    [
+      "mandarin|chinese",
+      "lang.zh"
+    ],
+    [
+      "japanese",
+      "lang.ja"
+    ],
+    [
+      "korean",
+      "lang.ko"
+    ],
+    [
+      "spanish",
+      "lang.es"
+    ],
+    [
+      "\\bfrench\\b(?!\\s*horn)",
+      "lang.fr"
+    ],
+    [
+      "english",
+      "lang.en"
+    ]
+  ],
+  [
+    [
+      "lullaby",
+      "genre.lullaby"
+    ],
+    [
+      "children'?s song|nursery",
+      "genre.kids"
+    ],
+    [
+      "k-?pop",
+      "genre.kpop"
+    ],
+    [
+      "anthem",
+      "genre.anthem"
+    ],
+    [
+      "military march|\\bmarch\\b(?!ing)",
+      "genre.march"
+    ],
+    [
+      "guofeng|guo feng|\\bxiqu\\b|peking opera",
+      "genre.guofeng"
+    ],
+    [
+      "opera|coloratura|bel canto",
+      "genre.opera"
+    ],
+    [
+      "hip hop|hip-hop|\\btrap\\b",
+      "genre.hiphop"
+    ],
+    [
+      "\\br&b\\b|\\brnb\\b|soul\\b",
+      "genre.rnb"
+    ],
+    [
+      "\\bjazz",
+      "genre.jazz"
+    ],
+    [
+      "country",
+      "genre.country"
+    ],
+    [
+      "city pop",
+      "genre.citypop"
+    ],
+    [
+      "\\brock\\b|punk|metal",
+      "genre.rock"
+    ],
+    [
+      "\\bedm\\b|\\bhouse\\b|techno|\\bdance\\b",
+      "genre.edm"
+    ],
+    [
+      "synth|electronic|\\bchiptune\\b",
+      "genre.electronic"
+    ],
+    [
+      "\\bfolk\\b",
+      "genre.folk"
+    ],
+    [
+      "orchestral|cinematic|symphonic",
+      "genre.orchestral"
+    ],
+    [
+      "ballad",
+      "genre.ballad"
+    ],
+    [
+      "\\bpop\\b",
+      "genre.pop"
+    ]
+  ],
+  [
+    [
+      "no vocals?\\b|instrumental only|no singing",
+      "vocal.none"
+    ],
+    [
+      "child(?:ren)?'?s? (?:voice|vocal)|kid'?s? (?:voice|vocal)",
+      "vocal.child"
+    ],
+    [
+      "\\bduet\\b|male and female|female and male",
+      "vocal.duet"
+    ],
+    [
+      "\\bchoir\\b|choral|gang vocal",
+      "vocal.choir"
+    ],
+    [
+      "\\brap\\b|\\brapp(?:ed|ing)\\b|rapped verse",
+      "vocal.rap"
+    ],
+    [
+      "\\bfemale (?:vocal|voice|singer)",
+      "vocal.female"
+    ],
+    [
+      "(?<!fe)\\bmale (?:vocal|voice|singer)",
+      "vocal.male"
+    ],
+    [
+      "harmon(?:y|ies)|vocal harmon",
+      "vocal.harmony"
+    ]
+  ],
+  [
+    [
+      "epic|majestic|grand\\b|anthemic|heroic",
+      "mood.epic"
+    ],
+    [
+      "dreamy|ethereal|atmospheric|hazy",
+      "mood.dreamy"
+    ],
+    [
+      "melanchol|\\bsad\\b|sorrow|bittersweet|lonely|wistful|nostalg",
+      "mood.sad"
+    ],
+    [
+      "playful|quirky|whimsical|cheeky",
+      "mood.playful"
+    ],
+    [
+      "energetic|driving|powerful|strong\\b|passionate|fiery|groovy|funky|punchy",
+      "mood.energetic"
+    ],
+    [
+      "bright|cheerful|happy|joyful|uplifting|sunny",
+      "mood.bright"
+    ],
+    [
+      "calm|peaceful|serene|soothing|mellow|ambient",
+      "mood.calm"
+    ],
+    [
+      "warm|gentle|tender|sweet\\b|intimate|heartfelt|hopeful|soft\\b",
+      "mood.warm"
+    ]
+  ],
+  [
+    [
+      "\\bslow\\b|slower|laid-?back",
+      "tempo.slow"
+    ],
+    [
+      "up-?beat|\\bfast\\b|brisk|driving tempo|energetic tempo",
+      "tempo.fast"
+    ],
+    [
+      "mid-?tempo|moderate|medium tempo",
+      "tempo.mid"
+    ]
+  ]
+]

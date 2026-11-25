@@ -6,9 +6,7 @@ import { prepareRuntimeInput, mediaLimits } from './media.mjs';
 import { createSpeechClient } from './speech.mjs';
 import {qqManagementFallback} from './qq-management-message.mjs';
 import {withRequiredCommands} from './reply-notice.mjs';
-import { startPlatformVoiceLiveware } from './platform-voice-liveware.mjs';
-import { startSongPlayback } from './song-playback.mjs';
-import { publishFirstLiveware } from './first-liveware.mjs';
+import { startRuntimeVoiceSession } from './platform-voice-liveware.mjs';
 import { fastVoiceModel } from './voice-model.mjs';
 
 function adaptImages(input, models) {
@@ -45,53 +43,35 @@ export function extendRuntimeEntry(base) {
                 const home = configuration.homePath || process.env.DSH_HOME || join(homedir(), '.dsh');
                 return JSON.parse(readFileSync(join(home, 'companion/aurabot-v1/instance.json'), 'utf8'));
               };
-              let callServer, songServer, publication, closing=false;
-              const publicationAbort=new AbortController();
-              function startLiveware(options) {
-                if(closing||!options.clawchat?.route)return;
-                if(!callServer&&options.realtime?.enabled)callServer=startPlatformVoiceLiveware(options,{
-                  withPrivateVoiceSession:instance?.withPrivateVoiceSession,listModels:()=>adapter.listModels?.()??[],
+              const optionalOptions = () => {
+                try { return readOptions(); } catch { return {}; }
+              };
+              let voiceSession, closing=false;
+              function startVoiceSession(options = optionalOptions()) {
+                if (closing || voiceSession || !options.realtime?.enabled || !options.clawchat?.route) return;
+                voiceSession = startRuntimeVoiceSession(options, {
+                  withPrivateVoiceSession:instance?.withPrivateVoiceSession,
+                  listModels:()=>adapter.listModels?.()??[],
                 }).catch(error=>{
-                  console.error('[whalenest-call] platform gateway unavailable: '+error.message);
-                  callServer=undefined;
-                  return null;
-                });
-                if(!songServer&&options.singing?.playback?.enabled)songServer=startSongPlayback(options).catch(error=>{
-                  console.error('[whalenest-song] Liveware playback unavailable: '+error.message);
-                  songServer=undefined;
+                  console.error('[whalenest-call] session endpoint unavailable: '+error.message);
+                  voiceSession=undefined;
                   return null;
                 });
               }
-              function publishLiveware(options) {
-                if(closing||publication||options.clawchat?.firstBinding!==true)return;
-                publication=Promise.allSettled([['call',callServer],['song',songServer]].map(async ([kind,start])=>{
-                  const server=await start;
-                  if(server&&!publicationAbort.signal.aborted)
-                    await publishFirstLiveware(options,kind,server.port,publicationAbort.signal);
-                })).then(results=>{
-                  if(!closing&&results.some(result=>result.status==='rejected'))
-                    console.error('[whalenest-liveware] First-binding publication requires reconciliation');
-                }).finally(()=>{publication=undefined;});
-              }
-              try { startLiveware(readOptions()); } catch {}
+              startVoiceSession();
               return new Proxy(adapter, { get(target, key) {
                 if(key==='close')return async()=>{
                   closing=true;
-                  publicationAbort.abort();
-                  await publication;
-                  try { await Promise.allSettled([callServer,songServer].map(async server=>(await server)?.close())); }
+                  try { await (await voiceSession)?.close(); }
                   finally { await target.close?.(); }
                 };
                 if(key==='prepare'&&typeof target.prepare==='function')return async(...args)=>{
                   const result=await target.prepare(...args);
-                  // First binding is resolved inside the DSH bridge.
-                  const options=readOptions();
-                  startLiveware(options);
-                  publishLiveware(options);
+                  startVoiceSession();
                   return result;
                 };
                 if (key === 'listModels' && typeof target.listModels === 'function') return async (...args) => {
-                  const models = await target.listModels(...args), limits = mediaLimits(readOptions());
+                  const models = await target.listModels(...args), limits = mediaLimits(optionalOptions());
                   return models.filter(model=>model.selection?.provider!==fastVoiceModel.provider).map(model => ({ ...model, turnSubmissionCapability: {
                     prompt: { ...model.turnSubmissionCapability?.prompt, allowed: true, required: false },
                     attachments: { allowedKinds: ['image','audio','file','video'], allowedMediaTypes: ['*/*'], ...limits },

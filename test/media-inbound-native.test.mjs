@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile,copyFile,readFile,readdir,rm} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {bridgeDirectory,bootBridge} from './bridge-helper.mjs';
-import {createDeepSeekHarnessOfficialPluginEntry} from '../integration/clawchat/base/linux-x64.mjs';
+import {buildRuntimeBase} from '../scripts/build-runtime-base.mjs';
 import {extendRuntimeEntry} from '../src/runtime-extension.mjs';
 import {mp4Fixture} from './mp4-helper.mjs';
 
@@ -14,6 +15,7 @@ test('real Runtime Adapter and native DSH receive five attachment types and gene
  const names=['image.png','animation.gif','audio.wav','document.txt','video.mp4'];
  for(const name of names)await copyFile(resolve('test/fixtures/media',name),join(dir.root,name));
  await writeFile(join(dir.root,'voice.m4a'),mp4Fixture());names.push('voice.m4a');
+ const {createDeepSeekHarnessOfficialPluginEntry}=await import(pathToFileURL(await buildRuntimeBase(join(dir.root,'runtime'))));
  const bridge=await bootBridge(dir);t.after(async()=>{await bridge.close();await rm(dir.root,{recursive:true,force:true});});
  let provider;
  const base=createDeepSeekHarnessOfficialPluginEntry({runtimeAdapter:{probeExecutable:()=>({path:process.execPath}),createBridge:async()=>bridge}});

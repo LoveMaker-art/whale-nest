@@ -8,18 +8,20 @@ import {readState,writeState} from './state.mjs';
 
 const run=promisify(execFile);
 const features={
-  call:{name:'鲸栖通话',file:'call-liveware.json'},
   song:{name:'鲸栖歌曲',file:'song-liveware.json'},
 };
 
 export async function publishFirstLiveware(options,kind,port,signal) {
+  // The call entry is supplied by our Managed Web App provider. Official
+  // Exposure publishes it and runs the shared account-level relay. Song keeps
+  // its independent App; historical call Apps/tunnels are never deleted here.
+  if (kind === 'call') return;
   const clawchat=options.clawchat;
   if(clawchat?.firstBinding!==true||!Number.isInteger(port)||port<1||port>65535)return;
   const route=clawchat.route;
   if(!route||!resolveDeliveryTarget(options,{origin:route}).ok)return;
   const binding=readState(join(options.dataDir,'first-binding.json'),null);
   if(!binding?.id)return;
-  if(kind==='call'&&options.realtime?.publicOrigin)return;
   const {name,file}=features[kind];
   const path=join(options.dataDir,file);
   if(readState(path,null))return;

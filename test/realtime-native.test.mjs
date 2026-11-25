@@ -9,11 +9,12 @@ import {bridgeDirectory,bootBridge} from './bridge-helper.mjs';
 import {buildRuntimeBase} from '../scripts/build-runtime-base.mjs';
 import {extendRuntimeEntry} from '../src/runtime-extension.mjs';
 import {enablePlatformSpeech} from '../src/runtime-upgrade.mjs';
+import {startPlatformVoiceLiveware,voiceSessionPort} from '../src/platform-voice-liveware.mjs';
 import {connectPlatformVoice} from './platform-voice-client.mjs';
 
 test('Liveware shares the native private Session, preserves tools and hides call turns from chat history',{timeout:120000},async t=>{
   const dir=await bridgeDirectory();
-  let bridge,adapter,call,tts=0,asr=0;
+  let bridge,adapter,call,gateway,tts=0,asr=0;
   let heard='运维自测：WRITE_BLUE 周五五点在东门见。';
   const model=createServer(async(req,res)=>{
     for await(const _ of req){}
@@ -28,6 +29,7 @@ test('Liveware shares the native private Session, preserves tools and hides call
   await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
   t.after(async()=>{
     await call?.close();
+    await gateway?.close();
     await adapter?.close();
     await bridge?.close();
     model.closeAllConnections();
@@ -39,6 +41,12 @@ test('Liveware shares the native private Session, preserves tools and hides call
     baseUrl:'http://127.0.0.1:'+model.address().port+'/v1'}}}}));
   dir.options.speech=enablePlatformSpeech({providerConfigPath:provider});
   dir.options.realtime={enabled:true,port:0,python:process.env.WHALENEST_TEST_PYTHON};
+  dir.options.singing={enabled:true,providerConfigPath:provider};
+  const privateCallUrl='https://app-test-call.apps.clawling.io/';
+  await mkdir(dir.options.dataDir,{recursive:true});
+  await writeFile(join(dir.options.dataDir,'call-liveware.json'),JSON.stringify({
+    binding:dir.options.clawchat.route.account,owner:dir.options.clawchat.route.sender,appId:'app-test-call',url:privateCallUrl,
+  }));
   await mkdir(join(dir.options.home,'companion/aurabot-v1'),{recursive:true});
   await writeFile(join(dir.options.home,'companion/aurabot-v1/instance.json'),JSON.stringify(dir.options));
   bridge=await bootBridge(dir);
@@ -65,6 +73,7 @@ test('Liveware shares the native private Session, preserves tools and hides call
     onRuntimeThreadId:id=>{nativeId=id;}});
   const textInput=turnId=>({workspace,turnId,model:dir.options.model});
   await Array.fromAsync(textSession.prompt({...textInput('text-before'),prompt:'原私聊保留的文字'}));
+  gateway=await startPlatformVoiceLiveware(dir.options,{bridgePort:voiceSessionPort(dir.options)});
   let server;
   for(let i=0;i<125;i++){
     try { server=JSON.parse(await readFile(join(dir.options.dataDir,'realtime/server.json')));break; }
@@ -138,4 +147,19 @@ test('Liveware shares the native private Session, preserves tools and hides call
   const afterRestart=JSON.parse((await readFile(join(dir.root,'trace.jsonl'),'utf8')).trim().split('\n').at(-1));
   assert.ok(afterRestart.messages.some(message=>message.source?.whalenestOrigin==='realtime-call'
     && message.content.some(block=>block.text.includes('周五五点在东门见'))));
+  for(const [id,request,expectLink] of [
+    ['call-card','请给我通话入口',true],
+    ['call-declined','不要发起通话',false],
+    ['voice-message','请发语音消息',false],
+  ]){
+    const prompt=request+'\nFOUNDATION_TOOL {"name":"open_realtime_call"}';
+    await Array.fromAsync(textSession.prompt({...textInput(id),prompt}));
+    const trace=JSON.parse((await readFile(join(dir.root,'trace.jsonl'),'utf8')).trim().split('\n').at(-1));
+    const result=JSON.stringify(trace.messages.filter(message=>message.role==='tool').at(-1));
+    assert.ok(result.includes(expectLink?privateCallUrl:'仅主人当前要求时提供通话入口'));
+    if(!expectLink)assert.ok(!result.includes(privateCallUrl));
+  }
+  const draft=await Array.fromAsync(textSession.prompt({...textInput('write-song'),prompt:'【运维自测】写歌'}));
+  assert.ok(draft.some(activity=>activity.kind==='assistant'&&activity.text==='你想写什么主题的歌？'));
+  assert.doesNotMatch(await readFile(join(dir.root,'trace.jsonl'),'utf8'),/"connectInputId":"write-song"/);
 });

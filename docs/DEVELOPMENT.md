@@ -38,12 +38,14 @@ npm run test:deployment
 
 ## 构建测试版
 
+发布新版本按[项目交付约定](../AGENTS.md#5-更新状态并交付)申请授权。
+
 Node.js 24 执行 `npm ci` 后，运行 `npm run build:distribution`。默认版本来自根 `package.json`，产物保存在 `.whale-nest/distribution/`。可用第四个参数传入同版本的发行说明，将摘要保存在 `distribution.json`。
 
-当前测试版的完整构建命令如下。
+官方 Core 与独立 Liveware 的测试机候选使用明确的开发版本。
 
 ```sh
-npm run build:distribution -- .whale-nest/distribution linux-x64 1.0.0-beta.3 docs/releases/1.0.0-beta.3.md
+npm run build:distribution -- .whale-nest/distribution linux-x64 1.0.0-beta.4.dev.9
 ```
 
 GitHub 预发行标签使用 `v` 加完整版本号。发行资产包含同版本的 Linux x64 `.connect-plugin` 和 `distribution.json`。安装前核对 SHA-256、DSH、Connect Core 和实例数据格式。云端聊天更新对发行源的要求见[更新说明](tasks/plugin-updates.md#发行与实例配置)。
@@ -70,19 +72,28 @@ Beta 预置实例以 2 GiB 为目标。切换前核对实际容器配额、授�
 
 ## 现有实例的直接更新
 
-实例更新统一使用 `scripts/update-m2.mjs` 的 `preflight`、`install` 和 `rollback`。Core 扩展的固定基线、程序、技能和宿主修正须一起校验。官方升级改变基线后先重新评估。[Core 扩展方法](../integration/clawchat/core-media/README.md)
+实例更新统一使用 `scripts/update-m2.mjs` 的 `preflight`、`install` 和 `rollback`。单独更新鲸栖时只传运行包，继承已有功能与连接器配置。需要另行更换 Core 扩展时，才使用 `--media-core` 并核对配套来源、程序、技能和宿主修正。[Core 扩展方法](../integration/clawchat/core-media/README.md)
+
+鲸栖启动脚本校验已登记的 Core、兼容启动器、完整 Runtime/Skills 和 Liveware 文件集合，然后进入官方宿主的启动流程。新组合仅在鲸栖桥进程 overlay 禁用原生 JSON-RPC，全局 SDK 接口保持开启，供官方问候及 SDK 客户端使用；旧组合沿用原 profile，不能单独迁移 profile。连接器版本及源码提交的配套核对在构建与安装准备阶段执行。
+
+鲸栖更新保留实例数据结构检查，历史元数据的 `core`、`coreCapabilities`、`dsh` 和 `dshVersions` 不作为更新限制，不调用 Core/DSH `--version`。目标发行通过独立 `prerequisites.clawchatIntegration` 声明官方集成包最低版本与升级目标；更新器通过原生 `clawchat-dsh plugin` 协调官方升级并核对真实运行，再切换鲸栖。实际仍指向旧定制程序且不满足要求时明确停止，业务及启动迁移由后续版本完成。包来源、摘要、目标、身份、空闲与健康继续核验。[协调规则](tasks/plugin-updates.md#已实现的协调接口与边界)
+
+主人手动「检查更新」每次读取发行源；后台自动检查和失败退避继续使用六小时间隔。并发检查复用正在进行的读取。新版本仍需主人确认准确版本号后才安装。
+
+版本号按标准顺序比较。用户已明确批准将测试机当前 `1.0.0-beta.4.dev.20` 按原号发布，本次不改为此前拟定的 `beta.5`。未来目标版本必须高于已安装版本；`beta.4` 低于 `beta.4.dev.N`，不能作为它的后续更新。每次新发行仍须单独取得用户明确同意。
 
 先在构建环境装依赖并运行 `npm run build:distribution`。将 Linux x64 包和同目录的 `distribution.json` 复制到用户实例，使用现有更新器安装。更新器对实际版本切换要求已构建的运行包，并在预检时核对包摘要。以下命令使用测试机上已准备的包路径。
 
 ```sh
-node scripts/update-m2.mjs preflight --runtime-bundle /path/to/whalenest.connect-plugin --media-core --activities --speech --expressions --images --qq-modules --songs
-node scripts/update-m2.mjs install --runtime-bundle /path/to/whalenest.connect-plugin --media-core --activities --speech --expressions --images --qq-modules --songs
+node scripts/update-m2.mjs preflight --runtime-bundle /path/to/whalenest.connect-plugin
+node scripts/update-m2.mjs install --runtime-bundle /path/to/whalenest.connect-plugin
 node scripts/update-m2.mjs rollback
 ```
 
 | 参数 | 作用 |
 | --- | --- |
 | --media-core | 现有同连接媒体Core扩展及Runtime |
+| --official-base DIRECTORY | 已由官方 `clawchat-dsh plugin install --version X.Y.Z` 暂存的底座；配合 `--media-core` 在线准备整组，停机后通过官方公开命令选中，失败恢复原组合 |
 | --core-build DIRECTORY | 以指定的 Core、构建清单和匹配 Skills 作为更新输入 |
 | --runtime-bundle FILE | 安装已验证的 Linux Runtime 包，切换前核对同目录的 distribution.json 和包摘要 |
 | --activities | 活动、B站、日记及共同策略入口；保留原自动开关 |
@@ -96,23 +107,35 @@ node scripts/update-m2.mjs rollback
 
 停机前检查账号/会话、工作目录、可执行文件、profile、配置与源码指纹，准备候选、运行包和回退备份；再次核对输入不变、任务空闲后停止同一个dsh-agent，冻结最终数据并切换。更新器恢复原Session、检查当前健康和历史摘要；already-active时不重启。预检失败保持服务运行。
 
-媒体 Core 更新使用同批源码的 `deploy/serve-media.mjs`。从暂存目录执行时，更新器自动复制启动脚本并保留原件用于回退。已注册的通话和歌曲应用通过各自的公网 `liveware-status` 确认中继在线，再记录更新成功。
+媒体 Core 更新使用同批源码的 `deploy/serve-media.mjs` 及配套源码工具。扩展、官方包、技能、启动依赖和 profile 均在 `preflight` 返回前核验；同鲸栖版本但底座、扩展或启动工具不同仍执行切换。暂存部署会同批复制并备份启动/安装器依赖，回退先核对官方选择归属与前后摘要，保留新增会话、作品和未知回执。官方资产先暂存；停机选择时仍需要在线签名目录复核，网络失败会恢复原组合，不能把 `--defer` 当成只暂存。从暂存目录执行时，更新器自动复制启动脚本并保留原件用于回退。已启用的 Liveware 由宿主分别启动 `whalenest-call` 和 `whalenest-song`，从当前安装的鲸栖包加载各自页面。通话网关使用仅在本机开放的鉴权端口接入原生会话。更新器核对两个本机服务及各自的公网 `liveware-status`，再记录更新成功。
 
-`build:distribution` 生成插件代码、运行清单、兼容版本及摘要。构建参数依次是输出目录、目标平台、版本、可选的更新说明文本文件。用户数据、凭据与 `instance.json` 由宿主按实例配置提供，更新脚本按实际路径核对及保留。发行文件与聊天更新配置见[更新任务](tasks/plugin-updates.md)。
+`build:distribution` 生成插件代码、运行清单、兼容版本及摘要。构建参数依次是输出目录、目标平台、版本、可选更新说明文本文件、可选前置要求 JSON 文件、可选升级路径 JSON 文件。最后一个文件内容为 `{"clawchatIntegration":{"minimumVersion":"0.2.23","upgradeVersion":"0.2.23"}}` 形状，默认取当前源码登记的发行要求；它描述版本条件，不包含命令或发行源。构建清单登记 updateProtocol=1；可选路径为 schema=1、steps 数组，每项仅含同仓库的 version 与插件包 sha256，具体校验和接续规则见更新任务。用户数据、凭据与 `instance.json` 由宿主按实例配置提供，更新脚本按实际路径核对及保留。发行文件与聊天更新配置见[更新任务](tasks/plugin-updates.md)。
 
 回退先保存前向数据和未知回执，再恢复兼容写入方；旧版本不理解的新增能力关闭，其任务/作品保留。离线安装器、更新技能目录和技能版本摘要也属预检，不只替换二进制。
 
 ## 歌曲 Liveware
 
-使用现有更新入口的 `--media-core --song-liveware` 启用，Core 构建使用支持[中继启动](../integration/clawchat/core-media/LIVEWARE-SOURCE.json)的版本。作品页监听实例回环端口 `8898`，用 `clawchat-connect liveware` 绑定私有应用。核对应用地址、发布回执及公网 `liveware-status` 后，在 `dataDir/song-liveware.json` 写入 `binding`、`owner`、`appId` 和 `url`。该配置可在服务运行时写入。四项值来自当前 Connect 绑定及同一应用的发布结果。
+使用现有更新入口的 `--media-core --song-liveware` 启用。原版官方 Exposure 管理账号级中继，鲸栖通过公开 Managed Web App 接入通话服务；Core 不再自行启动中继。作品页监听实例回环端口 `8898`，首次发布使用 `clawchat-connect liveware` 登记私有应用。服务核对应用归属及中继状态，在 `dataDir/song-liveware.json` 保存 `binding`、`owner`、`appId` 和 `url`。已有实例沿用已登记的私有应用。[Core 构建](../integration/clawchat/core-media/SOURCE.json)
 
-验收使用已有歌曲。对工作页、音频分段和乐谱核对关联主人可读、匿名拒绝，再从原 ClawChat 私聊检查作品入口和客户端播放。现有作品的乐谱按原 MusicHub 任务读取。测试一次已有歌曲，无须发起新的生成任务。
+验收先检查应用根路径的 SongSmith 首页和三个入口，完成创作问答后核对原私聊与预填草稿。使用已有歌曲检查曲库、单曲链接、分段播放、下载和乐谱，并核对关联主人与匿名的访问结果。现有作品的乐谱按原 MusicHub 任务读取。验证页面及草稿可以使用已有歌曲和未发送草稿。
+
+旋律验收覆盖哼唱、手绘、试听、乐谱保存和私聊草稿。歌曲保存后复查版本、封面、精修草稿、试听及下载。扩展旋律使用实例上的 Python 3 执行随包的 SongSmith ABC 工具。测试复用隔离样曲及替身任务，验证两次提交的状态检查、重启和未知回执。
+
+按[适配清单](tasks/songsmith-adaptation.md)逐项核对。重点验证 `companion_songs draft` 的真实原谱与填词计划已经进入模型请求，`sing_song` 回执说明实际旋律采用状态，超量歌词在平台提交前被拒绝。已有整曲的精修沿原歌词约束，旧任务查询或恢复不重新生成。制作中页面只向主人提供进度；词、谱取回及标签修改分别核对回执和无新增生成任务。真实付费验收按[歌曲用量约定](requirements/singing.md#3-用量与真实验收)确认。
+
+当主人明确选择参与分享的 ClawChat 用户后，在 `singing.playback.audience` 设置相同的用户 ID，并按原 Connect 的 Liveware 管理入口更新已有应用的 `allowlist`。使用主人、受邀好友和未受邀者核对作品可见性、互动和撤回。默认名单为空。歌词精校读取可选的 `singing.playback.alignment.configPath`。该绝对路径指向包含 `baseUrl` 与 `apiKey` 的对齐服务配置。实例有 FFmpeg 时先将歌曲转换成适合出站的单声道音频。验收只对主人选定的歌曲启动精校。
 
 测试应用若按用户要求切到 `public`，只写入一首已标记为运维自测的 `publicDemoWorkId`。此入口只展示选定测试歌，仍遵循平台的 ClawChat 登录门槛。[Liveware 访问策略](https://agent-connection.clawling.com/use/liveware.md#who-can-open-it)
+
+## 测试机用户状态重置
+
+按用户已确认范围只清理用户状态，保留 ClawChat 配对、传输水位、模型与运行配置、随包默认素材及两个 Liveware。先核对实际配置和清理范围，停止所有业务写入者并等待 QQ 子进程退出，再清理用户状态及旧用户备份，不保留用户数据副本。复核默认人格、空用户状态和保留项后恢复服务，重新检查就绪、唯一 SDK 进程、Liveware 及账号登出状态；连接握手、初始工作区等运行元数据不属于清空目标。原始记录留在忽略目录，避免其中包含用户内容。 0.2.22 及后续已适配组合还需清理 `browser-turns.json`、`web-activity/`、`operator-sessions.json` 及含正文的首次问候草稿，保留已有真实 `greeting-receipt.json` 防止重新问候；不能恢复旧 profile 备份覆盖新的 JSON-RPC 接线。无引用自有旧连接器须核对配置、技能、启动器和 profile 引用后才删，官方登记的历史包保持登记一致。群策略的默认同步标记属于运行元数据，不能要求其行数为零；实际群设置和聊天数据必须为空。
 
 ## 离线恢复与迁移操作
 
 仅对已停止supervisor的目标实例执行；核对锁的主机、实例与PID，活进程或身份不确定时拒绝回收，禁止并发写入。
+
+主服务在容器重启后无法启动时，先检查实际 DSH stderr。现有桥可能将握手超时统一显示为 `workspace-registry-missing`，不能只按此文字补装组件。若实际错误是 `runtime.lock` 的 `EEXIST`，停止同一实例的主服务，使用 `waitForSdkExit` 确认其 SDK 全部退出，再通过下列恢复入口核验并回收已死进程的锁；不要直接删除正在使用的锁。恢复后重新检查原身份、唯一 SDK、队列和官方宿主健康。
 
 ```sh
 node scripts/recover-lock.mjs /absolute/path/to/instance.json --offline

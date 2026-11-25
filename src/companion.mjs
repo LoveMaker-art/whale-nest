@@ -25,7 +25,9 @@ import {createVoiceAdapter} from './voice-adapter.mjs';
 import {createStickers} from './stickers.mjs';
 import {blocksAutomaticSticker,createStickerSelection} from './sticker-selection.mjs';
 import {createImageAdapter} from './image-adapter.mjs';
-import {createSongAdapter} from './song-adapter.mjs';
+import {createSongAdapter,isBareSongRequest,songBriefQuestion} from './song-adapter.mjs';
+import {songGuide} from './song-guidance.mjs';
+import {realtimeCallTool} from './chat-liveware.mjs';
 import {enableQQNativeModules,createQQNative} from './qq-native.mjs';
 import {createBiliAccount} from './bili-account.mjs';
 import {createBiliFeatures} from './bili-tools.mjs';
@@ -302,6 +304,10 @@ export async function createCompanion(ctx, options, ports = {}) {
               live,callPlaybackContext(agent.session,directory)].filter(Boolean).join('\n');
           }});
         }
+        if(owner&&input.route.channel==='clawchat'&&options.singing?.enabled) {
+          scope.systemPrompt.section({name:'whalenest-song-entry',order:912,interpolate:false,text:()=>
+            songGuide});
+        }
         if(owner)scope.tools.guard(exec=>policy.nativeJob(exec.agent.session)?.kind==='contact'&&!['recall_memory','lookup_person','companion_settings'].includes(exec.name)
           ?'主动联系后台只能查询获准记忆与设置，不能修改主人数据或自行投递。':undefined);
         for (const tool of modules.buildTools({ chat, level: owner ? 'full' : 'chat', sessionId })) {
@@ -312,6 +318,11 @@ export async function createCompanion(ctx, options, ports = {}) {
           if (!['lookup_person', 'chat_impression', 'remember', 'recall_memory'].includes(tool.name)&&!(owner&&(isBiliTool(tool.name)||tool.name==='companion_diary'))&&tool.name!=='bili_watch') continue;
           scope.tools.register(['lookup_person', 'chat_impression', 'remember', 'recall_memory'].includes(tool.name)
             ? { ...tool, execute: (args, exec) => memoryAdapter.exclusive(() => tool.execute(args, exec)) } : tool);
+        }
+        if(owner&&input.route.channel==='clawchat'&&options.realtime?.enabled) {
+          scope.tools.register(realtimeCallTool(options,input.route,sessionId));
+          scope.systemPrompt.context({name:'whalenest-call-entry',order:908,text:()=>
+            '主人说“语音通话”“我们打个电话”或想要通话入口时，用 open_realtime_call 取得原私有入口。把成功返回的完整 URL 单独放一行，由 ClawChat 显示可点击卡片。通话由主人点开后开始。主人只要语音回复时仍使用 send_voice。'});
         }
         if(owner&&input.route.channel==='clawchat'&&options.clawchat?.delivery?.mediaEnabled) {
           for(const tool of mediaTools(options,input.route,sessionId))scope.tools.register(tool);
@@ -377,8 +388,26 @@ export async function createCompanion(ctx, options, ports = {}) {
       }
       return await next();
     });
+    async function* foregroundStream(request,next){
+      const id=String(request.sessionId);
+      if(options.singing?.enabled&&!request.purpose&&turns.get(id)?.owner
+        &&state.externalRoutes[id]?.channel==='clawchat'&&!voiceSessions.has(id)){
+        const turn=request.messages.findLast(message=>message.role==='user'&&['user','aurabot','schedule'].includes(message.source?.kind));
+        if(turn?.source.kind==='user'&&typeof turn.source.connectInputId==='string'&&!isVoiceInput(turn.source.connectInputId)
+          &&turn.content.every(block=>block.type==='text')&&isBareSongRequest(humanMessageText(turn.content.map(block=>block.text).join('\n')))){
+          request.signal?.throwIfAborted();
+          const text=songBriefQuestion(humanMessageText(turn.content.map(block=>block.text).join('\n')));
+          yield {type:'block-start',index:0,blockType:'text'};
+          yield {type:'text-delta',index:0,text};
+          yield {type:'block-end',index:0,block:{type:'text',text}};
+          yield {type:'finish',reason:{kind:'stop'}};
+          return;
+        }
+      }
+      yield* stickerSelection.stream(request,next);
+    }
     const offBudget = ctx.on('llm/stream',(request,next)=>budgetedStream(policy,request,
-      ()=>stickerSelection.stream(request,next),memoryCallContext.getStore()??qqNative.modelContext(request),diaryAdapter.modelContext()??biliAdapter.modelContext()));
+      ()=>foregroundStream(request,next),memoryCallContext.getStore()??qqNative.modelContext(request),diaryAdapter.modelContext()??biliAdapter.modelContext()));
 
     async function sessionFor(input, chat, owner) {
       // A session's tool privileges must not depend on the last speaker in a

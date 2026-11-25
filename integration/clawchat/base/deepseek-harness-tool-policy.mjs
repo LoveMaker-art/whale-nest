@@ -52,18 +52,6 @@ export function isClawChatToolCommand(command, configPath) {
 /** Owner standing permission: ClawChat calls never reach an interactive answerer. */
 export function registerClawChatApprovalPolicy(ctx,{owns,ask,configPath}) {
   const calls=new WeakMap();
-  // Grants live with this Agent only; permissions and sandbox policy stay owned by DSH.
-  const sessionGrants=new WeakMap();
-  const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
-  const operationKey=request=>{
-    const call=calls.get(request.agent)?.get(request.callId);
-    if(!call||call.name!==request.toolName||!call.arguments||typeof call.arguments!=='object'||Array.isArray(call.arguments))return null;
-    const directories=ctx.get?.('workingDirectory');
-    const cwd=directories?.get?.(request.agent.session);
-    // Missing execution context must never produce a reusable grant.
-    if(typeof cwd!=='string'||!cwd)return null;
-    return JSON.stringify(canonical({tool:call.name,cwd,arguments:call.arguments}));
-  };
   const remember=(agent,call)=>{
     if(!owns(agent)||!call?.callId)return;
     let active=calls.get(agent);if(!active){active=new Map();calls.set(agent,active);}
@@ -77,17 +65,9 @@ export function registerClawChatApprovalPolicy(ctx,{owns,ask,configPath}) {
     const call=calls.get(request.agent)?.get(request.callId);
     const permitted=clawChatName(request.toolName)||(request.toolName==='bash'&&call?.name==='bash'&&isClawChatToolCommand(call.arguments?.command,configPath));
     if(permitted)return request.signal?.aborted?'cancelled':'allowed-once';
-    const key=operationKey(request);
-    if(key&&sessionGrants.get(request.agent)?.has(key))return request.signal?.aborted?'cancelled':'allowed-once';
     return await ask(request,next);
   });
   return {
-    allowForSession(request){
-      if(request.signal?.aborted||!owns(request.agent))return false;
-      const key=operationKey(request);if(!key)return false;
-      let grants=sessionGrants.get(request.agent);if(!grants){grants=new Set();sessionGrants.set(request.agent,grants);}
-      grants.add(key);return true;
-    },
     observe(agent,event){
       if(event.type==='tool/call') {
         try{remember(agent,{...event.data,arguments:JSON.parse(event.data.arguments)});}catch{}

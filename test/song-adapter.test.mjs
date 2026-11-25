@@ -10,11 +10,11 @@ import {OneBotError} from '../vendor/aurabot/src/onebot/client.js';
 const cc={channel:'clawchat',account:'agent',sender:'owner',conversation:'dm',kind:'private'};
 const qq={channel:'qq',account:'bot',sender:'1',conversation:'1',kind:'private'};
 const args={title:'小鱼晚安',lyrics:'[Verse]\n小鱼在月光里游动',style:'soft female vocal, gentle pop'};
-function actor(id,text,{channel='clawchat',source}={}){
+function actor(id,text,{channel='clawchat',source,previous=[]}={}){
  const sessionId=channel==='qq'?'qq-session':'cc-session',callId='call-'+id;
  const origin=source??(channel==='qq'?{kind:'aurabot',humanText:text,speaker:{role:'owner',chat:'private'}}:{kind:'user',connectInputId:id});
- const events=[{type:'user/message',data:{message:{id:'user-'+id,source:origin,content:[{type:'text',text}]}}},{type:'assistant/message',data:{message:{id:'assistant-'+id,content:[{type:'tool-call',id:callId}]}}}];
- return {callId,agent:{id:sessionId,session:{seq:1,eventAt:i=>events[i]}}};
+ const events=[...previous,{type:'user/message',data:{message:{id:'user-'+id,source:origin,content:[{type:'text',text}]}}},{type:'assistant/message',data:{message:{id:'assistant-'+id,content:[{type:'tool-call',id:callId}]}}}];
+ return {callId,agent:{id:sessionId,session:{seq:events.length-1,eventAt:i=>events[i]}}};
 }
 async function fixture(t,{uncertain=false}={}){
  const root=await mkdtemp(join(tmpdir(),'whalenest-song-adapter-'));t.after(()=>rm(root,{recursive:true,force:true}));
@@ -52,6 +52,25 @@ test('ordinary chat, design discussion, negative requests, scheduled tasks and u
 test('parallel different requests are serialized before any paid call',async t=>{
  const f=await fixture(t),results=await Promise.all([f.tool().execute(args,actor('one','请唱一首歌')),f.tool().execute(args,actor('two','请唱一首歌'))]);
  assert.equal(results.filter(r=>r.ok).length,1);assert.equal(f.counts.posts,1);
+});
+test('a write-song command with a brief creates one song and a bare command only asks for a brief',async t=>{
+ const f=await fixture(t);
+ assert.equal((await f.tool().execute(args,actor('brief-missing','写歌'))).ok,false);
+ assert.equal((await f.tool().execute(args,actor('lyrics-only','写歌：只写歌词，主题是晚安'))).ok,false);
+ const request=actor('brief','写歌：海边的夏夜，轻一点');
+ assert.ok((await f.tool().execute(args,request)).ok);
+ assert.ok((await f.tool().execute(args,request)).ok);
+ assert.equal(f.counts.posts,1);
+});
+test('a topic answer continues only the previous explicit write-song request',async t=>{
+ const f=await fixture(t),previous=[
+  {type:'user/message',data:{message:{id:'previous-user',source:{kind:'user'},content:[{type:'text',text:'我想写歌'}]}}},
+  {type:'assistant/message',data:{message:{content:[{type:'text',text:'想写什么主题？'}]}}},
+ ];
+ assert.equal((await f.tool().execute(args,actor('unprompted','海边的夏夜'))).ok,false);
+ assert.equal((await f.tool().execute(args,actor('cancel','算了，换个话题',{previous}))).ok,false);
+ assert.ok((await f.tool().execute(args,actor('answer','海边的夏夜',{previous}))).ok);
+ assert.equal(f.counts.posts,1);
 });
 test('manual recovery saves without auto-sending, then an explicit resend uses the existing song',async t=>{
  const f=await fixture(t),first=await f.tool().execute(args,actor('song','请写一首晚安歌'));

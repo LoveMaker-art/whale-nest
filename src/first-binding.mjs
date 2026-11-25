@@ -1,32 +1,20 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { hash, resolveDeliveryTarget, routeKey, senderKey } from './routing.mjs';
 import { readState, writeState } from './state.mjs';
 import { clawchatTextDelivery } from './clawchat-text.mjs';
+import {clawchatBindingState} from './clawchat-state.mjs';
+export {readBoundClawChatAgentId} from './clawchat-state.mjs';
 
 const exec = promisify(execFile);
 const defaultAvatar = fileURLToPath(new URL('./assets/whalenest-avatar.png', import.meta.url));
 const textTool = 'clawchat_mention_message';
 const uploadTool = 'clawchat_upload_avatar_image';
-
-function store(path, fn) {
-  const db = new DatabaseSync(path, { readOnly: true, timeout: 1500 });
-  try { return fn(db); } finally { db.close(); }
-}
-
-function activation(db, account) {
-  return db.prepare(`SELECT a.user_id AS agent, a.owner_user_id AS owner, a.conversation_id AS conversation,
-      a.activated_at AS at
-    FROM activations AS a JOIN installation_owner AS i ON i.id = 1 AND i.owner_user_id = a.owner_user_id
-    WHERE a.platform = 'clawchat-connect' AND a.local_agent_id = ?
-      AND a.access_token <> '' AND a.conversation_id <> ''`).get(account);
-}
 
 // The platform enables this only on an unpaired, clean, preinstalled instance.
 // The Connect database is authoritative for identity. Never read out credentials.
@@ -35,17 +23,14 @@ export function prepareFirstBinding(options, configPath) {
   if (clawchat?.firstBinding !== true) return null;
   const delivery = clawchat.delivery;
   assert.ok(isAbsolute(delivery.configPath) && isAbsolute(delivery.connectBin));
-  const connect = JSON.parse(readFileSync(delivery.configPath, 'utf8'));
-  const account = connect.defaultAgent ?? (Object.keys(connect.agents ?? {}).length === 1
-    ? Object.keys(connect.agents)[0] : null);
-  assert.ok(account && Object.hasOwn(connect.agents, account), 'First binding needs an unambiguous Connect agent');
-  assert.ok(isAbsolute(connect.stateDbPath), 'An explicit Connect state database is required');
+  const platform = clawchatBindingState(delivery.configPath);
+  const {account} = platform;
   const path = join(options.dataDir, 'first-binding.json');
   const previous = readState(path, null);
   // A rollout onto an already running or migrated instance never enrolls it.
   if (!previous && (existsSync(join(options.dataDir, 'runtime.json')) || clawchat.legacySnapshotPath)) return null;
 
-  const current = store(connect.stateDbPath, db => activation(db, account));
+  const current = platform.current();
   assert.ok(current?.agent && current.owner && current.conversation, 'First binding awaits verified Connect activation');
   const { owner, conversation, agent } = current;
   const route = { channel: 'clawchat', kind: 'private', account, sender: owner, conversation };
@@ -63,7 +48,7 @@ export function prepareFirstBinding(options, configPath) {
     options.owners = [...owners.filter(o => o.channel !== 'clawchat'), route];
     writeState(configPath, options);
   }
-  return { path, dbPath: connect.stateDbPath, account, agent, owner, conversation, id };
+  return { path, dbPath: platform.dbPath, account, agent, owner, conversation, id };
 }
 
 export function firstBindingPorts(options, binding, signal, run = exec) {
@@ -71,15 +56,11 @@ export function firstBindingPorts(options, binding, signal, run = exec) {
   const route = resolveDeliveryTarget(options, {origin: options.clawchat.route});
   assert.ok(route.ok && route.route.account === binding.account && route.route.sender === binding.owner
     && route.route.conversation === binding.conversation);
-  const authorized = db => {
-    const row = activation(db, binding.account);
-    assert.ok(row?.agent === binding.agent && row.owner === binding.owner && row.conversation === binding.conversation,
-      'Connect identity changed during first binding');
-    return row;
-  };
+  const platform = clawchatBindingState(delivery.configPath, binding.account);
+  assert.equal(platform.dbPath, binding.dbPath, 'Connect state database changed during first binding');
   const tool = async (name, id, input) => {
     signal?.throwIfAborted();
-    store(binding.dbPath, authorized);
+    platform.verify(binding);
     const response = await run(delivery.connectBin, ['tool', 'call', name, '--agent', binding.account,
       '--request-id', id, '--input-json', JSON.stringify(input), '--config', delivery.configPath],
     { timeout: 15000, maxBuffer: 1024 * 1024, signal });
@@ -87,26 +68,12 @@ export function firstBindingPorts(options, binding, signal, run = exec) {
   };
   const sender = clawchatTextDelivery(options, route.route, (command, args, opts) => {
     signal?.throwIfAborted();
-    store(binding.dbPath, authorized);
+    platform.verify(binding);
     return run(command, args, { ...opts, signal });
   });
   return {
-    ready() {
-      return store(binding.dbPath, db => {
-        const row = authorized(db);
-        const status = db.prepare(`SELECT websocket_connected, runtime_availability, updated_at
-          FROM runtime_statuses WHERE agent_id = ?`).get(binding.account);
-        return status?.websocket_connected === 1 && status.runtime_availability !== 'startup-unavailable' && status.updated_at >= row.at;
-      });
-    },
-    receipt(name, id) {
-      return store(binding.dbPath, db => {
-        authorized(db);
-        const row = db.prepare(`SELECT state, result_json FROM tool_requests
-          WHERE binding_id = ? AND tool_name = ? AND request_id = ?`).get(binding.account, name, id);
-        return row && { state: row.state, result: row.result_json ? JSON.parse(row.result_json) : null };
-      });
-    },
+    ready:() => platform.ready(binding),
+    receipt:(name, id) => platform.receipt(binding, name, id),
     send: (id, text) => sender.sendText({ id, text }),
     async readProfile() {
       const profile = await tool('clawchat_get_account_profile', binding.id + '-read-' + randomUUID(), {});

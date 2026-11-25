@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -11,7 +11,7 @@ export const input = (id, text, route = {}) => ({ id, text,
   route: { ...owners[0], kind: 'private', conversation: 'dm-alice', ...route } });
 
 export async function fixtureDirectory() {
-  const root = await mkdtemp(join(tmpdir(), 'whalenest-m1-'));
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'whalenest-m1-')));
   const options = { instanceId: 'fixture', owners, home: join(root, 'home'), dataDir: join(root, 'data'),
     cwd: root, model: { provider: 'fixture', model: 'fixture', maxTokens: 512 },
     clawchat:{route:{...owners[0],kind:'private',conversation:'dm-alice'}} };

@@ -4,15 +4,62 @@ import {wantsUnstable} from '../vendor/aurabot/src/core/update.js';
 
 export const pluginId = 'whalenest.runtime.deepseek-harness';
 export const updateTarget = 'linux-x64';
+export const updateProtocol = 1;
 export const updateCompatibility = {
-  dsh: '0.2.2-rc.1',
-  core: '0.1.0-beta.9-whalenest.media.3-replay.2-renewal.1-liveware.1-voice.2-stickers.1',
   dataSchema: 1,
+};
+export const updatePrerequisites = {
+  clawchatIntegration: {minimumVersion:'0.2.23',upgradeVersion:'0.2.23'},
 };
 export const updateInterval = 6 * 3600_000;
 const versionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*))?$/;
 const digestPattern = /^sha256:([a-f0-9]{64})$/;
 const metadataName = 'distribution.json';
+
+/** A release may name only immutable, forward intermediate releases. Paths
+ * contain data, never executable migration instructions or alternate sources. */
+export function validateUpdatePath(value, finalVersion) {
+  if (value===undefined) return undefined;
+  comparePluginVersions(finalVersion,finalVersion);
+  assert.ok(value && typeof value==='object' && !Array.isArray(value),'Invalid update path');
+  assert.deepEqual(Object.keys(value).sort(),['schema','steps'],'Unsupported update path field');
+  assert.equal(value.schema,1,'Unsupported update path schema');
+  assert.ok(Array.isArray(value.steps) && value.steps.length<=8,'Update path has too many steps');
+  let previous;
+  for (const step of value.steps) {
+    assert.ok(step && typeof step==='object' && !Array.isArray(step),'Invalid update path step');
+    assert.deepEqual(Object.keys(step).sort(),['sha256','version'],'Unsupported update path step field');
+    comparePluginVersions(step.version,step.version);
+    assert.match(step.sha256??'',/^[a-f0-9]{64}$/,'Invalid update path checksum');
+    assert.ok(comparePluginVersions(step.version,finalVersion)<0,'Update path step must precede its release');
+    if (previous!==undefined) assert.ok(comparePluginVersions(step.version,previous)>0,'Update path must be strictly increasing');
+    previous=step.version;
+  }
+  return structuredClone(value);
+}
+
+export function validateUpdatePrerequisites(value) {
+  if (value===undefined) return undefined;
+  assert.ok(value && typeof value==='object' && !Array.isArray(value),'Invalid update prerequisites');
+  assert.deepEqual(Object.keys(value),['clawchatIntegration'],'Unsupported update prerequisite');
+  const connector=value.clawchatIntegration;
+  assert.ok(connector && typeof connector==='object' && !Array.isArray(connector),'Invalid official connector requirement');
+  assert.ok(Object.keys(connector).every(key=>['minimumVersion','upgradeVersion','officialOnly'].includes(key)),
+    'Unsupported official connector requirement');
+  const numeric=/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+  for (const version of [connector.minimumVersion,connector.upgradeVersion]) {
+    assert.ok(typeof version==='string' && version.length<60 && numeric.test(version),'Invalid official integration version');
+  }
+  assert.ok(comparePluginVersions(connector.upgradeVersion,connector.minimumVersion)>=0,'Connector upgrade target is below the minimum');
+  if (connector.officialOnly!==undefined) assert.equal(typeof connector.officialOnly,'boolean');
+  return structuredClone(value);
+}
+
+export function verifyUpdateCompatibility(actual, required) {
+  assert.equal(actual.dataSchema, required.dataSchema, 'Incompatible instance data schema');
+  // Environment restrictions in historical metadata must not prevent
+  // installing updates or repairs. Runtime health is verified after switching.
+}
 
 function versionParts(version) {
   const parsed = typeof version === 'string' && version.length <= 100 && versionPattern.exec(version);
@@ -99,9 +146,16 @@ async function describe(release, repository, fetchImpl) {
   assert.equal(metadata.target,updateTarget);
   assert.equal('sha256:'+metadata.sha256,bundle.digest,'Bundle checksum disagrees with release metadata');
   const compatibility=metadata.compatibility;
-  assert.ok(typeof compatibility?.dsh==='string' && typeof compatibility?.core==='string' && Number.isSafeInteger(compatibility?.dataSchema));
+  assert.ok(Number.isSafeInteger(compatibility?.dataSchema));
   const notes=typeof metadata.notes==='string'?metadata.notes.trim().slice(0,600):'';
-  return {repository,tag,version,sha256:metadata.sha256,compatibility,notes};
+  const prerequisites=validateUpdatePrerequisites(metadata.prerequisites);
+  if (metadata.updateProtocol!==undefined) assert.equal(metadata.updateProtocol,updateProtocol,'Unsupported update protocol');
+  const updatePath=validateUpdatePath(metadata.updatePath,version);
+  if (updatePath) assert.equal(metadata.updateProtocol,updateProtocol,'Update path requires a supported update protocol');
+  return {repository,tag,version,sha256:metadata.sha256,compatibility,notes,
+    ...(prerequisites?{prerequisites}:{}),
+    ...(metadata.updateProtocol!==undefined?{updateProtocol:metadata.updateProtocol}:{}),
+    ...(updatePath?{updatePath}:{})};
 }
 
 export async function discoverPluginRelease(config, current, {fetchImpl=fetch, tag} = {}) {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile,writeFile} from 'node:fs/promises';
+import {readFile,writeFile,copyFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createServer} from 'node:http';
 import {bridgeDirectory,bootBridge} from './bridge-helper.mjs';
@@ -16,12 +16,13 @@ test('ClawChat native tools link, unlink and relink QQ while preserving the owne
     onebot:{httpUrl:onebot.httpUrl,wsUrl:onebot.wsUrl,token:onebot.token}}};
   await writeFile(directory.configPath,JSON.stringify(directory.options));
   const entry=await buildConnectBridge(join(directory.root,'bridge'));
-  const source=await readFile(entry,'utf8'),marker='companion = await installAurabotBridge(ctx, {';
-  assert.equal(source.split(marker).length,2);
   // Controlled Core lifecycle: record the request, then this test drains and
   // boots the actual SDK. Core's HTTP reconfigure contract has its own test.
-  await writeFile(entry,'import {appendFileSync as qqRecordReload} from "node:fs";\n'+source.replace(marker,
-    marker+'\nqqRequestReload: async job => qqRecordReload('+JSON.stringify(join(directory.root,'reloads.jsonl'))+',JSON.stringify({id:job.id})+"\\n"),'));
+  await copyFile(entry,join(directory.root,'bridge/base-entry.mjs'));
+  await writeFile(entry,'import {appendFileSync as qqRecordReload} from "node:fs";\n'+
+    'import {createEntry} from "./base-entry.mjs";\n'+
+    'const bridge=createEntry({qqRequestReload:async job=>qqRecordReload('+JSON.stringify(join(directory.root,'reloads.jsonl'))+',JSON.stringify({id:job.id})+"\\n")});\n'+
+    'export const name=bridge.name;\nexport const inject=bridge.inject;\nexport const apply=bridge.apply;\n');
   directory.entryOverride=entry;
   let bridge=await bootBridge(directory);t.after(()=>bridge.close());
   const sessionId='cc-onboarding',tool=(args,text='')=>text+'\nFOUNDATION_TOOL '+JSON.stringify({name:'companion_qq',args});

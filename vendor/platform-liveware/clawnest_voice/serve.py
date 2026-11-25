@@ -24,8 +24,8 @@ from .config import Config, ConfigError
 from .gateway import CLOSE_REASONS, Manager, audit
 from .quota import QuotaStore, QuotaExceeded
 from .upstream import Hub, Plugin, VoiceError, StreamingTranscriber
-from .diagnostic import Diagnostic, MAGIC, SSEStream, ReplayLane, validate_summary, stamp_packet
 from .dsh_http import HttpVoiceTransport
+from .diagnostic import Diagnostic, MAGIC, SSEStream, ReplayLane, validate_summary, stamp_packet
 
 HERE = Path(__file__).resolve().parent
 GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
@@ -615,16 +615,13 @@ class Server:
                               raise VoiceError('invalid_control', 400)
                           kind = control.get('type')
                           if kind == 'downstream_transport':
-                              startup_fallback = (control.get('fallback') == 1 and control.get('transport') == 'ws'
-                                  and session.turn is None and session.pending is None)
                               if (not session.owner or control.get('transport') not in ('ws', 'sse') or
-                                    (control.get('transport') == 'ws' and not startup_fallback
-                                     and (not self.config.diagnostic_enabled or control.get('diagnostic') != 1))):
+                                    (control.get('transport') == 'ws' and (not self.config.diagnostic_enabled or control.get('diagnostic') != 1))):
                                   raise VoiceError('forbidden', 403)
                               if session.turn and not session.turn.stopped and not session.turn.finalized:
                                   raise VoiceError('turn_busy', 409)
                               ws.downstream_transport = session.downstream_transport = control['transport']
-                              await ws.send(dict(type='downstream_transport', transport=ws.downstream_transport, fallback=startup_fallback))
+                              await ws.send(dict(type='downstream_transport', transport=ws.downstream_transport))
                               continue
                           if kind == 'diagnostic_start':
                               await diagnostic.start(control)

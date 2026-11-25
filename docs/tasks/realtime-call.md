@@ -4,7 +4,9 @@ ClawChat 私聊通过私有 Liveware 进入「鲸栖通话」。通话与文字�
 
 ## 接入与验收
 
-使用平台 ClawNest Voice 0.1.11 的语音网关、采集和播放器。实例需要平台 ASR、TTS、匹配的 Connect Core 和支持 SQLite 的 Python 3.11 或更新版。通话经 WebSocket/SSE 收发音频，初始连接超时时可经原应用的 HTTPS 发送录音并读取音频。通话开始时读取当前语音音色。接线与平台版本见[来源清单](../../vendor/platform-liveware/SOURCE.json)。
+使用平台 ClawNest Voice 0.1.11 的语音网关、采集和播放器。实例需要平台 ASR、TTS、匹配的 Connect Core 和支持 SQLite 的 Python 3.11 或更新版。客户端先用 WebSocket 建立会话并提交通话输入，收到会话标识后以 SSE 接收下行音频。WebSocket 在打开前出错或约两秒仍未打开时，同一个私有 Liveware 通过 HTTPS 发录音和轮询回复，每次最多取 16 帧。通话开始时读取当前语音音色。接线与平台版本见[来源清单](../../vendor/platform-liveware/SOURCE.json)。
+
+接通验收分别记录已登录客户端的 WebSocket 请求、网关返回的 HTTP 101、通话会话就绪和 SSE 就绪事件。公网匿名请求用于核对原私有应用的登录门禁。源机器回环探针覆盖网关和原生会话，ClawChat 客户端与中继之间的认证握手使用实际客户端复测。
 
 ## 深海通话界面
 
@@ -12,6 +14,6 @@ ClawChat 私聊通过私有 Liveware 进入「鲸栖通话」。通话与文字�
 
 ## 共享会话的首声延迟
 
-在接通时预备会话，用户说完后尽快用当前可用上下文回复。通话转写和播放记录进入同一个 DSH 历史并标为实时通话。ClawChat 私聊历史显示实际发送到私聊的内容。用户可在挂断后回到原聊天继续提问。
+在接通时预备会话，用户说完后尽快用当前可用上下文回复。通话输入和模型回复通过同一 Session 进入原生历史并标为实时通话；播放确认和打断账本由鲸栖自己的记录维护。ClawChat 私聊历史显示实际发送到私聊的内容。用户可在挂断后回到原聊天继续提问。
 
 客户端及回聊的验收范围见[通话体验验证](feature-experience-review.md#7-实时通话)。

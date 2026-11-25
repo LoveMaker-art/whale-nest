@@ -1,0 +1,1037 @@
+diff --git a/package.json b/package.json
+index 37e41f4..be3780b 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@clawling/clawchat-plugin-connect",
+-  "version": "0.1.0-beta.9",
++  "version": "0.1.0-beta.9-whalenest.0.2.23.2",
+   "description": "Local ClawChat bridge for Plugin-provided coding runtimes and independently managed Web Apps.",
+   "repository": {
+     "type": "git",
+diff --git a/src/agent/tool-catalog.ts b/src/agent/tool-catalog.ts
+index bea9336..409096d 100644
+--- a/src/agent/tool-catalog.ts
++++ b/src/agent/tool-catalog.ts
+@@ -26,6 +26,7 @@ export interface ToolHandlerContext {
+   mention(input: Record<string, unknown>): Promise<unknown>;
+   react(input: Record<string, unknown>): unknown;
+   uploadAvatar(input: Record<string, unknown>): Promise<unknown>;
++  sendMedia(input: Record<string, unknown>): Promise<unknown>;
+   sendFile(input: Record<string, unknown>): Promise<unknown>;
+ }
+ 
+@@ -44,7 +45,9 @@ const http = (
+   handler: async (input, context) => await context.request(method, path(input), body ? body(input) : undefined),
+ });
+ 
+-const websocket = (operation: "mention" | "react"): Pick<ConnectToolDefinition, "execution" | "handler"> => ({
++const websocket = (
++  operation: "mention" | "react" | "sendMedia",
++): Pick<ConnectToolDefinition, "execution" | "handler"> => ({
+   execution: "websocket",
+   handler: async (input, context) => await context[operation](input),
+ });
+@@ -69,6 +72,37 @@ const query = (values: Record<string, unknown>): string => {
+ };
+ 
+ export const CONNECT_TOOL_CATALOG = [
++  {
++    name: "clawchat_send_media",
++    description:
++      "Upload one absolute local file and send it through the existing ClawChat connection; await its message acknowledgement.",
++    timeoutMs: 120_000,
++    properties: {
++      chatId: p("string", "Exact conversation ID.", { required: true }),
++      chatType: p("string", "Exact conversation type.", { required: true, enum: ["direct", "group"] }),
++      filePath: p("string", "Absolute regular local file, up to 100 MiB; final symlinks are refused.", {
++        required: true,
++        record: "basename",
++      }),
++      caption: p("string", "Optional caption."),
++      replyToMessageId: p("string", "Optional exact source message ID."),
++      expectedKind: p("string", "Expected kind returned by upload; refuse mismatches before sending.", {
++        enum: ["image", "audio", "file", "video"],
++      }),
++      sha256: p("string", "Expected SHA-256 of the immutable local file."),
++      duration: p("integer", "Audio/video duration in milliseconds.", { minimum: 1, maximum: 86_400_000 }),
++      width: p("integer", "Image/video width in pixels.", { minimum: 1, maximum: 100_000 }),
++      height: p("integer", "Image/video height in pixels.", { minimum: 1, maximum: 100_000 }),
++    },
++    ...websocket("sendMedia"),
++  },
++  {
++    name: "clawchat_get_agent_permissions",
++    description: "Read the current agent's owner-managed permissions and moment visibility. This tool cannot change permissions.",
++    timeoutMs: 30_000,
++    properties: {},
++    ...http("GET", () => "/v1/agents/me/permissions"),
++  },
+   {
+     name: "clawchat_get_account_profile",
+     description: "Get the connected ClawChat account profile.",
+diff --git a/src/agent/tool-executor.ts b/src/agent/tool-executor.ts
+index db3b923..282e61b 100644
+--- a/src/agent/tool-executor.ts
++++ b/src/agent/tool-executor.ts
+@@ -1,7 +1,9 @@
+-import { realpath, stat } from "node:fs/promises";
+-import { basename, isAbsolute } from "node:path";
++import { createHash } from "node:crypto";
++import { constants } from "node:fs";
++import { open, realpath, stat } from "node:fs/promises";
++import { basename, extname, isAbsolute } from "node:path";
+ import { buildTextMessagePayload } from "../clawchat/message-mapper";
+-import { EVENT } from "../clawchat/protocol";
++import { EVENT, MessageSendError } from "../clawchat/protocol";
+ import type { ConnectWsClient } from "../clawchat/ws-client";
+ import { isPathWithin } from "../path-containment";
+ import { MAX_RUNTIME_MEDIA_BYTES } from "../runtime/media-cache";
+@@ -71,10 +73,73 @@ export async function executeConnectTool(
+     mention: async (value) => await mention(value, options.wsClient),
+     react: (value) => react(value, options.wsClient),
+     uploadAvatar: async (value) => await uploadAvatar(value, options),
++    sendMedia: async (value) => await sendMedia(value, options.wsClient),
+     sendFile: async (value) => await sendFile(value, options),
+   });
+ }
+ 
++async function sendMedia(input: Record<string, unknown>, ws: ConnectWsClient): Promise<unknown> {
++  const filePath = String(input.filePath);
++  if (!isAbsolute(filePath)) throw new Error("filePath must be absolute");
++  const handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
++  let file: Blob;
++  try {
++    const metadata = await handle.stat();
++    if (!metadata.isFile() || metadata.size <= 0 || metadata.size > 100 * 1024 * 1024)
++      throw new Error("media must be a non-empty regular file of at most 100 MiB");
++    const bytes = await handle.readFile();
++    if (bytes.length !== metadata.size) throw new Error("media changed while reading");
++    if (
++      input.sha256 != null &&
++      (!/^[a-f0-9]{64}$/.test(String(input.sha256)) ||
++        createHash("sha256").update(bytes).digest("hex") !== input.sha256)
++    )
++      throw new Error("media SHA-256 mismatch");
++    const mime = extname(filePath).toLowerCase() === ".wav" ? "audio/wav" : Bun.file(filePath).type;
++    file = new Blob([bytes], { type: mime || "application/octet-stream" });
++  } finally {
++    await handle.close();
++  }
++  const fragment = await ws.uploadMedia(file, { filename: basename(filePath) });
++  if (input.expectedKind != null && fragment.kind !== input.expectedKind)
++    throw new Error("uploaded media kind mismatch");
++  const media = { ...fragment };
++  if (input.duration != null) {
++    if (media.kind !== "audio" && media.kind !== "video") throw new Error("duration requires uploaded audio or video");
++    Object.assign(media, { duration: input.duration });
++  }
++  for (const key of ["width", "height"]) {
++    if (input[key] == null) continue;
++    if (media.kind !== "image" && media.kind !== "video") throw new Error(`${key} requires uploaded image or video`);
++    Object.assign(media, { [key]: input[key] });
++  }
++  const payload = buildTextMessagePayload(typeof input.caption === "string" ? input.caption : "", {
++    replyToMessageId: typeof input.replyToMessageId === "string" ? input.replyToMessageId : undefined,
++  });
++  payload.message.body.fragments.push(media);
++  try {
++    const ack = await ws.sendMessageEnvelope(EVENT.MESSAGE_REPLY, String(input.chatId), payload, {
++      toType: input.chatType as ChatType,
++    });
++    if (!ack.payload.message_id) throw new Error("message acknowledgement did not contain a message ID");
++    const record = fragment as Record<string, unknown>;
++    return {
++      sent: true,
++      messageId: ack.payload.message_id,
++      kind: fragment.kind,
++      name: record.name,
++      mime: record.mime,
++      size: record.size,
++    };
++  } catch (error) {
++    if (error instanceof MessageSendError) throw error;
++    if (isIndeterminateToolError(error)) throw error;
++    throw new IndeterminateToolExecutionError(
++      `media send outcome is unknown: ${error instanceof Error ? error.message : String(error)}`,
++    );
++  }
++}
++
+ async function mention(input: Record<string, unknown>, ws: ConnectWsClient): Promise<unknown> {
+   const mentions = (input.mentions as Array<{ userId: string; display: string }>).map((item) => ({
+     userId: item.userId.trim(),
+diff --git a/src/plugin/host.ts b/src/plugin/host.ts
+index d87f708..4e16a57 100644
+--- a/src/plugin/host.ts
++++ b/src/plugin/host.ts
+@@ -87,6 +87,7 @@ import {
+   compilePluginDurableStateValidator,
+   discardStagedPlugin,
+   type InstalledPluginLockEntry,
++  isPluginActivationCurrent,
+   listInstalledPlugins,
+   type PluginConfigurationValidator,
+   pluginDependents,
+@@ -1714,6 +1715,16 @@ export class ConnectPluginHost implements ConnectPluginManagement {
+                 Object.freeze({
+                   activationGeneration: installed.activationGeneration,
+                   ...(durableState ? { durableState } : {}),
++                  withPrivateVoiceSession: async (
++                    ...args: Parameters<NonNullable<ConnectPluginRuntimeInstanceContext["withPrivateVoiceSession"]>>
++                  ) => {
++                    if (!await isPluginActivationCurrent(this.configPath, installed.pluginId, installed.activationGeneration)) {
++                      throw new Error("Voice Runtime generation is no longer active");
++                    }
++                    const runtime = this.bindingRuntimes.find((item) => item.agentId === agentBindingIdentity(binding));
++                    if (!runtime?.withPrivateVoiceSession) throw new Error("Voice Runtime binding is unavailable");
++                    await runtime.withPrivateVoiceSession(...args);
++                  },
+                 }),
+               );
+             },
+diff --git a/src/plugin/sdk.ts b/src/plugin/sdk.ts
+index 4b1ff18..01ce979 100644
+--- a/src/plugin/sdk.ts
++++ b/src/plugin/sdk.ts
+@@ -17,7 +17,7 @@ import type {
+   RuntimeThreadDiscoverySnapshot,
+   RuntimeWorkspaceSnapshot,
+ } from "../runtime/types";
+-import type { RuntimeWorkspace } from "../types";
++import type { RuntimeModelSelection, RuntimeWorkspace } from "../types";
+ 
+ export const CONNECT_PLUGIN_MANIFEST_VERSION = 1 as const;
+ export const CONNECT_PLUGIN_INTERFACE_VERSION = "1" as const;
+@@ -242,9 +242,30 @@ export interface ConnectPluginRuntimeAdapter {
+   close?(): Promise<void>;
+ }
+ 
++export interface PrivateVoiceSessionRequest {
++  chatId: string;
++  ownerId: string;
++  sessionRef?: string;
++}
++
++export type WithPrivateVoiceSession = (
++  request: PrivateVoiceSessionRequest,
++  signal: AbortSignal,
++  run: (
++    session: ConnectRuntimeSession,
++    context: {
++      sessionRef: string;
++      workspace: RuntimeWorkspace;
++      model?: RuntimeModelSelection;
++      reasoningEffort?: string;
++    },
++  ) => Promise<void>,
++) => Promise<void>;
++
+ export interface ConnectPluginRuntimeInstanceContext {
+   readonly activationGeneration: number;
+   readonly durableState?: ConnectPluginDurableState;
++  readonly withPrivateVoiceSession?: WithPrivateVoiceSession;
+ }
+ 
+ export interface ConnectPluginRuntimeProvider {
+diff --git a/src/plugin/store.ts b/src/plugin/store.ts
+index 8334a84..5e90b2a 100644
+--- a/src/plugin/store.ts
++++ b/src/plugin/store.ts
+@@ -355,6 +355,20 @@ export async function listInstalledPlugins(configPath: string): Promise<Installe
+     .sort((left, right) => left.pluginId.localeCompare(right.pluginId));
+ }
+ 
++/** Recheck the activation of an already loaded Plugin before accepting work. */
++export async function isPluginActivationCurrent(
++  configPath: string,
++  pluginId: string,
++  activationGeneration: number,
++): Promise<boolean> {
++  const id = requireIdentity(pluginId, "Plugin ID");
++  const lockfile = await readPluginLockfile(pluginInstallationPaths(configPath).lockfile);
++  if (!Object.hasOwn(lockfile.plugins, id)) return false;
++  const entry = lockfile.plugins[id];
++  return isRecord(entry) && entry.pluginId === id && entry.status === "active"
++    && entry.activationGeneration === activationGeneration;
++}
++
+ export async function removeInstalledPlugin(configPath: string, pluginId: string): Promise<InstalledPluginLockEntry> {
+   const id = requireIdentity(pluginId, "Plugin ID");
+   const paths = pluginInstallationPaths(configPath);
+diff --git a/src/runtime/connect-runtime.ts b/src/runtime/connect-runtime.ts
+index d26038e..7005f88 100644
+--- a/src/runtime/connect-runtime.ts
++++ b/src/runtime/connect-runtime.ts
+@@ -15,6 +15,7 @@ import { EVENT, type Fragment, type NormalizedInboundMessage } from "../clawchat
+ import type { ConnectWsClient } from "../clawchat/ws-client";
+ import type { MessageBlockContent } from "../client-contract";
+ import type { TranscriptProjection } from "../client-interface/transcript-projection";
++import type { WithPrivateVoiceSession } from "../plugin/sdk";
+ import { defaultConfigPath, getAgentBinding } from "../config";
+ import { isPathWithin } from "../path-containment";
+ import type { ConnectStateStore } from "../persistence/state";
+@@ -271,6 +272,41 @@ export class ConnectRuntime {
+     };
+   }
+ 
++  async withPrivateVoiceSession(...[request, signal, run]: Parameters<WithPrivateVoiceSession>): Promise<void> {
++    signal.throwIfAborted();
++    const ticket = await this.withRoutingGate(request.chatId, async () => {
++      const current = await this.materializeCurrentSession(request.chatId);
++      if (current.agentId !== this.options.agentId || (request.sessionRef && current.sessionRef !== request.sessionRef)) {
++        throw new Error("Current private Session changed during the call");
++      }
++      return await this.queue.submitAccepted(
++        sessionKey(current.chatId, current.sessionId),
++        async () => {
++          signal.throwIfAborted();
++          const target = await this.sessionContinuity.forSession(current.sessionRef).targetForTurn("clawchat");
++          const workspace = await this.workspaces.resolveWorkspace(runtimeSessionFromTurnTarget(target));
++          const selection = await this.modelFor(runtimeSessionFromTurnTarget(target), target.bindingId, workspace);
++          const session = await this.executor.sessionFor(target);
++          signal.throwIfAborted();
++          await run(session, { sessionRef: target.sessionRef, workspace, ...selection });
++        },
++        async () => {
++          signal.throwIfAborted();
++          await this.acceptTurnTarget(current.sessionRef, current.agentId);
++        },
++        `Session ${current.sessionRef}`,
++      );
++    });
++    const abort = () => { ticket.cancel(); };
++    signal.addEventListener("abort", abort, { once: true });
++    if (signal.aborted) abort();
++    try {
++      await ticket.completion;
++    } finally {
++      signal.removeEventListener("abort", abort);
++    }
++  }
++
+   async enqueueClientTurn(
+     sessionRef: string,
+     prompt: string,
+@@ -549,6 +585,7 @@ export class ConnectRuntime {
+       chatId: message.chatId,
+     });
+     const policy = policyForOutputVisibility(mode);
++    let confirmedFinalText = false;
+     const surface =
+       this.options.turnSurfaces?.createClawChat({
+         sessionRef: current.sessionRef,
+@@ -556,6 +593,9 @@ export class ConnectRuntime {
+         materialize: (event) => materializeRuntimeOutput(event, policy),
+         deliver: async (event, reply) => {
+           const delivery = await this.sendReply(message, reply, { workspace, inTurn: true });
++          if (event.data?.outputKind === "final" && event.state === "complete" && delivery?.text.trim() && !delivery.media.length) {
++            confirmedFinalText = true;
++          }
+           if (delivery?.media.length) {
+             await this.transcriptProjection?.applyRuntimeDelivery(current.sessionRef, event, delivery);
+           }
+@@ -569,6 +609,9 @@ export class ConnectRuntime {
+         materialize: (event) => materializeRuntimeOutput(event, policy),
+         deliver: async (event, reply) => {
+           const delivery = await this.sendReply(message, reply, { workspace, inTurn: true });
++          if (event.data?.outputKind === "final" && event.state === "complete" && delivery?.text.trim() && !delivery.media.length) {
++            confirmedFinalText = true;
++          }
+           if (delivery?.media.length) {
+             await this.transcriptProjection?.applyRuntimeDelivery(current.sessionRef, event, delivery);
+           }
+@@ -621,6 +664,9 @@ export class ConnectRuntime {
+       if (event.kind === "turn") terminal = event;
+     }
+     await surface.complete();
++    if (confirmedFinalText && message.messageId) {
++      await this.executor.afterClawChatReply(current.sessionRef, message.messageId).catch(() => {});
++    }
+     return { failure: terminalTurnFailure(terminal) };
+   }
+ 
+diff --git a/src/runtime/session-turn-executor.ts b/src/runtime/session-turn-executor.ts
+index 3d17048..be817d1 100644
+--- a/src/runtime/session-turn-executor.ts
++++ b/src/runtime/session-turn-executor.ts
+@@ -18,10 +18,14 @@ export class SessionTurnExecutor {
+   constructor(private readonly options: SessionTurnExecutorOptions) {}
+ 
+   async *execute(target: TurnTarget, input: SessionTurnExecution): AsyncIterable<RuntimeActivity> {
+-    const handle = await this.handleFor(target);
++    const handle = await this.sessionFor(target);
+     yield* handle.prompt({ ...input, turnOrigin: target.turnOrigin });
+   }
+ 
++  async afterClawChatReply(sessionRef: string, turnId: string): Promise<void> {
++    await this.handles.get(normalizeSessionRef(sessionRef))?.handle.afterClawChatReply?.(turnId);
++  }
++
+   async cancel(sessionRef: string): Promise<boolean> {
+     return (await this.handles.get(normalizeSessionRef(sessionRef))?.handle.cancel?.()) ?? false;
+   }
+@@ -62,7 +66,7 @@ export class SessionTurnExecutor {
+     if (failure) throw failure.reason;
+   }
+ 
+-  private async handleFor(target: TurnTarget): Promise<ConnectRuntimeSession> {
++  async sessionFor(target: TurnTarget): Promise<ConnectRuntimeSession> {
+     const key = normalizeSessionRef(target.sessionRef);
+     const existing = this.handles.get(key);
+     if (existing) return existing.handle;
+diff --git a/src/runtime/types.ts b/src/runtime/types.ts
+index efe7072..8562094 100644
+--- a/src/runtime/types.ts
++++ b/src/runtime/types.ts
+@@ -418,6 +418,7 @@ export interface ConnectRuntimeSession {
+   prompt(input: ConnectRuntimePrompt): AsyncIterable<RuntimeActivity>;
+   close(): Promise<void>;
+   cancel?(): Promise<boolean>;
++  afterClawChatReply?(turnId: string): Promise<void>;
+ }
+ 
+ export interface ConnectRuntimeAdapter {
+diff --git a/src/service/binding-runtime.ts b/src/service/binding-runtime.ts
+index fef0741..c13b3cc 100644
+--- a/src/service/binding-runtime.ts
++++ b/src/service/binding-runtime.ts
+@@ -1,4 +1,5 @@
+ import { dirname } from "node:path";
++import type { WithPrivateVoiceSession } from "../plugin/sdk";
+ import { ActivationRefreshBlocked, refreshActivationCredentials } from "../account/activation-credentials";
+ import { executeAgentLiveware, isAgentLivewareOperation } from "../agent/agent-liveware";
+ import { verifyInstalledSkills } from "../agent/skills";
+@@ -130,6 +131,7 @@ export interface BindingRuntimeHandle {
+   cancelQueuedClientTurn?(sessionRef: string, turnId: string): boolean;
+   sessionActivity?(sessionRef: string): Promise<SessionActivity>;
+   activeClientTurnId?(sessionRef: string): string | null;
++  withPrivateVoiceSession?: WithPrivateVoiceSession;
+   claimSessionLifecycle?(sessionRef: string): Promise<() => Promise<void>>;
+   executeTool?(toolName: string, input: Record<string, unknown>): Promise<unknown>;
+ }
+@@ -577,6 +579,13 @@ export async function startBindingRuntime(options: BindingRuntimeOptions): Promi
+     agentId: options.agentId,
+     websocketUrl: options.config.websocketUrl,
+     deviceId: options.deviceId,
++    withPrivateVoiceSession: async (request, signal, run) => {
++      const current = await options.stateStore.getActivation(options.agentId);
++      if (!current || current.conversationId !== request.chatId || current.ownerUserId !== request.ownerId) {
++        throw new Error("Voice Session is not the activated owner private chat");
++      }
++      await runtime.withPrivateVoiceSession(request, signal, run);
++    },
+     enqueueClientTurn: async (sessionRef, prompt, media, selection, signal, turnId) =>
+       await runtime.enqueueClientTurn(sessionRef, prompt, media, selection, signal, turnId),
+     uploadClientMedia: async (file, filename) => await runtime.uploadClientMedia(file, filename),
+diff --git a/tests/cli.test.ts b/tests/cli.test.ts
+index 5fb1531..b805670 100644
+--- a/tests/cli.test.ts
++++ b/tests/cli.test.ts
+@@ -234,14 +234,15 @@ const WORKBUDDY_COMMAND_FAILURES = [
+ ] satisfies Array<[WorkBuddyDiscoveryFailureCode, "unavailable" | "unsupported", string]>;
+ 
+ describe("runConnectCli", () => {
+-  it("reports the build version pinned by the release manifest", async () => {
++  it("reports the official connector version independently of the Whale Nest build identity", async () => {
+     const output = io();
+     const manifest = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as { version: string };
++    const officialVersion = manifest.version.replace(/-whalenest\..+$/u, "");
+ 
+     await expect(runConnectCli(["--version"], output.deps)).resolves.toBe(0);
+ 
+-    expect(CONNECT_VERSION).toBe(manifest.version);
+-    expect(output.stdout).toEqual([`clawchat-connect v${manifest.version}\n`]);
++    expect(CONNECT_VERSION).toBe(officialVersion);
++    expect(output.stdout).toEqual([`clawchat-connect v${officialVersion}\n`]);
+   });
+ 
+   it("requests an explicit atomic Plugin source replacement", async () => {
+@@ -927,10 +928,10 @@ describe("runConnectCli", () => {
+     });
+   });
+ 
+-  it("lists the static 25-entry tool catalog without opening state", async () => {
++  it("lists the static 27-entry tool catalog without opening state", async () => {
+     const output = io();
+     await expect(runConnectCli(["tool", "list"], output.deps)).resolves.toBe(0);
+-    expect(JSON.parse(output.stdout[0] ?? "{}").tools).toHaveLength(25);
++    expect(JSON.parse(output.stdout[0] ?? "{}").tools).toHaveLength(27);
+   });
+ 
+   it("describes tools, reads stdin JSON, and honors explicit, runtime, then default Binding precedence", async () => {
+diff --git a/tests/connect-runtime.test.ts b/tests/connect-runtime.test.ts
+index c7c1ad5..3a0994e 100644
+--- a/tests/connect-runtime.test.ts
++++ b/tests/connect-runtime.test.ts
+@@ -99,6 +99,87 @@ async function resetToUnlockedRuntimeSession(store: ConnectStateStore) {
+   });
+ }
+ describe("ConnectRuntime Agent Binding sessions", () => {
++  it.each(["confirmed", "failed", "suppressed"] as const)("runs a supplement only after confirmed final text (%s)", async (outcome) => {
++    const fixture = await runtimeFixture();
++    const afterClawChatReply = mock(async (turnId: string) => {
++      expect(turnId).toBe("message-1");
++      expect(fixture.sendMessageEnvelope).toHaveBeenCalledTimes(1);
++    });
++    if (outcome === "failed") fixture.sendMessageEnvelope.mockImplementationOnce(async () => {
++      throw new Error("no reply receipt");
++    });
++    const native = {
++      async *prompt() { if (outcome !== "suppressed") yield activity("ordinary final reply"); },
++      async close() {},
++      afterClawChatReply,
++    };
++    const runtimeAdapters = new RuntimeAdapterRegistry([fixedRuntimeAdapter({
++      kind: "codex", modes: [], start: async () => native,
++    })]);
++    const runtime = new ConnectRuntime({
++      agentId: "codex", config: fixture.config, configPath: fixture.configPath,
++      stateStore: fixture.store, wsClient: fixture.wsClient, runtimeAdapters,
++    });
++    try {
++      await runtime.handleInboundMessage(message());
++      expect(afterClawChatReply).toHaveBeenCalledTimes(outcome === "confirmed" ? 1 : 0);
++    } finally {
++      await runtime.dispose();
++      await runtimeAdapters.close();
++      await fixture.store.close();
++    }
++  });
++
++  it("keeps voice and text on the same queued runtime handle without projecting voice", async () => {
++    const fixture = await runtimeFixture();
++    const entered = Promise.withResolvers<void>();
++    const release = Promise.withResolvers<void>();
++    const visibleText = mock(async function* () {yield activity("ordinary text result");});
++    const native = {prompt: visibleText, cancel: mock(async () => true), close: mock(async () => {})};
++    const start = mock(async () => native);
++    const runtimeAdapters = new RuntimeAdapterRegistry([fixedRuntimeAdapter({kind: "codex", modes: [], start})]);
++    const projection = new TranscriptProjection({config: fixture.config, stateStore: fixture.store, runtimeAdapters});
++    const runtime = new ConnectRuntime({
++      agentId: "codex", config: fixture.config, configPath: fixture.configPath,
++      stateStore: fixture.store, wsClient: fixture.wsClient, runtimeAdapters, transcriptProjection: projection,
++    });
++    const request = {chatId: "chat-1", ownerId: "user-1"};
++    const voice = runtime.withPrivateVoiceSession(request, new AbortController().signal, async (session) => {
++      expect(session).toBe(native);
++      entered.resolve();
++      await release.promise;
++    });
++    try {
++      await Promise.race([entered.promise, voice.then(() => {throw new Error("Voice did not acquire its session");})]);
++      const text = runtime.handleInboundMessage(message("ordinary text input"));
++      const cancelled = new AbortController();
++      const discarded = mock(async () => {});
++      const queued = runtime.withPrivateVoiceSession(request, cancelled.signal, discarded);
++      const result = queued.then(() => null, error => error);
++      await Bun.sleep(20);
++      expect(visibleText).not.toHaveBeenCalled();
++      cancelled.abort();
++      expect(await result).toBeInstanceOf(Error);
++      expect(discarded).not.toHaveBeenCalled();
++      release.resolve();
++      await voice;
++      await text;
++      expect(start).toHaveBeenCalledTimes(1);
++      expect(visibleText).toHaveBeenCalledTimes(1);
++      const current = await fixture.store.getCurrentRuntimeSession("chat-1", "codex");
++      const blocks = await fixture.store.listTranscriptBlocks(current!.sessionRef);
++      expect(blocks.filter(block => block.type === "message")).toHaveLength(2);
++      expect(JSON.stringify(blocks)).toContain("ordinary text input");
++      expect(JSON.stringify(blocks)).toContain("ordinary text result");
++      expect(fixture.sendMessageEnvelope).toHaveBeenCalledTimes(1);
++    } finally {
++      release.resolve();
++      await voice.catch(() => undefined);
++      await runtime.dispose();
++      await runtimeAdapters.close();
++      await fixture.store.close();
++    }
++  });
+   it.each(["workbuddy-ai", "workbuddy-cn"] as const)(
+     "serializes Client and ClawChat turns through one adopted %s Task Attachment",
+     async (profile) => {
+diff --git a/tests/fixtures/media-send/audio.wav b/tests/fixtures/media-send/audio.wav
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b64d548282530bead6707c4c5f7fc099642797a
+GIT binary patch
+literal 19244
+zcmeHP-AmMI6n;O>xe7804Dn_wE0@r$MGO{<7)KFlp{;fzVlvovnG1!=x!R1#x|%+~
+zE{5pFhFFq{U?akGE((G~DpMlcEU!cq3JkhA=l$sYBf2~cKls6KczMo&m-jvAd7kro
+zcV}lqk5ajPe`Npa8~ACRQc9=a`S$cOsFYFb)So8?PN?*s^hG<pWG3tYtigZqDSp67
+zEa7Gxh6P(=8%>MeshZ-hknsg~m)CNcx@jA=(BJfe4shT}ci&e+CEivQechb0tuO~U
+zyoc}bE&hx9aS9qBZ_k;MzM@L86w3aQ`^*`xQZF^rcKVG*sGi69tUKbnLN<1)F5Pan
+z*j0NAns69jCPWi>8Uvh!Q9EN6^@>`KOW})0zuOJ+3Jub))R3M*O7Fbeq5tBS!g5?u
+zi+aY4+LI9AbXwy>T5A}a@D{AvEw<fs=}wi6UEzp7>&CgBM-rCp2~#gsDZ`)nkt_RB
+zD8+<ZpEG&e08_9(#q>7Cb`Ntn2d!|*UN;q;Vvm(@-%q;02lz$GO-ssAH<f8E-{peK
+z_+6nX?o=(h(bU)lI}DpsjwchMrzz)aZ~!Lkl5tvVrDA|k=R4eG{zjK*FKwkZD$*zF
+z=S^<a&H3r@CeEtYx@yYyFnomqKF0rX8gJkpd;kX8>_L;)d37x2L!ZCqrnr$u=@9))
+zJLo7qq*k8iio4*8;Y=*5qAr*oy8)_@!4aIn_xK<7;v!_>qP=6r^tgHw$HFuJ(bc%)
+zJWKubOG4B^SIO{A&bek^A8O-9Rj1b*Hm~du)Z!36$NBUOVS0yGmd$!or#GtFSRa~w
+z&fR3gSJN6>(^~yBOUJp!eRR+KSa=f0)tJ6xF4`<CLT|$IK4BWc3|3(S^w@$a>Y_@x
+z!v$Y)^W4f0Q%pNjY=>x+8hMJZxjvr{DR!0D2Thwb@BsFt+)Sq&J;nllg~L#`Rr6ZU
+zsyA^u%=uNf$@TN6l;gI9Xm85-H@eInuFgY<LH39257{5GKji$7^Fz)LxnIfsO72%u
+ze@Oiy^@r5wQlCqGF8wR%UrGN;`n%HKmHw{qAHshK{~`RK@Pon+3V$yAx$x)0pNqak
+z^d+J%5&f0uuS9<(`b5zuiat^FyQ1F}{jTWSMc*#^cJY6R|3myA;*S!4l=!2>KPdh|
+w@ehi>R{XW%uND8f_|L_EF8*_w&mi*|WIlt;FOm5rGQULT`^bEsA3xvcJ3{+L_y7O^
+
+literal 0
+HcmV?d00001
+
+diff --git a/tests/fixtures/media-send/document.txt b/tests/fixtures/media-send/document.txt
+new file mode 100644
+index 0000000..acd9c62
+--- /dev/null
++++ b/tests/fixtures/media-send/document.txt
+@@ -0,0 +1 @@
++M2 消息适配测试文件。固定素材，不包含用户资料。
+diff --git a/tests/fixtures/media-send/image.png b/tests/fixtures/media-send/image.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f472723d9fc53be10c3ea80f19763de2e46f37c
+GIT binary patch
+literal 413
+zcmeAS@N?(olHy`uVBq!ia0vp^AAq=mg9%7FUwKi$z`&T|>EaktG3V_iN6rHV0t^Qy
+zPcC-}aVZT8F1g~ea05?IL+zV6dli%G^c(mkXNfpZPRa=4@$FjZX=tL^rgrqg5((-G
+uZl1?&L`(A#ZZ>*tHzAR>o`G66MSRuzX-RAT{5AmwJA<dIpUXO@geCwG_LvO-
+
+literal 0
+HcmV?d00001
+
+diff --git a/tests/fixtures/media-send/video.mp4 b/tests/fixtures/media-send/video.mp4
+new file mode 100644
+index 0000000000000000000000000000000000000000..231974b7199ed9f7d8a061e1589f600154b621d5
+GIT binary patch
+literal 1308
+zcma)6ZAepL6n^iPqI2m?qmeT=u+)%1vCxz>W@(}%kxN4GV|TXUuA95Jks={w_>o|R
+z`6K;d3qixAK+r#xF)d0e`yh-$G;Ly;ABiBQ+|IezF<k!WaG&=*=Q+=N&VAqaZiEn3
+zDOYJ_tO@ai5X!__81UoVF+&$~z+<WnhNHed@fo_TuLarK)Ru+e;FNdTE{YH-p`^kn
+zA(V>*po@>ZMJ{cKrgrjRHLyBk|A0DT+;8eRU!T3GD&h~Ph2Qfp99y3XnO-HGj>J>T
+zb#=OW-$yxNGefg<+Xby9fegQXG3Z|t)bPPMa<%MSW#7WFx1&&MuVzwFIMgy5lc-B@
+z+?ngN1W!D1S&w98e!dUcU`^MR+NVFy4E7ph2ExKB`muWu)%C2IpSyK3s=xi((yKor
+z<-E=>D_4lmV&3C<4N!+PQyNDUzwR(<+0-VJHA!~%6Uk4K_Q(!av__P^@w>ZPeO#&_
+zBk6%FnNA0+2-bA_*7B~xZ|BFUkoG3|uOXpw_lZXS_fp5kO=@kfGY6<Zsym~R&mVQJ
+zlvhvx$OR@u^F0Q7eMxQ}i+C_p@;>Lb?6N3q*eX<LT(PHlDmgDv`!cucW8VZEuYs{x
+z?4UL?b|VclnF;T0Mi3&&7XTLnkH@wIKzqe$9_4nP1ZpmEw&F5K7I0-kPs-ENT@8DC
+znO7gT(ydBErvp#~ASBX2b1cj%gPGm@^l*hxmloGbObl%*2927bx8Hjn-T@(TM%ru>
+zJQ(aI+Tiwa)>>=^b&dflsdbRD03}f{rt(s7LhX#WK@@IUBrWDtw9SATG~Al}qRp%p
+zeQK2DO3dJQupBE~ipY~2#dduh_-Nk8ftxQPnUF!C{i_gp&#2^i2o6A1Ek%<6ev$-4
+z!Q7+EbzaIyqsWfv`ILtntE;#|R%$Ysg_1J8(Z&cxlq@G4G6upPV8-9SRqx^Dn>pME
+zYSz4B2nAmF-}sMwtCt?@hQc}FWusvagp#E>D-vpjLa7v>R6wW#tsZ$Wx7PiR>5!`u
+kQ^JUR17IIuHy~sa_^$4F7x;SsIENxwPLCe}8rF~f3%2nPqyPW_
+
+literal 0
+HcmV?d00001
+
+diff --git a/tests/media-send-tool.test.ts b/tests/media-send-tool.test.ts
+new file mode 100644
+index 0000000..84c7852
+--- /dev/null
++++ b/tests/media-send-tool.test.ts
+@@ -0,0 +1,262 @@
++import { afterEach, describe, expect, it, mock } from "bun:test";
++import { mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { getConnectTool, recordToolInput, validateToolInput } from "../src/agent/tool-catalog";
++import { executeConnectTool, isIndeterminateToolError } from "../src/agent/tool-executor";
++import { type MessagePayload, MessageSendError, StateError } from "../src/clawchat/protocol";
++import type { ConnectWsClient } from "../src/clawchat/ws-client";
++import type { ActivationCredentials } from "../src/types";
++
++const activation: ActivationCredentials = {
++  localAgentId: "dsh",
++  accessToken: "test-only",
++  refreshToken: null,
++  serverAgentId: "agent-test",
++  userId: "user-test",
++  ownerUserId: "owner-test",
++  conversationId: "cnv_owner",
++};
++const temporary: string[] = [];
++afterEach(async () => {
++  for (const dir of temporary.splice(0)) await rm(dir, { recursive: true, force: true });
++});
++const fixture = (name: string) => join(import.meta.dir, "fixtures/media-send", name);
++const options = (wsClient: unknown) => ({
++  baseUrl: "https://unused.test",
++  deviceId: "device-test",
++  activation,
++  wsClient: wsClient as ConnectWsClient,
++});
++
++describe("generic media delivery through the existing Core connection", () => {
++  for (const [name, kind, mime] of [
++    ["image.png", "image", "image/png"],
++    ["audio.wav", "audio", "audio/wav"],
++    ["document.txt", "file", "text/plain"],
++    ["video.mp4", "video", "video/mp4"],
++  ] as const) {
++    it(`uploads and sends ${kind} through the supplied connection and returns its real ack`, async () => {
++      const uploadMedia = mock(async (file: Blob, args: { filename: string }) => {
++        expect(file.type.split(";")[0]).toBe(mime);
++        expect(args.filename).toBe(name);
++        return { kind, url: `https://media.test/${name}`, name, mime, size: file.size };
++      });
++      const sendMessageEnvelope = mock(async (...args: unknown[]) => {
++        expect(args[0]).toBe("message.reply");
++        expect(args[1]).toBe("cnv_owner");
++        const payload = args[2] as MessagePayload;
++        expect(payload.message.body.fragments).toContainEqual(expect.objectContaining({ kind, name, mime }));
++        expect(payload.message.context.reply?.reply_to_msg_id).toBe("msg_source");
++        expect(args[3]).toEqual({ toType: "direct" });
++        return { payload: { message_id: `msg_ack_${kind}` } };
++      });
++      const result = await executeConnectTool(
++        "clawchat_send_media",
++        {
++          chatId: "cnv_owner",
++          chatType: "direct",
++          filePath: fixture(name),
++          caption: "M2 fixed fixture",
++          replyToMessageId: "msg_source",
++          ...(kind === "audio" ? { duration: 600 } : {}),
++          ...(kind === "video" ? { duration: 1000, width: 160, height: 96 } : {}),
++        },
++        options({ uploadMedia, sendMessageEnvelope }),
++      );
++      expect(result).toMatchObject({ sent: true, messageId: `msg_ack_${kind}`, kind, name, mime });
++      expect(uploadMedia).toHaveBeenCalledTimes(1);
++      expect(sendMessageEnvelope).toHaveBeenCalledTimes(1);
++      if (kind === "audio" || kind === "video") {
++        const payload = sendMessageEnvelope.mock.calls[0]?.[2] as MessagePayload;
++        const fragment = payload.message.body.fragments.at(-1) as Record<string, unknown>;
++        expect(fragment.duration).toBe(kind === "audio" ? 600 : 1000);
++        if (kind === "video") expect(fragment).toMatchObject({ width: 160, height: 96 });
++      }
++    });
++  }
++
++  it("does not send a message when upload fails", async () => {
++    const sendMessageEnvelope = mock(async () => {
++      throw Error("must not run");
++    });
++    await expect(
++      executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav") },
++        options({
++          uploadMedia: async () => {
++            throw Error("upload rejected");
++          },
++          sendMessageEnvelope,
++        }),
++      ),
++    ).rejects.toThrow("upload rejected");
++    expect(sendMessageEnvelope).not.toHaveBeenCalled();
++  });
++
++  it("keeps a post-submission connection error indeterminate without retrying", async () => {
++    const sendMessageEnvelope = mock(async () => {
++      throw Error("connection dropped after submission");
++    });
++    let caught: unknown;
++    try {
++      await executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav") },
++        options({
++          uploadMedia: async () => ({
++            kind: "audio",
++            url: "https://media.test/audio.wav",
++            name: "audio.wav",
++            mime: "audio/wav",
++            size: 19244,
++          }),
++          sendMessageEnvelope,
++        }),
++      );
++    } catch (error) {
++      caught = error;
++    }
++    expect(isIndeterminateToolError(caught)).toBe(true);
++    expect(sendMessageEnvelope).toHaveBeenCalledTimes(1);
++  });
++
++  it("keeps Core shutdown during a submitted send indeterminate", async () => {
++    let caught: unknown;
++    try {
++      await executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav") },
++        options({
++          uploadMedia: async () => ({
++            kind: "audio",
++            url: "https://media.test/audio.wav",
++            name: "audio.wav",
++            mime: "audio/wav",
++            size: 19244,
++          }),
++          sendMessageEnvelope: async () => {
++            throw new StateError("client closed");
++          },
++        }),
++      );
++    } catch (error) {
++      caught = error;
++    }
++    expect(isIndeterminateToolError(caught)).toBe(true);
++  });
++
++  it("refuses relative paths, directories, symlinks and empty files before upload", async () => {
++    const root = await mkdtemp(join(await realpath(tmpdir()), "media-send-"));
++    temporary.push(root);
++    await writeFile(join(root, "empty.wav"), "");
++    await symlink(fixture("audio.wav"), join(root, "link.wav"));
++    const uploadMedia = mock(async () => {
++      throw Error("must not upload");
++    });
++    for (const filePath of ["relative.wav", root, join(root, "link.wav"), join(root, "empty.wav")]) {
++      await expect(
++        executeConnectTool(
++          "clawchat_send_media",
++          { chatId: "cnv_owner", chatType: "direct", filePath },
++          options({ uploadMedia }),
++        ),
++      ).rejects.toThrow();
++    }
++    expect(uploadMedia).not.toHaveBeenCalled();
++  });
++
++  it("preserves a definite platform rejection as failed", async () => {
++    const rejection = new MessageSendError("not_member");
++    let caught: unknown;
++    try {
++      await executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav") },
++        options({
++          uploadMedia: async () => ({
++            kind: "audio",
++            url: "https://media.test/audio.wav",
++            name: "audio.wav",
++            mime: "audio/wav",
++            size: 19244,
++          }),
++          sendMessageEnvelope: async () => {
++            throw rejection;
++          },
++        }),
++      );
++    } catch (error) {
++      caught = error;
++    }
++    expect(caught).toBe(rejection);
++    expect(isIndeterminateToolError(caught)).toBe(false);
++  });
++
++  it("refuses to report sent without a message ID in the acknowledgement", async () => {
++    let caught: unknown;
++    try {
++      await executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav") },
++        options({
++          uploadMedia: async () => ({
++            kind: "audio",
++            url: "https://media.test/audio.wav",
++            name: "audio.wav",
++            mime: "audio/wav",
++            size: 19244,
++          }),
++          sendMessageEnvelope: async () => ({ payload: {} }),
++        }),
++      );
++    } catch (error) {
++      caught = error;
++    }
++    expect(isIndeterminateToolError(caught)).toBe(true);
++  });
++
++  it("refuses changed file bytes before upload and a kind mismatch before sending", async () => {
++    const uploadMedia = mock(async () => ({
++      kind: "file",
++      url: "https://media.test/file",
++      name: "audio.wav",
++      mime: "application/octet-stream",
++      size: 19244,
++    }));
++    const sendMessageEnvelope = mock(async () => ({ payload: { message_id: "must-not-send" } }));
++    await expect(
++      executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav"), sha256: "0".repeat(64) },
++        options({ uploadMedia, sendMessageEnvelope }),
++      ),
++    ).rejects.toThrow("SHA-256 mismatch");
++    expect(uploadMedia).not.toHaveBeenCalled();
++    await expect(
++      executeConnectTool(
++        "clawchat_send_media",
++        { chatId: "cnv_owner", chatType: "direct", filePath: fixture("audio.wav"), expectedKind: "audio" },
++        options({ uploadMedia, sendMessageEnvelope }),
++      ),
++    ).rejects.toThrow("kind mismatch");
++    expect(sendMessageEnvelope).not.toHaveBeenCalled();
++  });
++
++  it("requires exact chat type, validates metadata, and redacts recorded file paths", () => {
++    const tool = getConnectTool("clawchat_send_media");
++    expect(tool).not.toBeNull();
++    if (!tool) throw Error("media tool not registered");
++    expect(() => validateToolInput(tool, { chatId: "cnv_owner", filePath: fixture("audio.wav") })).toThrow("chatType");
++    expect(() =>
++      validateToolInput(tool, {
++        chatId: "cnv_owner",
++        chatType: "direct",
++        filePath: fixture("audio.wav"),
++        duration: -1,
++      }),
++    ).toThrow("duration");
++    expect(recordToolInput(tool, { filePath: fixture("audio.wav") })).toEqual({ filePath: "audio.wav" });
++  });
++});
+diff --git a/tests/plugin-platform.test.ts b/tests/plugin-platform.test.ts
+index b250a4a..18ded58 100644
+--- a/tests/plugin-platform.test.ts
++++ b/tests/plugin-platform.test.ts
+@@ -1,4 +1,6 @@
+ import { describe, expect, it } from "bun:test";
++import { createHash } from "node:crypto";
++import type { WithPrivateVoiceSession } from "../src/plugin/sdk";
+ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
+@@ -111,8 +113,15 @@ describe("official multi-capability Plugin platform", () => {
+     const stateStore = createStateStore({ dbPath: join(directory, "state.sqlite") });
+     const fixturePath = join(import.meta.dir, "fixtures", "reference-runtime.connect-plugin");
+     const secondBundlePath = join(directory, "reference-runtime-two.connect-plugin");
+-    const secondBundle = JSON.parse(await readFile(fixturePath, "utf8")) as { manifest: { pluginId: string } };
++    const secondBundle = JSON.parse(await readFile(fixturePath, "utf8")) as { manifest: { pluginId: string; artifacts: { integrity: string }[] }; files: Record<string, { content: string }> };
+     secondBundle.manifest.pluginId = "test.reference-runtime-two";
++    const runtimeSource = secondBundle.files["runtime.mjs"];
++    runtimeSource.content = runtimeSource.content.replace("create(configuration) {", `create(configuration, instance) {
++      globalThis.__connectOtherRuntimeVoice = instance.withPrivateVoiceSession;
++    `);
++    for (const artifact of secondBundle.manifest.artifacts) {
++      artifact.integrity = "sha256-" + createHash("sha256").update(runtimeSource.content).digest("base64");
++    }
+     await writeFile(secondBundlePath, `${JSON.stringify(secondBundle, null, 2)}\n`);
+ 
+     const firstInstall = await installOfficialFixture(configPath, fixturePath);
+@@ -202,6 +211,18 @@ describe("official multi-capability Plugin platform", () => {
+       }),
+     ]);
+     expect(serviceErrors).toEqual([]);
++    const privateVoice = Reflect.get(globalThis, "__connectOtherRuntimeVoice") as WithPrivateVoiceSession;
++    expect(typeof privateVoice).toBe("function");
++    await expect(privateVoice(
++      {chatId:"chat-trace-alpha",ownerId:"owner-1"}, new AbortController().signal, async () => {},
++    )).rejects.toThrow("not the activated owner private chat");
++    let usedOwnerSession = false;
++    await privateVoice(
++      {chatId:"chat-trace-beta",ownerId:"owner-1"}, new AbortController().signal,
++      async () => { usedOwnerSession = true; },
++    );
++    expect(usedOwnerSession).toBe(true);
++    Reflect.deleteProperty(globalThis, "__connectOtherRuntimeVoice");
+     const exposure = referenceExposure();
+     expect(exposure).toMatchObject({
+       activationKeys: ["activationGeneration", "configuration"],
+diff --git a/tests/tool-catalog.test.ts b/tests/tool-catalog.test.ts
+index a7bd0c0..0e210e6 100644
+--- a/tests/tool-catalog.test.ts
++++ b/tests/tool-catalog.test.ts
+@@ -3,8 +3,8 @@ import { CONNECT_TOOL_CATALOG, getConnectTool, validateToolInput } from "../src/
+ 
+ describe("Connect Tool Catalog", () => {
+   it("publishes exactly the agreed 25 tool-name entries without memory or conversation lookup", () => {
+-    expect(CONNECT_TOOL_CATALOG).toHaveLength(25);
+-    expect(new Set(CONNECT_TOOL_CATALOG.map((tool) => tool.name)).size).toBe(25);
++    expect(CONNECT_TOOL_CATALOG).toHaveLength(27);
++    expect(new Set(CONNECT_TOOL_CATALOG.map((tool) => tool.name)).size).toBe(27);
+     expect(getConnectTool("clawchat_get_conversation")).toBeNull();
+     expect(CONNECT_TOOL_CATALOG.some((tool) => tool.name.includes("memory"))).toBe(false);
+     expect(
+@@ -14,6 +14,15 @@ describe("Connect Tool Catalog", () => {
+     ).toBe(true);
+   });
+ 
++  it("keeps self-permission reads at the fixed authenticated endpoint", async () => {
++    const tool = getConnectTool("clawchat_get_agent_permissions");
++    if (!tool) throw new Error("self-permission tool missing");
++    expect(tool.execution).toBe("http");
++    const requests: unknown[] = [];
++    await tool.handler({}, { request: async (...args: unknown[]) => { requests.push(args); return {}; } } as never);
++    expect(requests).toEqual([["GET", "/v1/agents/me/permissions", undefined]]);
++  });
++
+   it("requires authoritative message and identity ids", () => {
+     const reaction = getConnectTool("clawchat_react_message");
+     if (!reaction) throw new Error("reaction tool missing");
+diff --git a/tests/tool-executor.test.ts b/tests/tool-executor.test.ts
+index 4db3501..9a6bab2 100644
+--- a/tests/tool-executor.test.ts
++++ b/tests/tool-executor.test.ts
+@@ -15,6 +15,22 @@ const activation: ActivationCredentials = {
+ };
+ 
+ describe("Connect Tool Executor", () => {
++  it("reads own permissions with the current binding token and device", async () => {
++    let observed: { url: string; method?: string; headers?: HeadersInit } | undefined;
++    const permissions = { "moment.visibility": ["owner"], "moment.publish": "allow", "moment.delete": "ask" };
++    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
++      observed = { url: String(url), method: init?.method, headers: init?.headers };
++      return Response.json({ code: 0, data: permissions });
++    }) as typeof fetch;
++    const value = await executeConnectTool("clawchat_get_agent_permissions", {}, {
++      baseUrl: "https://example.test", deviceId: "device-1", activation, wsClient: {} as ConnectWsClient, fetchImpl,
++    });
++    expect(value).toEqual(permissions);
++    expect(observed?.url).toBe("https://example.test/v1/agents/me/permissions");
++    expect(observed?.method).toBe("GET");
++    expect(observed?.headers).toMatchObject({ authorization: "Bearer secret", "x-device-id": "device-1" });
++  });
++
+   it("sends exact mentions and replies on the existing binding WebSocket", async () => {
+     const sendMessageEnvelope = mock(async () => ({ payload: { message_id: "outbound-message-1" } }));
+     const wsClient = { sendMessageEnvelope } as unknown as ConnectWsClient;
+diff --git a/tests/voice-plugin-activation.test.ts b/tests/voice-plugin-activation.test.ts
+new file mode 100644
+index 0000000..bc32470
+--- /dev/null
++++ b/tests/voice-plugin-activation.test.ts
+@@ -0,0 +1,32 @@
++import { expect, test } from "bun:test";
++import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { dirname, join } from "node:path";
++import { CONNECT_PLUGIN_LOCK_FORMAT, isPluginActivationCurrent, pluginInstallationPaths } from "../src/plugin/store";
++
++test("voice admission checks the current activation without loading unrelated version manifests", async () => {
++  const directory = await mkdtemp(join(tmpdir(), "connect-voice-activation-"));
++  const configPath = join(directory, "config.json");
++  const { lockfile } = pluginInstallationPaths(configPath);
++  const pluginId = "whalenest.runtime.deepseek-harness";
++  const entry = { pluginId, activationGeneration: 7, status: "active", retainedVersions: ["unused version metadata"] };
++  const write = (plugins: Record<string, unknown>) =>
++    writeFile(lockfile, JSON.stringify({ format: CONNECT_PLUGIN_LOCK_FORMAT, plugins }));
++  try {
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(false);
++    await mkdir(dirname(lockfile), { recursive: true });
++    await write({ [pluginId]: entry, "other.runtime": "unused plugin metadata" });
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(true);
++    expect(await isPluginActivationCurrent(configPath, pluginId, 6)).toBe(false);
++    await write({ [pluginId]: { ...entry, activationGeneration: 8 } });
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(false);
++    await write({ [pluginId]: { ...entry, status: "disabled" } });
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(false);
++    await write({ [pluginId]: { ...entry, pluginId: "other.runtime" } });
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(false);
++    await write({});
++    expect(await isPluginActivationCurrent(configPath, pluginId, 7)).toBe(false);
++  } finally {
++    await rm(directory, { recursive: true, force: true });
++  }
++});

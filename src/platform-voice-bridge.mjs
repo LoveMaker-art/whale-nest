@@ -20,7 +20,7 @@ async function readBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString() || '{}');
 }
 
-export async function startPlatformVoiceBridge(options,{secret,withPrivateVoiceSession,listModels,readProfile}) {
+export async function startPlatformVoiceBridge(options,{secret,withPrivateVoiceSession,listModels,readProfile,port=0}) {
   const route = options.clawchat.route;
   if (typeof withPrivateVoiceSession !== 'function') throw Error('Connect does not support voice in the current private Session');
   const ownerSession = {chatId:route.conversation,ownerId:route.sender};
@@ -275,7 +275,7 @@ export async function startPlatformVoiceBridge(options,{secret,withPrivateVoiceS
       return json(error.status ?? (error instanceof SyntaxError ? 400 : 503),{error:{code:error.code ?? 'dsh_voice_failed'}});
     }
   });
-  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
   return {port:server.address().port,async close(){
     stopping = true;
     profileAbort.abort();

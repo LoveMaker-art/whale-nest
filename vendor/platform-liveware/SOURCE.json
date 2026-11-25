@@ -4,7 +4,11 @@
     "url": "https://apps-nest.clawling.com/api/v1/apps/clawchat-songsmith/versions/1.0.6/download",
     "sha256": "ac1740c2bae8780894a2ba0bef8055b674a93aaf1092a2f28405d1c32f27945a",
     "commit": "fc2ac3886f9f2adc8eb4d7e6188b88681bd5e774",
-    "adapted": ["app.html"]
+    "adapted": ["app.html", "admin.html", "static/i18n.js", "tags.json"],
+    "reused": {
+      "static/melody.js": "711e5bac5e15c396b1d6f1b75c4f2fddbf6e639f4c24d607fc47b72c8d36e88b",
+      "abc_tools.py": "8289fa73ba1063d008b2129b678fca4487359c5e1e7a736ec4519571d1729ca0"
+    }
   },
   "clawnest_voice": {
     "version": "0.1.11",

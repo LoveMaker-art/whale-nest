@@ -12,10 +12,21 @@ export const releaseRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url
 export const connectBin=path.join(releaseRoot,'clawchat-connect');
 export const bridgePath=path.join(releaseRoot,'runtime/dsh-bridge.sh');
 export const dshBin='/opt/dsh/node_modules/.bin/dsh';
+export function redactConnectOutput(text){return String(text??'').replace(/(:\/\/)[^\s/@]+@/g,'$1[redacted]@').replace(/([?&](?:token|access_token|refresh_token|code|key|secret)=)[^&\s]+/gi,'$1[redacted]').replace(/(bearer\s+)[A-Za-z0-9._~+\/=-]+/gi,'$1[redacted]').replace(/((?:token|secret|password|authorization)["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,'$1[redacted]');}
+export function connectFailureMessage(argv,error,limit=2048){
+ const raw=error?.stderr??'';const text=redactConnectOutput(Buffer.isBuffer(raw)?raw.toString('utf8'):raw).trim();
+ const detail=text.length>limit?'...'+text.slice(text.length-limit):text;
+ return 'ClawChat Connect command failed: '+argv.slice(0,2).join('/')+(detail?'\n'+detail:'');
+}
 export function readJSON(file,fallback={}){try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch(e){if(e.code==='ENOENT')return fallback;throw e;}}
 export function writeJSON(file,value){
  fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});
  const tmp=file+'.'+process.pid+'.tmp';fs.writeFileSync(tmp,JSON.stringify(value,null,2)+'\n',{mode:0o600});fs.renameSync(tmp,file);
+}
+// DSH only understands text and image input; an absent list means text-only.
+export function nativeInput(input){
+ const kept=Array.isArray(input)?['text','image'].filter(k=>input.includes(k)):[];
+ return kept.length?kept:['text'];
 }
 export function nativeModel(){
  const cfg=readJSON(path.join(state,'config.json'));
@@ -32,7 +43,7 @@ export function nativeModel(){
   const envKey='CLAWCHAT_DSH_KEY_'+createHash('sha256').update(id).digest('hex').slice(0,16).toUpperCase();
   const credential=value.apiKey;
   env[envKey]=typeof credential==='string'?credential:(credential?.source==='env'?dotenv[credential.id]||env[credential.id]||'':'');
-  nativeProviders[id]={apiKeyEnv:envKey,api:value.api||'openai-completions',...(value.baseUrl?{baseURL:value.baseUrl}:{}),models:(value.models||[]).map(m=>({id:m.id,name:m.name||m.id,contextWindow:m.contextWindow||32768,maxTokens:m.maxTokens||8192,reasoning:m.reasoning||false}))};
+  nativeProviders[id]={apiKeyEnv:envKey,api:value.api||'openai-completions',...(value.baseUrl?{baseURL:value.baseUrl}:{}),models:(value.models||[]).map(m=>({id:m.id,name:m.name||m.id,contextWindow:m.contextWindow||32768,maxTokens:m.maxTokens||8192,reasoning:m.reasoning||false,input:nativeInput(m.input)}))};
  }
  writeJSON(modelPatch,[
   {id:'llm-pi-ai',config:{providers:nativeProviders}},

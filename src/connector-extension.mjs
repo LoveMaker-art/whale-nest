@@ -1,73 +1,110 @@
 import assert from 'node:assert/strict';
-import {readFileSync,writeFileSync,mkdirSync,copyFileSync,cpSync,chmodSync,existsSync} from 'node:fs';
-import {join,dirname,relative} from 'node:path';
+import {readFileSync,writeFileSync,mkdirSync,copyFileSync,cpSync,chmodSync,existsSync,readdirSync,lstatSync,mkdtempSync,renameSync,rmSync} from 'node:fs';
+import {join,dirname,relative,resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {writeState} from './state.mjs';
-import {fastVoiceModel} from './voice-model.mjs';
 
-export const coreCommit='b540bc211dc924d0200e6f71c18082de490d68f4';
+export const coreCommit='adfec616c51f61ee6cccf8ce08dd99b80c825c50';
 const read=path=>JSON.parse(readFileSync(path,'utf8'));
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const sha=path=>digest(readFileSync(path));
-const runtimeModelSourceSha256='153b3200aa410a4fc0d228cfada2d97b138d0c9e96ebd707321939365b1cdde2';
-function modelConversion(source,voice){
- assert.equal(digest(source),runtimeModelSourceSha256,'Runtime model source changed; review the host conversion before installing');
- const before='id:m.id,name:m.name||m.id,contextWindow:';
- assert.equal(source.split(before).length,2,'Runtime model conversion source must match once');
- const input=source.replace(before,'id:m.id,name:m.name||m.id,...(m.input===undefined?{}:{input:m.input}),contextWindow:');
- if(!voice)return input;
- const anchor=' writeJSON(modelPatch,[';
- assert.equal(input.split(anchor).length,2,'Runtime provider settings must match once');
- const route=JSON.stringify(fastVoiceModel.provider),id=JSON.stringify(fastVoiceModel.model);
- return input.replace(anchor,` const voiceProvider=nativeProviders.clawling;
- const voiceModel=voiceProvider?.models.find(item=>item.id===${id});
- if(voiceModel&&voiceProvider.api==='openai-completions'&&!Object.hasOwn(nativeProviders,${route}))
-  nativeProviders[${route}]={...voiceProvider,compat:{thinkingFormat:'deepseek'},models:[{
-   ...voiceModel,reasoningEfforts:{off:null,low:'low'}
-  }]};
-${anchor}`);
+const copiedDirectories=['runtime','official-plugins','updater-skill'];
+const requiredRuntimeFiles=['cli.mjs','dsh-bridge.sh','greeting.mjs','lib.mjs','permission-mode.mjs','update-skill.mjs','browser-chat.mjs','browser-assistant-stream.mjs','web-activity.mjs','media-upload-url.mjs'];
+const safePath=name=>typeof name==='string'&&name&&!name.includes('\\')&&!name.startsWith('/')&&name.split('/').every(part=>part&&part!=='.'&&part!=='..');
+function fileTree(directory,prefix='') {
+ assert.ok(lstatSync(directory).isDirectory(),'Connector code directory must be a real directory: '+directory);
+ const files={};
+ for(const entry of readdirSync(directory,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))) {
+  const name=prefix?prefix+'/'+entry.name:entry.name,path=join(directory,entry.name);
+  assert.ok(!entry.isSymbolicLink(),'Connector code must not contain symbolic links: '+name);
+  if(entry.isDirectory())Object.assign(files,fileTree(path,name));
+  else {assert.ok(entry.isFile(),'Connector code must be regular files: '+name);files[name]=sha(path);}
+ }
+ return files;
 }
-export function verifiedLivewareCompanion(home,baseDirectory){
- const integration=read(join(baseDirectory,'integration.json'));
- const entry=integration.files.find(f=>/^official-plugins\/clawling\.exposure\.liveware-.*\.connect-plugin$/.test(f.path));assert.ok(entry,'Official Liveware bundle missing');
- const bundleFile=join(baseDirectory,entry.path);assert.equal(sha(bundleFile),entry.sha256,'Official Liveware bundle changed');
- const bundle=read(bundleFile),file=bundle.files?.['assets/liveware'];assert.ok(file?.content,'Official Liveware companion missing');
- const bytes=Buffer.from(file.content,file.encoding==='base64'?'base64':'utf8');
- const plugin=read(join(home,'.clawchat-connect/plugins.lock.json')).plugins['clawling.exposure.liveware'];assert.ok(plugin?.manifestPath,'Official Liveware companion installation missing');
- const path=join(dirname(plugin.manifestPath),'assets/liveware');assert.equal(sha(path),digest(bytes),'Installed Liveware companion changed');
- return {path,sha256:digest(bytes)};
+function verifiedBaseFiles(baseDirectory,base) {
+ assert.ok(Array.isArray(base.files)&&base.files.length,'Official integration file manifest missing');
+ const files={};
+ for(const entry of base.files) {
+  assert.ok(safePath(entry.path)&&/^[a-f0-9]{64}$/.test(entry.sha256),'Invalid official integration file record');
+  assert.ok(!Object.hasOwn(files,entry.path),'Duplicate official integration file: '+entry.path);
+  const file=join(baseDirectory,entry.path);
+  const metadata=lstatSync(file);
+  assert.ok(metadata.isFile(),'Official integration file must be regular: '+entry.path);
+  assert.ok(Number.isSafeInteger(entry.bytes)&&entry.bytes>=0,'Official integration file size missing: '+entry.path);
+  assert.equal(metadata.size,entry.bytes,'Official integration file size mismatch: '+entry.path);
+  assert.ok([0o644,0o755].includes(entry.mode),'Official integration file mode missing: '+entry.path);
+  assert.equal(metadata.mode&0o777,entry.mode,'Official integration file mode mismatch: '+entry.path);
+  assert.equal(sha(file),entry.sha256,'Official integration file integrity mismatch: '+entry.path);
+  files[entry.path]=entry.sha256;
+ }
+ assert.ok(files['clawchat-connect']&&files['source.json'],'Official platform executable and source record required');
+ for(const name of requiredRuntimeFiles)assert.ok(files['runtime/'+name],'Official runtime dependency missing: '+name);
+ for(const directory of copiedDirectories) {
+  const actual=fileTree(join(baseDirectory,directory));
+  const expected=Object.fromEntries(Object.entries(files).filter(([name])=>name.startsWith(directory+'/')).map(([name,hash])=>[name.slice(directory.length+1),hash]));
+  assert.deepEqual(actual,expected,'Official copied directory differs from its manifest: '+directory);
+ }
+ return Object.fromEntries(Object.entries(files).sort(([a],[b])=>a.localeCompare(b)));
 }
+
+/** New installations verify every shipped file; historical records retain their original checks. */
+export function verifyInstalledConnector(record) {
+ assert.ok(lstatSync(record.directory).isDirectory(),'Installed connector directory missing');
+ assert.equal(sha(join(record.directory,'clawchat-connect-core')),record.binarySha256,'Media connector integrity mismatch');
+ assert.equal(sha(join(record.directory,'clawchat-connect')),record.launcherSha256,'Platform compatibility launcher changed');
+ if(record.runtimeLibSha256)assert.equal(sha(join(record.directory,'runtime/lib.mjs')),record.runtimeLibSha256,'Official runtime library changed');
+ if(record.livewareCompanion)assert.equal(sha(record.livewareCompanion.path),record.livewareCompanion.sha256,'Liveware companion changed');
+ if(record.fileIntegrity) {
+  assert.ok(Object.keys(record.fileIntegrity).length,'Installed connector file manifest missing');
+  for(const [name,expected]of Object.entries(record.fileIntegrity)) {
+   assert.ok(safePath(name)&&/^[a-f0-9]{64}$/.test(expected),'Invalid installed connector file record');
+   assert.equal(sha(join(record.directory,name)),expected,'Installed connector file integrity mismatch: '+name);
+  }
+  const actual=fileTree(record.directory);delete actual['extension.json'];
+  assert.deepEqual(actual,record.fileIntegrity,'Installed connector file set changed');
+ }
+ return record;
+}
+
 export function prepareConnectorExtension({home,binary,manifestFile,baseDirectory,skillsDirectory,realtime=false,liveware=realtime,voice=false}) {
  const build=read(manifestFile),base=read(join(baseDirectory,'integration.json')),source=read(join(baseDirectory,'source.json'));
  assert.equal(source.connect_commit,coreCommit,'Actual integration source changed');assert.equal(build.upstreamCommit,coreCommit,'Core patch must match the actual source');
  assert.equal(sha(binary),build.binarySha256,'Core build integrity mismatch');
- const original=base.files.find(f=>f.path==='clawchat-connect');assert.equal(sha(join(baseDirectory,'clawchat-connect')),original.sha256,'Official Core was modified');
+ assert.match(build.version,/^[A-Za-z0-9][A-Za-z0-9.-]*$/,'Invalid Core build version');
  const skillManifest=join(skillsDirectory,'manifest.json'),skills=read(skillManifest);
- assert.equal(skills.connectVersion,build.version,'Bundled skills version mismatch');
- for(const [file,digest]of Object.entries(skills.files)){assert.ok(!file.split('/').includes('..')&&!file.startsWith('/'),'Unsafe bundled skill');assert.equal(sha(join(skillsDirectory,file)),digest,'Bundled skill integrity mismatch');}
- // The reviewed host drops model.input when generating the native DSH patch.
- // Preserve only explicit declarations in our copy; the signed base stays intact.
- const runtimeLib=modelConversion(readFileSync(join(baseDirectory,'runtime/lib.mjs'),'utf8'),voice);
- const runtimeLibSha256=digest(runtimeLib);
- const livewareCompanion=liveware?verifiedLivewareCompanion(home,baseDirectory):null;
- const directory=join(home,'.local/share/whale-nest/connectors',build.version+'-'+build.binarySha256.slice(0,12)+'-'+sha(skillManifest).slice(0,8)+'-layout4-input1'+(liveware?'-liveware1':'')+(voice?'-voice1':''));
- if(!existsSync(directory)) {
-  mkdirSync(directory,{recursive:true,mode:0o700});copyFileSync(binary,join(directory,'clawchat-connect-core'));chmodSync(join(directory,'clawchat-connect-core'),0o755);
-  const quote=value=>"'"+value.replaceAll("'","'\\''")+"'";
-  const launcher='#!/bin/sh\n'+(livewareCompanion?'export CLAWCHAT_CONNECT_LIVEWARE_PATH='+quote(livewareCompanion.path)+'\n':'')+'case "$1" in\n__clawnest-state|__clawnest-owner) exec '+quote(join(baseDirectory,'clawchat-connect'))+' "$@" ;;\n*) exec '+quote(join(directory,'clawchat-connect-core'))+' "$@" ;;\nesac\n';
-  writeFileSync(join(directory,'clawchat-connect'),launcher,{mode:0o755});
-  cpSync(join(baseDirectory,'runtime'),join(directory,'runtime'),{recursive:true});
-  writeFileSync(join(directory,'runtime/lib.mjs'),runtimeLib,{mode:0o600});
-  cpSync(skillsDirectory,join(directory,'skills'),{recursive:true});
-  for(const name of ['official-plugins','updater-skill'])cpSync(join(baseDirectory,name),join(directory,name),{recursive:true});
- }
- assert.equal(sha(join(directory,'clawchat-connect-core')),build.binarySha256,'Installed extension integrity mismatch');
- assert.equal(sha(join(directory,'skills/manifest.json')),sha(skillManifest),'Installed skills manifest changed');
- assert.equal(sha(join(directory,'runtime/lib.mjs')),runtimeLibSha256,'Installed runtime model integrity mismatch');
+ assert.equal(skills.connectVersion,build.skillsConnectVersion??build.version,'Bundled skills version mismatch');
+ for(const [file,digest]of Object.entries(skills.files)){assert.ok(safePath(file),'Unsafe bundled skill');assert.equal(sha(join(skillsDirectory,file)),digest,'Bundled skill integrity mismatch');}
+ // All official host files remain byte-identical. Call model configuration
+ // is owned by our bridge process overlay.
+ const baseFiles=verifiedBaseFiles(baseDirectory,base),runtimeLibSha256=baseFiles['runtime/lib.mjs'];
+ const baseManifestSha256=sha(join(baseDirectory,'integration.json'));
+ const baseFingerprint=digest(JSON.stringify({directory:resolve(baseDirectory),manifest:baseManifestSha256,files:baseFiles}));
+ // Official Exposure owns and verifies its own companion. The extension no
+ // longer copies or overrides that program, or starts an account relay.
+ const directory=join(home,'.local/share/whale-nest/connectors',build.version+'-'+build.binarySha256.slice(0,12)+'-'+sha(skillManifest).slice(0,8)+'-base'+baseFingerprint.slice(0,16)+'-layout9'+(voice?'-voice2':''));
+ const quote=value=>"'"+value.replaceAll("'","'\\''")+"'";
+ const launcher='#!/bin/sh\ncase "$1" in\n__clawnest-state|__clawnest-owner|__clawnest-usage) exec '+quote(join(baseDirectory,'clawchat-connect'))+' "$@" ;;\n*) exec '+quote(join(directory,'clawchat-connect-core'))+' "$@" ;;\nesac\n';
+ const expectedFiles={'clawchat-connect-core':build.binarySha256,'clawchat-connect':digest(launcher)};
+ for(const [name,hash]of Object.entries(baseFiles))if(copiedDirectories.some(prefix=>name.startsWith(prefix+'/')))expectedFiles[name]=hash;
+ for(const [name,hash]of Object.entries(fileTree(skillsDirectory)))expectedFiles['skills/'+name]=hash;
+ const fileIntegrity=Object.fromEntries(Object.entries(expectedFiles).sort(([a],[b])=>a.localeCompare(b)));
  const pointer=join(home,'.dsh/companion/aurabot-v1/connector-override.json');
- const record={schema:1,baseDirectory,baseVersion:base.version,baseReleaseId:baseDirectory.split('/').at(-1),upstreamCommit:coreCommit,directory,binarySha256:build.binarySha256,version:build.version,
-  launcherSha256:sha(join(directory,'clawchat-connect')),runtimeLibSha256,runtimeInputPatch:'input.1',...(livewareCompanion?{livewareCompanion}:{}),pointer,supervisorFile:join(home,'.clawling/supervisord/whalenest-media.conf')};
- writeState(join(directory,'extension.json'),record);return record;
+ const record={schema:1,baseDirectory,baseVersion:base.version,baseReleaseId:baseDirectory.split('/').at(-1),upstreamCommit:coreCommit,directory,binarySha256:build.binarySha256,version:build.version,...(build.officialCoreVersion?{officialCoreVersion:build.officialCoreVersion}:{}),coreCapabilities:build.coreCapabilities??[],
+  launcherSha256:digest(launcher),runtimeLibSha256,baseManifestSha256,baseFingerprint,fileIntegrity,startupProfileScoped:true,managedLiveware:true,pointer,supervisorFile:join(home,'.clawling/supervisord/whalenest-media.conf')};
+ if(!existsSync(directory)) {
+  mkdirSync(dirname(directory),{recursive:true,mode:0o700});
+  const staging=mkdtempSync(join(dirname(directory),'.prepare-'));
+  try {
+   copyFileSync(binary,join(staging,'clawchat-connect-core'));chmodSync(join(staging,'clawchat-connect-core'),0o755);
+   writeFileSync(join(staging,'clawchat-connect'),launcher,{mode:0o755});
+   for(const name of copiedDirectories)cpSync(join(baseDirectory,name),join(staging,name),{recursive:true});
+   cpSync(skillsDirectory,join(staging,'skills'),{recursive:true});
+   writeState(join(staging,'extension.json'),record);
+   renameSync(staging,directory);
+  } finally {rmSync(staging,{recursive:true,force:true});}
+ }
+ verifyInstalledConnector(record);return record;
 }
 
 export function extensionHostConfig(config,record) {

@@ -88,3 +88,29 @@ test('an older ready record adopts the platform-advertised WAV, with no request 
  const client=createSongClient(foreign.options,{fetchImpl:async(url)=>{assert.ok(url.startsWith('https://api.fixture.invalid/'));return url.endsWith('/audio.flac')?new Response(audio):Response.json({status:'succeeded',audio_url:'https://foreign.invalid/api/jobs/song-job-1/audio.wav'});}});
  await client.poll(id);assert.equal((await client.download(id)).artifact.mime,'audio/flac');
 });
+
+test('independent readers cache one score without racing temporary files or rewriting the song receipt',async t=>{
+ const f=await fixture(t);await f.client.create(parameters,{requestId:id,route});
+ const record=f.client.inspect(id);record.state='saved';record.delivery={state:'confirmed',messageId:'original-ack'};f.client.save(record);
+ const before=await readFile(join(f.options.dataDir,'media/song-requests',id+'.json'),'utf8');
+ const score='X:1\nT:\nM:4/4\nL:1/16\nQ:1/4=96\nV: Vocal clef=treble name="Vocal Melody" snm="Vocal"\nV: Ins clef=treble name="Ins Melody" snm="Inst."\nK:C\n% verse\nV: Vocal\nC4E4G4c4|\nV: Ins\nZ|\n';
+ let reads=0,release;const together=new Promise(resolve=>release=resolve);
+ const fetchImpl=async(url,request)=>{assert.equal(request.method,'GET');assert.ok(url.endsWith('/score.abc'));if(++reads===2)release();await together;return new Response(score);};
+ const one=createSongClient(f.options,{fetchImpl}),two=createSongClient(f.options,{fetchImpl});
+ assert.deepEqual(await Promise.all([one.score(id),two.score(id)]),[score,score]);
+ assert.equal(await readFile(join(f.options.dataDir,'media/song-requests',id+'.json'),'utf8'),before);
+ assert.equal(one.scoreDetails(id).notes,4);
+});
+
+test('legacy accepted parameters remain recoverable without applying new draft rules or creating a second job',async t=>{
+ const f=await fixture(t);await f.client.create(parameters,{requestId:id,route});
+ const old=f.client.inspect(id);
+ old.parameters={...old.parameters,style:'旧版中文曲风',lyrics:Array(16).fill('旧版已经受理的歌词').join('\n')};
+ old.composition={abc:'X:1\nK:C\nCDEF|',melodyMode:'whole'};
+ old.fingerprint=hash([old.parameters,old.composition]);f.client.save(old);
+ const before=await readFile(join(f.options.dataDir,'media/song-requests',id+'.json'),'utf8');
+ const reopened=createSongClient(f.options,{fetchImpl:f.fetchImpl});
+ const same=await reopened.create(old.parameters,{requestId:id,route,material:old.composition});
+ assert.equal(same.jobId,old.jobId);assert.equal(f.requests.length,1);
+ assert.equal(await readFile(join(f.options.dataDir,'media/song-requests',id+'.json'),'utf8'),before);
+});

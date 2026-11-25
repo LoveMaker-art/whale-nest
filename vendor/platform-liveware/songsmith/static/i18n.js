@@ -48,6 +48,22 @@ const STRINGS = {};
 
 // ═══ 简体中文（源语言）═══════════════════════════════════════════════════════
 STRINGS.zh = {
+  privateWritePrefix: "写歌：",
+  privateWriteBare: "写歌",
+  privateRevisePrefix: "改歌：",
+
+  privateDiscover: "当前还未配置分享对象。分享的歌曲暂时只有你能看到。",
+  privateMelodyMode: "旋律用法",
+  privateMelodyWhole: "按旋律唱短歌",
+  privateMelodyGraft: "把旋律扩展成整首歌",
+  privateMelodyTwoJobs: "扩展模式会提交两次平台任务：先谱曲，再演唱。",
+  privateLyricPlan: "短歌写词请按这些乐句的音符数安排每句字数：{plan}。",
+  privateAdminBack: "返回歌曲",
+  privateAudienceTitle: "受邀听众",
+  privateAudienceInfo: "只有名单中的好友可以查看你分享的作品。",
+  privateDraftSend: "草稿会填入私聊输入框，由你确认发送。",
+  privateDraftCopy: "复制草稿，回到与鲸栖的私聊发送。",
+  privateDraftChat: "去私聊确认",
   // —— 壳 · 导航 ——
   docTitle: "为你写歌",
   brand: "为你写歌",
@@ -395,6 +411,22 @@ STRINGS.zh = {
 
 // ═══ English（国际兜底 · 其余语种的模板）═════════════════════════════════════
 STRINGS.en = {
+  privateWritePrefix: "Write a song: ",
+  privateWriteBare: "Write a song",
+  privateRevisePrefix: "Revise the song: ",
+
+  privateDiscover: "No listeners have been added. Shares are visible only to you for now.",
+  privateMelodyMode: "Melody use",
+  privateMelodyWhole: "Sing a short song with this melody",
+  privateMelodyGraft: "Develop the melody into a full song",
+  privateMelodyTwoJobs: "This mode submits two platform jobs: composition and performance.",
+  privateLyricPlan: "For the short song, match each lyric line to these note counts: {plan}.",
+  privateAdminBack: "Back to songs",
+  privateAudienceTitle: "Invited listeners",
+  privateAudienceInfo: "Only invited listeners can open your shared songs.",
+  privateDraftSend: "Review the draft in the private chat, then send it when ready.",
+  privateDraftCopy: "Copy the draft and send it in your private chat with Whale Nest.",
+  privateDraftChat: "Review in chat",
   docTitle: "Songs for You",
   brand: "Songs for You",
   tabCreate: "Create", tabMine: "My songs", tabDiscover: "Discover",
@@ -715,6 +747,22 @@ STRINGS.en = {
 
 // ═══ 日本語 ═════════════════════════════════════════════════════════════════
 STRINGS.ja = {
+  privateWritePrefix: "作曲：",
+  privateWriteBare: "作曲",
+  privateRevisePrefix: "曲を直す：",
+
+  privateDiscover: "共有相手がまだ設定されていません。共有した曲は現在あなただけが見られます。",
+  privateMelodyMode: "旋律の使い方",
+  privateMelodyWhole: "この旋律で短い曲を歌う",
+  privateMelodyGraft: "旋律を一曲に発展させる",
+  privateMelodyTwoJobs: "作曲と歌唱の2つの処理をプラットフォームに送ります。",
+  privateLyricPlan: "短い曲の歌詞の各行をこの音符の数に合わせてください：{plan}。",
+  privateAdminBack: "曲に戻る",
+  privateAudienceTitle: "招待したリスナー",
+  privateAudienceInfo: "招待した人だけが共有した曲を開けます。",
+  privateDraftSend: "下書きは個別チャットの入力欄に入ります。内容を確認して送信してください。",
+  privateDraftCopy: "下書きをコピーして、鯨栖との個別チャットから送信してください。",
+  privateDraftChat: "チャットで確認",
   docTitle: "あなたに一曲",
   brand: "あなたに一曲",
   tabCreate: "つくる", tabMine: "わたしの曲", tabDiscover: "みつける",
@@ -1035,6 +1083,22 @@ STRINGS.ja = {
 
 // ═══ Español ════════════════════════════════════════════════════════════════
 STRINGS.es = {
+  privateWritePrefix: "Crear una canción: ",
+  privateWriteBare: "Crear una canción",
+  privateRevisePrefix: "Modificar la canción: ",
+
+  privateDiscover: "Todavía no se han añadido oyentes. Por ahora, solo tú puedes ver lo que compartes.",
+  privateMelodyMode: "Uso de la melodía",
+  privateMelodyWhole: "Cantar una canción corta con esta melodía",
+  privateMelodyGraft: "Desarrollar la melodía en una canción completa",
+  privateMelodyTwoJobs: "Este modo envía dos trabajos: composición e interpretación.",
+  privateLyricPlan: "Para la canción corta, adapta cada verso a estos conteos de notas: {plan}.",
+  privateAdminBack: "Volver a canciones",
+  privateAudienceTitle: "Oyentes invitados",
+  privateAudienceInfo: "Solo los oyentes invitados pueden abrir las canciones que compartes.",
+  privateDraftSend: "Revisa el borrador en el chat privado y envíalo cuando esté listo.",
+  privateDraftCopy: "Copia el borrador y envíalo desde tu chat privado con Whale Nest.",
+  privateDraftChat: "Revisar en el chat",
   docTitle: "Canciones para ti",
   brand: "Canciones para ti",
   tabCreate: "Crear", tabMine: "Mis canciones", tabDiscover: "Descubrir",
@@ -1355,6 +1419,22 @@ STRINGS.es = {
 
 // ═══ 한국어 ═════════════════════════════════════════════════════════════════
 STRINGS.ko = {
+  privateWritePrefix: "노래 만들기: ",
+  privateWriteBare: "노래 만들기",
+  privateRevisePrefix: "노래 수정: ",
+
+  privateDiscover: "공유 대상이 아직 설정되지 않았어요. 지금은 본인만 공유한 곡을 볼 수 있어요.",
+  privateMelodyMode: "멜로디 사용 방식",
+  privateMelodyWhole: "이 멜로디로 짧은 곡 부르기",
+  privateMelodyGraft: "멜로디를 완곡으로 발전시키기",
+  privateMelodyTwoJobs: "이 방식은 작곡과 노래 작업을 한 번씩 제출해요.",
+  privateLyricPlan: "짧은 곡의 가사 각 줄을 다음 음표 수에 맞춰 주세요: {plan}.",
+  privateAdminBack: "노래로 돌아가기",
+  privateAudienceTitle: "초대된 청취자",
+  privateAudienceInfo: "초대받은 사람만 공유한 노래를 열 수 있어요.",
+  privateDraftSend: "개인 채팅에 초안이 채워집니다. 확인한 뒤 직접 보내세요.",
+  privateDraftCopy: "초안을 복사해 Whale Nest와의 개인 채팅에서 보내세요.",
+  privateDraftChat: "채팅에서 확인",
   docTitle: "당신에게 한 곡",
   brand: "당신에게 한 곡",
   tabCreate: "만들기", tabMine: "내 노래", tabDiscover: "둘러보기",
@@ -1675,6 +1755,22 @@ STRINGS.ko = {
 
 // ═══ 繁體中文（由 zh 經 OpenCC s2twp 生成 —— 臺灣字形 + 用詞）═════════════════
 STRINGS["zh-Hant"] = {
+  privateWritePrefix: "寫歌：",
+  privateWriteBare: "寫歌",
+  privateRevisePrefix: "改歌：",
+
+  privateDiscover: "目前還未設定分享對象。分享的歌曲暫時只有你能看見。",
+  privateMelodyMode: "旋律用法",
+  privateMelodyWhole: "按旋律唱短歌",
+  privateMelodyGraft: "把旋律擴展成整首歌",
+  privateMelodyTwoJobs: "擴展模式會送出兩次平台任務：先譜曲，再演唱。",
+  privateLyricPlan: "短歌寫詞請按這些樂句的音符數安排每句字數：{plan}。",
+  privateAdminBack: "返回歌曲",
+  privateAudienceTitle: "受邀聽眾",
+  privateAudienceInfo: "只有名單中的好友可以查看你分享的作品。",
+  privateDraftSend: "草稿會填入私聊輸入框，由你確認送出。",
+  privateDraftCopy: "複製草稿，回到與鯨栖的私聊送出。",
+  privateDraftChat: "去私聊確認",
 
   docTitle: "為你寫歌",
   brand: "為你寫歌",

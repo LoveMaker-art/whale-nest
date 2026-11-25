@@ -1,14 +1,21 @@
 {
   "repository": "https://github.com/x-metheus/clawchat-plugin-connect",
-  "upstreamCommit": "2cb2d450c381e3b64a337c907e72ba6d9e299316",
-  "baseline": "0.1.0-beta.9-whalenest.3",
-  "notes": "Existing compatible bridge with prior DSH model-selection, question-provider and approval compatibility changes; original native-session ownership retained.",
+  "upstreamCommit": "adfec616c51f61ee6cccf8ce08dd99b80c825c50",
+  "baseline": "0.2.23",
+  "notes": "Six original Linux DSH Runtime assets verified byte-identical against the signed 0.2.23 integration package. The local compatibility manifest retains its WhaleNest identity; it is not an unmodified official manifest. Bridge protocol 2.",
   "files": {
     "LICENSE": "30f0e1c29484343a2126d101c9a76c36c6b8d7bc3ea146e217f9b0b4c13ceb9a",
-    "base/deepseek-harness-bridge.mjs": "97110c2fe6e8286551d7486ddbb54562823069f7e91dd221d7b68c8b0c133797",
+    "base/deepseek-harness-bridge.mjs": "9aee5ec8597d17a7973566a592fab826d31973291eef3dfc2f8518260d7ac1f9",
     "base/deepseek-harness-question-provider.mjs": "2262b965447ef8f2c096df11d14645bf069f6275292a4faee6da10e690c14190",
-    "base/deepseek-harness-tool-policy.mjs": "ebffc1dabae62246830959aa3bb4d45155e4748506b98c32260c09bd7e2726e0",
-    "base/linux-x64.mjs": "709574248f6d3c20225d5b038ff4901c0e8bdc55df32d3c744f1045f4e138ffe",
-    "base/manifest.json": "42a8d2afbf896d9bb67b778ee21035de8997a135a53b182aad86368150225af1"
+    "base/deepseek-harness-tool-policy.mjs": "45271a62cda29d192a8da3c130b8a2206f4e8d8f79b9249b7bec8ee2732727a0",
+    "base/linux-x64.mjs": "29830d1aa29c7129bcdbe6c3a90e89842642b6ff298e5f3bc03197fe7bc972c3",
+    "base/manifest.json": "42a8d2afbf896d9bb67b778ee21035de8997a135a53b182aad86368150225af1",
+    "base/deepseek-harness-frame.mjs": "8db65e28a08ab4cda189bbbfc71afc1e94559662c595c7e427111a6af81873c7",
+    "base/deepseek-harness-history.mjs": "86385978151abb54206cc6c535691144cf23334168249fabe65f6add10430cd6"
+  },
+  "integrationPackage": {
+    "sha256": "dd4d7c834c7eba04889423c18c13d1e59844a9e11d2a809a46d95ebb6741fb65",
+    "host": "dsh-0.2.2-rc.5-node24-host3-state1-deps9bfda3adfab4becf",
+    "runtimeBundleSha256": "27073fd5dffd79a8b8616c5f742ed96c0ae0a57a055e893f91aab7ce81c4e051"
   }
 }

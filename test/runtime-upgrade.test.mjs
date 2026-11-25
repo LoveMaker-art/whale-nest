@@ -6,8 +6,8 @@ import {tmpdir} from 'node:os';
 import {inspectRuntimeUpgrade,protectBiliRollback,protectBiliOwnerRollback,protectContactRollback,protectDiaryRollback,protectImageRollback,protectQQSocialRollback,protectSongRollback,protectVoiceRollback} from '../src/runtime-upgrade.mjs';
 import {verifyLiveInputs} from '../src/live-update.mjs';
 
-test('rolling back to the installed M4 runtime preserves its companion writers and state',()=>{
- const previous='0.3.0-whalenest.m4.1-dev.19';
+for(const previous of ['0.3.0-whalenest.m4.1-dev.19','1.0.0-beta.3','1.0.0-beta.4.dev.1','1.0.0-beta.4.dev.14','1.0.0-beta.4.dev.15']){
+test('rolling back to '+previous+' preserves its companion writers and state',()=>{
  const instance={instanceId:'fixture',clawchat:{route:{platform:'clawchat',account:'dsh',sender:'owner',conversation:'dm'}},
   speech:{enabled:true},image:{enabled:true},singing:{enabled:true}};
  const native={voice:{platformVoice:'fixture'},qzoneSocial:{enabled:true},modules:{song:{enabled:true}}};
@@ -26,6 +26,7 @@ test('rolling back to the installed M4 runtime preserves its companion writers a
  assert.equal(protectVoiceRollback(native,instance,previous).disableNativeVoice,false);
  assert.deepEqual({instance,native,runtime,policy,diary,inbox},before);
 });
+}
 
 test('M2 preflight authenticates existing owner, preserves configuration, rejects drift and skips repeated update',t=>{
  const root=mkdtempSync(join(tmpdir(),'whalenest-m2-upgrade-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
@@ -42,6 +43,13 @@ test('M2 preflight authenticates existing owner, preserves configuration, reject
  for(const name of ['package.json','cordis.patch.yml','pnpm-lock.yaml','pnpm-workspace.yaml'])put(join(home,'.dsh/profiles/sdk',name),'{}');
  const input={root,home,workspace,health:{ready:true,connected:true},state:{ownerId:'owner',conversationId:'dm'},targetVersion:'0.2.0-whalenest.m2.2',executables:{supervisor:process.execPath}};
  const plan=inspectRuntimeUpgrade(input);assert.equal(plan.alreadyActive,false);verifyLiveInputs(plan);
+ const instancePath=join(home,'.dsh/companion/aurabot-v1/instance.json');
+ const originalInstance=JSON.parse(readFileSync(instancePath));
+ const separateConnect=join(home,'separate-core/bin/connect');
+ put(separateConnect,'#!/bin/sh\n');chmodSync(separateConnect,0o700);
+ put(instancePath,{...originalInstance,clawchat:{...originalInstance.clawchat,delivery:{connectBin:separateConnect}}});
+ assert.equal(inspectRuntimeUpgrade(input).connectBin,separateConnect,'Registered Core executable is independent of the DSH wrapper layout');
+ put(instancePath,originalInstance);
  assert.throws(()=>inspectRuntimeUpgrade({...input,state:{ownerId:'evil',conversationId:'dm'}}),/Owner/);
  const legacy=JSON.parse(readFileSync(lock));legacy.plugins['whalenest.runtime.deepseek-harness'].version='0.2.0-whalenest.m2.1';put(lock,legacy);
  assert.equal(inspectRuntimeUpgrade(input).alreadyActive,false);

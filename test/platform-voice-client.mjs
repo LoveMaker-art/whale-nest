@@ -3,7 +3,7 @@ import {WebSocket} from 'undici';
 import {setTimeout as delay} from 'node:timers/promises';
 
 /** Exercise the app's actual SSE/WS contract without a hardware microphone. */
-export async function connectPlatformVoice(origin,owner,{startupFallback=false,browserOrigin}={}) {
+export async function connectPlatformVoice(origin,owner,{browserOrigin}={}) {
   const headers = {'x-clawchat-user-id':owner};
   const page = await fetch(origin,{headers});
   assert.equal(page.status,200);
@@ -57,26 +57,22 @@ export async function connectPlatformVoice(origin,owner,{startupFallback=false,b
     send({type:'start',protocol_version:2,build_id:build,
       capabilities:{sse_downstream:1,stream_upload:1,recorder:1}});
     const start = await waitFor(frame=>frame.type==='session'&&frame.state==='started');
-    if (startupFallback) {
-      assert.equal(start.downstream_transport,'sse');
-      send({type:'downstream_transport',transport:'ws',fallback:1});
-      await waitFor(frame=>frame.type==='downstream_transport'&&frame.transport==='ws'&&frame.fallback===true);
-    } else {
-      const response = await fetch(origin+'/downstream?session_id='+start.session_id+'&after=0',{headers,signal:controller.signal});
-      assert.equal(response.status,200);
-      stream = (async()=>{
-        let buffered = '';
-        for await (const chunk of response.body.pipeThrough(new TextDecoderStream())) {
-          buffered += chunk;
-          const lines = buffered.split('\n');
-          buffered = lines.pop();
-          for (const line of lines) {
-            if (line.startsWith('data: ')) receive(JSON.parse(line.slice(6)));
-          }
+    assert.equal(start.downstream_transport,'sse');
+    const response = await fetch(origin+'/downstream?session_id='+start.session_id+'&after=0',{headers,signal:controller.signal});
+    assert.equal(response.status,200);
+    stream = (async()=>{
+      let buffered = '';
+      for await (const chunk of response.body.pipeThrough(new TextDecoderStream())) {
+        buffered += chunk;
+        const lines = buffered.split('\n');
+        buffered = lines.pop();
+        for (const line of lines) {
+          if (line.startsWith('data: ')) receive(JSON.parse(line.slice(6)));
         }
-      })();
-      stream.catch(()=>{});
-    }
+      }
+    })();
+    stream.catch(()=>{});
+    await waitFor(frame=>frame.type==='sse_ready',5000);
     return {
       frames,waitFor,send,callId:start.session_id,
       upload(id,pcm) {

@@ -20,3 +20,10 @@ for (const [name, sha] of Object.entries(manifest.files)) {
   assert.equal(createHash('sha256').update(await readFile(new URL(name, root))).digest('hex'), sha, name);
 }
 console.log(`Aurabot ${lock.aurabot.version}: ${actual.length} original files verified at ${manifest.commit}`);
+
+const platform = new URL('../vendor/platform-liveware/',import.meta.url);
+const {songsmith} = JSON.parse(await readFile(new URL('SOURCE.json',platform),'utf8'));
+for (const [name, sha] of Object.entries(songsmith.reused ?? {})) {
+  assert.equal(createHash('sha256').update(await readFile(new URL('songsmith/'+name,platform))).digest('hex'),sha,name);
+}
+console.log(`SongSmith ${songsmith.version}: original melody and ABC sources verified`);

@@ -33,7 +33,7 @@ export async function bootBridge(directory) {
   await writeFile(join(root, 'bridge/instance.json'), JSON.stringify(options));
   const overlay = join(root, 'bridge-overlay.json');
   await writeFile(overlay, JSON.stringify([{ insert: [{ id: 'clawchat-connect-bridge', name: entry,
-    config: { build: 'real-core-overlay', home: options.home, profile: 'whalenest' } }] }]));
+    config: { build: 'real-core-overlay', home: options.home, profile: 'whalenest', maxFrameBytes: 16 * 1024 * 1024 } }] }]));
   const childEnv = { ...process.env, ...directory.nativeModelEnv, DSH_HOME: options.home, CONNECT_DSH_BRIDGE_FD_OUT: '3',
     CONNECT_DSH_BRIDGE_FD_IN: '4', WHALENEST_TRACE: join(root, 'trace.jsonl'), WHALENEST_CONTROL_FILE: control };
   delete childEnv.AURABOT_DATA_DIR;

@@ -27,6 +27,8 @@
 
 ## 平台扩展与专属能力
 
+[ClawChat 连接器与业务接口](clawchat-integration.md)说明鲸栖当前接线；对外的[无侵入集成通用契约](clawchat-connector-platform-handoff.md)规定完整替代所需语义，不要求平台照搬专属接口。内部[彻底解耦方案](clawchat-decoupling-plan.md)将全部已识别依赖逐项对应通用能力、鲸栖改造和退出验收，包含安装、回退、独立服务与启动。
+
 | 范围 | 入口 |
 | --- | --- |
 | 平台唱歌 | [需求](../requirements/singing.md)、[单一任务与作品设计](singing.md) |

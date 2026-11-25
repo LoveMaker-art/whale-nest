@@ -33,7 +33,8 @@ export async function prepareProfile(home, configPath, { fixture = false, bridge
     { id: 'tool-executor-ptc', disabled: true },
     { insert: [ ...(fixture ? [{ id: 'whalenest-fixture', name: join(root, 'test/fixture-provider.mjs') }] : []),
       ...(externalOverlay ? [] : [{ id: 'whalenest-sdk', name: bridgeEntry ?? join(root, 'src/host.mjs'),
-        config: bridgeEntry ? { build: 'whalenest-aurabot-m1', home: resolve(home), profile: 'whalenest', aurabotConfigPath: resolve(configPath) }
+        config: bridgeEntry ? { build: 'whalenest-aurabot-m1', home: resolve(home), profile: 'whalenest',
+          maxFrameBytes: 16 * 1024 * 1024, aurabotConfigPath: resolve(configPath) }
           : { configPath: resolve(configPath) } }]) ] },
   ];
   await writeFile(join(profile, 'cordis.patch.yml'), JSON.stringify(patch));

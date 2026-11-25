@@ -155,7 +155,6 @@ function prepareMicLease(attempt) {
 const MIC_PROMPT_MS = 90000, MIC_UNKNOWN_MS = 25000;
 const MIC_PREPARE_MS = 8000, MIC_CANCELLED = Symbol('mic_cancelled');
 let micPrepare = null, micPrepareSequence = 0, micRecovery = null;
-let startupFallbackTimer;
 // One capture owner, including requests that cannot be aborted by the browser API.
 // A retired request must settle and stop its late tracks before another may run.
 let micTeardown = null, lastHangupAt = -1;
@@ -281,7 +280,7 @@ function stopMicPrepare(reason) {
   micProgress(attempt.stage, reason);
   startResult(({1:1, 2:5, 3:6, 4:9})[reason] || 9);
   micPrepare = null; clearTimeout(attempt.timer); clearTimeout(attempt.inviteTimer); clearTimeout(attempt.retryTimer);
-  clearTimeout(startupFallbackTimer); attempt.cancel();
+  attempt.cancel();
 }
 function micTimeout(attempt) {
   if (micPrepare !== attempt) return;
@@ -357,7 +356,6 @@ function openStream(sessionId, resume = false) {
       streamRetries = 0;
       if (f.type === 'sse_ready') {
         recorder.message(f.type); streamReady = true; reconnects = 0;
-        clearTimeout(startupFallbackTimer);
         clearTimeout(connectionDeadline); micProgress(6); renderView(); return;
       }
       if (f.type === 'sse_heartbeat') return;
@@ -1313,14 +1311,6 @@ function message(event) {
       prebufferMs = f.playback_prebuffer_ms ?? 350; playbackFadeMs = f.playback_fade_ms ?? 3;
       if (f.state === 'started') {
         if (downstreamTransport === 'sse' || diagnosticAllowed && downstreamTransport === 'ws') openStream(f.session_id);
-        clearTimeout(startupFallbackTimer);
-        if (micPrepare && isOwner && downstreamTransport === 'sse') {
-          startupFallbackTimer = setTimeout(() => {
-            if (micPrepare?.stage === 5 && connected && !streamReady) {
-              send({type:'downstream_transport',transport:'ws',fallback:1});
-            }
-          },2500);
-        }
         uploadDiagnosticSummaries();
         baseVadConfig = {...f.vad, max_utterance_seconds: f.max_utterance_seconds}; configureVAD(); sensitivityMetrics();
         micProgress(downstreamTransport === 'sse' && !streamReady ? 5 : 6);
@@ -1330,11 +1320,6 @@ function message(event) {
       downstreamTransport = f.transport;
       $('transport-status').textContent = downstreamTransport.toUpperCase();
       if (f.transport === 'sse') openStream(streamSession);
-      else if (micPrepare) {
-        closeStream(); clearTimeout(connectionDeadline); reconnects=0;
-        micProgress(6); dismissNotice();
-        if (f.fallback === true) reportStartup(7);
-      }
     } else if (f.type === 'error') {
       if (diagCurrent && (f.code.startsWith('diagnostic_') || f.code === 'forbidden')) { finishDiagnostic(null, 0, f.code); return; }
       if (f.client_turn_id && f.client_turn_id === pendingTurn) { pendingTurn = null; restoreCandidateView(); restoreReply();

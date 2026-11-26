@@ -10,6 +10,7 @@ import {createPluginUpdates} from '../src/plugin-updates.mjs';
 import {connectUpdateHost,executePluginUpdate,updateFiles,updateProgress} from '../src/plugin-update-worker.mjs';
 import {readState,writeState} from '../src/state.mjs';
 import {ensureRuntimeActivation} from '../src/runtime-activation.mjs';
+import {planWorkspaceInstructions,applyWorkspaceInstructions} from '../src/workspace-instructions.mjs';
 
 const repository='whalenest-fixture/releases';
 const current='0.3.0-whalenest.m4.1-dev.22', next='0.3.0-whalenest.m4.1-dev.23';
@@ -162,6 +163,47 @@ function toolContext(content, source={kind:'user'}) {
   ];
   return {callId:'call',agent:{session:{seq:events.length-1,eventAt:index=>events[index]}}};
 }
+
+test('managed instructions conflicts stop an update before installation, while success synchronizes the selected version',async t=>{
+  const blocked=await fixture(t);
+  await blocked.service.perform(clawchat,{action:'check'},'检查更新');
+  const held=await blocked.service.perform(clawchat,{action:'confirm',version:next},'确认更新 '+next);
+  blocked.host.prepareInstructions=()=>{throw Error('managed instructions were edited');};
+  assert.equal((await executePluginUpdate(blocked.options,held.jobId,blocked)).phase,'failed');
+  assert.equal(blocked.calls.length,0);
+  const f=await fixture(t),events=[];
+  f.host.prepareInstructions=()=>events.push('preflight');
+  f.host.syncInstructions=entry=>{events.push('sync');assert.equal(entry.version,next);return {state:'managed',version:entry.version};};
+  const change=f.host.change;f.host.change=async(...args)=>{events.push('switch');return change(...args);};
+  await f.service.perform(clawchat,{action:'check'},'检查更新');
+  const job=await f.service.perform(clawchat,{action:'confirm',version:next},'确认更新 '+next);
+  const result=await executePluginUpdate(f.options,job.jobId,f);
+  assert.equal(result.phase,'completed');assert.equal(result.workspaceInstructions.version,next);
+  assert.ok(events.indexOf('preflight')<events.indexOf('switch')&&events.indexOf('sync')>events.indexOf('switch'));
+});
+
+test('the update worker restores the old managed overview while retaining notes added by a failed new version',async t=>{
+  const f=await fixture(t,'unhealthy');
+  const source=version=>{const template=version===current?'原版能力。\n':'新版能力。\n';return {version,template,sha256:createHash('sha256').update(template).digest('hex')};};
+  const apply=entry=>applyWorkspaceInstructions(planWorkspaceInstructions(f.options,source(entry.version)));
+  apply(f.state.installed);
+  f.host.prepareInstructions=()=>planWorkspaceInstructions(f.options,source(f.state.installed.version));
+  f.host.syncInstructions=apply;
+  const change=f.host.change;
+  f.host.change=async(...args)=>{
+    const accepted=await change(...args);
+    if(args[0]!=='select'){
+      apply(f.state.installed);
+      const path=join(f.options.cwd,'AGENTS.md');await writeFile(path,(await readFile(path,'utf8'))+'\n切换后新增的用户规则。\n');
+    }
+    return accepted;
+  };
+  await f.service.perform(clawchat,{action:'check'},'检查更新');
+  const job=await f.service.perform(clawchat,{action:'confirm',version:next},'确认更新 '+next);
+  assert.equal((await executePluginUpdate(f.options,job.jobId,f)).phase,'rolled-back');
+  const text=await readFile(join(f.options.cwd,'AGENTS.md'),'utf8');
+  assert.match(text,/原版能力/);assert.doesNotMatch(text,/新版能力/);assert.match(text,/切换后新增的用户规则/);
+});
 
 test('a shared owner job requires an exact current message and delivers one result to the asking private chat', async t=>{
   const f=await fixture(t);

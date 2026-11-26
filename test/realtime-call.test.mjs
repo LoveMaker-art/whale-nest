@@ -351,6 +351,11 @@ test('independent call gateway and song publication start on first binding and s
   await prepareConnect(templatePath,preparation);
   const options=JSON.parse(await readFile(join(preparation,'instance.json'),'utf8'));
   assert.ok(options.realtime.enabled&&options.singing.enabled&&options.singing.playback.enabled);
+  assert.equal(options.image.enabled,true);
+  assert.equal(options.expressions.enabled,true);assert.equal(options.expressions.stickerChance,0.5);
+  assert.equal(options.memory.automatic,true);assert.deepEqual(options.memory.consolidateTimes,['21:00']);
+  assert.equal(options.activities.automatic,true);assert.equal(options.activities.maxDailyBackgroundModelCalls,5);
+  assert.equal(options.qq.nativeModules,true);assert.ok(!options.qq.enabled);
   await writeFile(instancePath,JSON.stringify(options));
   await writeFile(connectBin,'#!'+process.execPath+'\n'+
     `const fs=require('node:fs');const [channel,type,action,...args]=process.argv.slice(2);

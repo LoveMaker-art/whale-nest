@@ -4,11 +4,15 @@ import { dirname, resolve, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildConnectBridge } from './build-connect.mjs';
 import { prepareProfile } from '../src/profile.mjs';
-import { enablePlatformSinging, enablePlatformSpeech } from '../src/runtime-upgrade.mjs';
+import { enablePlatformImage, enablePlatformSinging, enablePlatformSpeech } from '../src/runtime-upgrade.mjs';
+import {withCompanionDefaults} from '../src/companion-defaults.mjs';
+import {planWorkspaceInstructions,applyWorkspaceInstructions} from '../src/workspace-instructions.mjs';
+import {inspectDefaultStickerCatalog} from '../src/default-stickers.mjs';
+import {syncGreeting} from '../src/greeting.mjs';
 
 export async function prepareConnect(configPath, destination) {
   configPath = resolve(configPath); destination = resolve(destination);
-  const options = JSON.parse(await readFile(configPath));
+  const options = withCompanionDefaults(JSON.parse(await readFile(configPath)));
   assert.ok(typeof options.home === 'string' && isAbsolute(options.home), 'An explicit absolute DSH_HOME is required');
   assert.ok(typeof options.dataDir === 'string' && isAbsolute(options.dataDir), 'An explicit absolute dataDir is required');
   assert.ok(options.instanceId, 'Instance identity required');
@@ -22,14 +26,19 @@ export async function prepareConnect(configPath, destination) {
       options.speech=enablePlatformSpeech({providerConfigPath,...options.speech});
     options.singing={enabled:true,...options.singing,playback:{enabled:options.singing?.enabled!==false,...options.singing?.playback}};
     if(options.singing.enabled)options.singing=enablePlatformSinging({providerConfigPath,...options.singing});
+    if(options.image?.enabled!==false)options.image=enablePlatformImage({providerConfigPath,...options.image});
+    options.qq={nativeModules:true,...options.qq};
   } else {
     assert.ok(options.owners?.length && options.clawchat?.route?.channel === 'clawchat' && options.clawchat.route.kind === 'private',
       'A verified ClawChat private route is required');
   }
+  inspectDefaultStickerCatalog(options);
   await mkdir(destination, { recursive: true, mode: 0o700 });
   const entry = await buildConnectBridge(destination);
   const preparedConfig=join(destination, 'instance.json');
   await writeFile(preparedConfig, JSON.stringify(options, null, 2), { mode: 0o600 });
+  applyWorkspaceInstructions(planWorkspaceInstructions(options));
+  syncGreeting(options);
   await prepareProfile(options.home, preparedConfig, { bridgeEntry: entry, externalOverlay: true });
   const plan = { schema: 1, state: 'prepared-not-active', bridgeEntry: entry, profile: 'whalenest', home: options.home,
     connectionOwner: 'existing ClawChat Core', automaticTaskCreation: false, accountBindingChanged: false,

@@ -9,11 +9,13 @@ import { createUserMessage } from './native-dsh.mjs';
 import {clawchatTextDelivery} from './clawchat-text.mjs';
 import {createFirstBinding, firstBindingPorts, prepareFirstBinding} from './first-binding.mjs';
 import {isVoiceInput} from './voice-history.mjs';
+import {observeBindingRuntime,requestBindingReload} from './binding-reload.mjs';
 
 export async function installAurabotBridge(ctx, { handles, activate, ready, configPath, transport, qqRequestReload }) {
   configPath = configPath instanceof URL ? fileURLToPath(configPath) : resolve(configPath);
   const options = JSON.parse(readFileSync(configPath, 'utf8'));
   const firstBinding = prepareFirstBinding(options, configPath);
+  observeBindingRuntime(options,firstBinding);
   const route = options.clawchat?.route;
   assert.ok(route?.channel === 'clawchat' && route.kind === 'private', 'Verified ClawChat private route required');
   assert.ok(options.owners.some(o => senderKey(o) === senderKey(route)), 'ClawChat owner association required');
@@ -154,6 +156,7 @@ export async function installAurabotBridge(ctx, { handles, activate, ready, conf
     if (!closed && !welcome.done()) { welcomeTimer = setTimeout(tickWelcome, delay); welcomeTimer.unref(); }
   }
   if (welcome) void ready.then(tickWelcome).catch(() => {});
+  if(firstBinding)void ready.then(()=>requestBindingReload(options,configPath)).catch(()=>{});
   const dispose = async () => {
     if (closed) return;
     closed = true; clearInterval(retry); offSchedule(); offEvents();

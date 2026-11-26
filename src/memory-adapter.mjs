@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, appendFileSync, write
 import { join } from 'node:path';
 import { defineTool, str } from '../vendor/aurabot/src/tools/tools.js';
 import { matchesMemoryKeyword } from '../vendor/aurabot/src/features/memory.js';
+import {withCompanionDefaults} from './companion-defaults.mjs';
 import { readState, writeState } from './state.mjs';
 import { chatFor, hash, senderKey } from './routing.mjs';
 import { persistedEvents } from './native-replay.mjs';
@@ -21,6 +22,7 @@ const dayKey = at => {
  * ClawChat owner inputs are captured; a durable native user event admits them.
  * The original memory module remains the sole fact/recall implementation. */
 export function createMemoryAdapter(ctx, options, policy) {
+  options=withCompanionDefaults(options);
   const directory = join(options.dataDir, 'aurabot', 'chatlog');
   const stateFile = join(options.dataDir, 'memory-history.json');
   const state = readState(stateFile, { schema: 1, instanceId: options.instanceId, pending: {}, cursors: {} });

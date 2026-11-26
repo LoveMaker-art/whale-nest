@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {readState,writeState} from './state.mjs';
 import {hash,routeKey,senderKey,ownerScope,resolveDeliveryTarget} from './routing.mjs';
 import {parseReply} from '../vendor/aurabot/src/chat/reply.js';
+import {withCompanionDefaults,defaultInterests} from './companion-defaults.mjs';
 
 export function localClock(at,zone='Asia/Shanghai') {
  const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(at)).map(x=>[x.type,x.value]));
@@ -11,8 +12,9 @@ export function localClock(at,zone='Asia/Shanghai') {
 }
 const terminal=new Set(['confirmed','failed','cancelled','suppressed']);
 export function createCompanionPolicy(options,route,{now=Date.now,available=()=>true}={}) {
+ options=withCompanionDefaults(options);
  const scope=ownerScope(options),legacyScope=hash([options.instanceId,routeKey(route),senderKey(route)]),file=join(resolve(options.dataDir),'companion-policy.json');
- const initial={schema:2,scope,settings:{automatic:options.activities?.automatic===true,contactEnabled:false,proactivePlatform:'clawchat',paused:false,timezone:'Asia/Shanghai',awakeFrom:9,awakeTo:22,idleMinutes:120,cooldownMinutes:240,maxProactivePerDay:2,maxBrowsePerDay:1,diaryHour:21,interests:[]},lastOwnerAt:now(),lastAutomaticAt:0,days:{},jobs:{},reservations:{}};
+ const initial={schema:2,scope,settings:{automatic:options.activities.automatic===true,contactEnabled:options.activities.contactEnabled!==false,proactivePlatform:'clawchat',paused:false,timezone:'Asia/Shanghai',awakeFrom:9,awakeTo:22,idleMinutes:120,cooldownMinutes:240,maxProactivePerDay:2,maxBrowsePerDay:1,diaryHour:21,interests:[...defaultInterests]},lastOwnerAt:now(),lastAutomaticAt:0,days:{},jobs:{},reservations:{}};
  const state=readState(file,initial);
  assert.ok(state.scope===scope||state.schema===1&&state.scope===legacyScope,'Companion policy belongs to another owner');
  state.schema=2;state.scope=scope;state.settings={...initial.settings,...state.settings};
@@ -26,7 +28,7 @@ export function createCompanionPolicy(options,route,{now=Date.now,available=()=>
   }
   state.contact={nextAt:legacy.nextAt||0,last:legacy.last||0,sequence:0};
  }
- const limit=options.activities?.maxDailyBackgroundModelCalls??0;assert.ok(Number.isInteger(limit)&&limit>=0&&limit<=100,'Invalid background request ceiling');
+ const limit=options.activities.maxDailyBackgroundModelCalls;assert.ok(Number.isInteger(limit)&&limit>=0&&limit<=100,'Invalid background request ceiling');
  const save=()=>writeState(file,state),clock=()=>localClock(now(),state.settings.timezone);
  for(const job of Object.values(state.jobs))if(job.state==='running')job.state='uncertain';
  for(const job of Object.values(state.jobs))if(job.kind==='share'&&!terminal.has(job.state)&&!job.deliveryHeld&&job.state!=='uncertain'){

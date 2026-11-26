@@ -29,6 +29,8 @@ test('distribution moves to another folder, loads without source paths, retains 
  assert.deepEqual(Buffer.from(bundle.files['artifacts/official-runtime-provider.mjs'].content,'base64'),
   await readFile(new URL('../integration/clawchat/base/linux-x64.mjs',import.meta.url)),'Official provider must remain byte-identical');
  assert.ok(!Object.keys(bundle.files).some(p=>p.includes('/whalenest/web/')||/(?:^|\/)(?:management|management-provider)\.mjs$/.test(p)));
+  for(const name of ['src/assets/voices.json','src/voice-selection.mjs'])
+    assert.ok(bundle.files['artifacts/whalenest/'+name],'Voice choice runtime resource missing: '+name);
  const target=join(dir,'installed-elsewhere');
  for(const [path,entry]of Object.entries(bundle.files)){
   assert.ok(!path.includes('..'));const full=join(target,path);await mkdir(dirname(full),{recursive:true});
@@ -36,6 +38,10 @@ test('distribution moves to another folder, loads without source paths, retains 
   if(/\.(?:mjs|json)$/.test(path)&&!path.includes('/vendor/'))assert.ok(!bytes.toString().includes('/home/node/projects/whale-nest'),'no development absolute paths');
  }
  const packaged=join(target,'artifacts/whalenest');
+ const {workspaceInstructionsSource}=await import(pathToFileURL(join(packaged,'src/workspace-instructions.mjs')).href);
+ const instructions=workspaceInstructionsSource();
+ assert.equal(instructions.version,bundle.manifest.version);
+ assert.equal(instructions.template,await readFile(new URL('../src/assets/capabilities.md',import.meta.url),'utf8'));
  assert.deepEqual(await readFile(join(packaged,'LICENSE')),await readFile(new URL('../LICENSE',import.meta.url)));
  assert.equal(JSON.parse(await readFile(join(packaged,'package.json'))).license,'MIT');
  const {personaReference}=JSON.parse(await readFile(join(packaged,'upstream.lock.json')));

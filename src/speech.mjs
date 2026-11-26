@@ -7,8 +7,8 @@ import { createHash } from 'node:crypto';
 import {readPlatformProvider} from './platform-provider.mjs';
 import {buildWav,parseWav} from '../vendor/aurabot/src/voice/wav.js';
 
-export const defaultPlatformVoice = 'qwen-audio-3.0-tts-flash-fy1ae4cdd1-95f01c83d3984a62bffbfcaae018a8cf';
-export const platformVoiceIdPattern = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,119}$/;
+import {defaultPlatformVoice,platformVoiceIdPattern} from './voice-catalog.mjs';
+export {defaultPlatformVoice,platformVoiceIdPattern};
 
 const flights=new Map(),digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 

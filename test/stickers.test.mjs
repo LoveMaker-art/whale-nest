@@ -175,6 +175,60 @@ test('QQ favorites import PNG and GIF once while leaving their reviewed labels i
  assert.deepEqual(calls,['fetch_custom_face','fetch_custom_face']);
 });
 
+test('read-only tool continuations retain the original draw and can select a sticker',async t=>{
+ const {options,cfg}=await fixture(t);options.expressions={enabled:true};
+ const settings=createExpressionSettings(options,cfg);settings.configure({stickerChance:1});let draws=0;
+ const selection=createStickerSelection(options,{getConfig:()=>cfg,settings,policy:{status:()=>({settings:{paused:false}})},mood:()=>({sticker:1}),random:()=>{draws++;return 0;}});
+ const reads=[['recall_memory',{query:'兴趣'}],['bili_search',{query:'音乐'}],['bili_explore',{query:'音乐'}],['companion_stickers',{action:'list'}],['companion_memory',{action:'status'}],['companion_paintings',{action:'read',file:'test.png'}],['web_fetch',{url:'https://example.test'}],['read_file',{path:'/data.json'}],['str_replace_editor',{command:'view',path:'/test'}]];
+ for(const [n,[name,args]]of reads.entries()){
+  selection.prepare('native',n,['我今天很开心']);
+  assert.match(selection.guide('native'),/本轮已抽中/,'A read request is eligible before a tool runs');
+  await Array.fromAsync(selection.stream({sessionId:'native',messages:[]},async function*(){
+   yield {type:'block-start',index:0,blockType:'tool-call'};
+   yield {type:'tool-call-delta',index:0,id:'lookup',name,argumentsDelta:'{'};
+   yield {type:'block-end',index:0,block:{type:'tool-call',id:'lookup',name,arguments:JSON.stringify(args)}};
+   yield {type:'finish',reason:{kind:'tool-calls'}};
+  }));
+  assert.match(selection.guide('native'),/本轮已抽中/,'A successful read must not cancel the draw');
+  await Array.fromAsync(selection.stream({sessionId:'native',messages:[{role:'tool',toolCallId:'lookup',isError:false,content:[{type:'text',text:name==='read_file'?' {"ok":false}':'{"ok":true}'}]}]},async function*(){
+   yield {type:'block-end',index:0,block:{type:'text',text:'真替你高兴！<whalenest-sticker>庆祝</whalenest-sticker>'}};
+   yield {type:'finish',reason:{kind:'stop'}};
+  }));
+  assert.equal(selection.scene('native',n),'庆祝');
+ }
+ assert.equal(draws,reads.length,'Continuation steps must not draw again');
+});
+
+test('explicit read requests remain eligible while media, writes and text-only requests do not',async t=>{
+ const {options,cfg}=await fixture(t);options.expressions={enabled:true};const settings=createExpressionSettings(options,cfg);settings.configure({stickerChance:1});
+ const selection=createStickerSelection(options,{getConfig:()=>cfg,settings,policy:{status:()=>({settings:{paused:false}})},mood:()=>({sticker:1}),random:()=>0});
+ for(const input of ['请帮我查询一下相关资料','帮我检查一下这个网页讲什么','帮我搜索一下音乐']){
+  selection.prepare('native',1,[input]);assert.match(selection.guide('native'),/本轮已抽中/,input);
+ }
+ for(const input of ['只用文字回复','请给我发个表情包','请帮我修改设置','请帮我记住这件事']){
+  selection.prepare('native',1,[input]);assert.equal(selection.guide('native'),'',input);
+ }
+});
+
+test('writes, media, unknown tools and failed reads cancel an automatic sticker',async t=>{
+ const {options,cfg}=await fixture(t);options.expressions={enabled:true};const settings=createExpressionSettings(options,cfg);settings.configure({stickerChance:1});
+ const selection=createStickerSelection(options,{getConfig:()=>cfg,settings,policy:{status:()=>({settings:{paused:false}})},mood:()=>({sticker:1}),random:()=>0});
+ const cases=[['remember',{text:'test'}],['send_media',{filePath:'/test'}],['companion_stickers',{action:'send'}],['companion_settings',{action:'update',automatic:true}],['bili_config',{action:'status',patch:{watchOn:true}}],['str_replace_editor',{command:'create',path:'/test'}],['unknown_reader',{}],['toString',{}],['companion_memory','{'],['bili_explore',{query:'音乐'},false],['recall_memory',{},true]];
+ for(const [n,[name,args,error]]of cases.entries()){
+  selection.prepare('native',n,['我今天很开心']);
+  await Array.fromAsync(selection.stream({sessionId:'native',messages:[]},async function*(){
+   yield {type:'block-end',index:0,block:{type:'tool-call',id:'op',name,arguments:typeof args==='string'?args:JSON.stringify(args)}};
+   yield {type:'finish',reason:{kind:'tool-calls'}};
+  }));
+  const content=error===false?' {"ok":false,"message":"upstream failed"}':'✗ lookup failed';
+  await Array.fromAsync(selection.stream({sessionId:'native',messages:[{role:'tool',toolCallId:'op',isError:error===true,content:[{type:'text',text:content}]}]},async function*(){
+   yield {type:'block-end',index:0,block:{type:'text',text:'完成<whalenest-sticker>庆祝</whalenest-sticker>'}};
+   yield {type:'finish',reason:{kind:'stop'}};
+  }));
+  assert.equal(selection.scene('native',n),null,name+' must not append a sticker');
+ }
+});
+
 test('rich automatic decisions match the topic and direction before rotating for QQ and ClawChat',async t=>{
  const {options,cfg}=await fixture(t);
  options.expressions={enabled:true,stickerChance:1};

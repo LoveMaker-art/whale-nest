@@ -14,7 +14,7 @@
 
 | 表达 | 接线 |
 | --- | --- |
-| 语音/表情 | 基础15%/35%乘原effects.voice/sticker，自动语音最多80字；主人文字偏好、手动媒体和暂停优先 |
+| 语音/表情 | 基础15%/50%乘原effects.voice/sticker，自动语音最多80字；主人文字偏好、手动媒体和暂停优先 |
 | QQ消息间隔 | 原bubbleDelay乘effects.delay |
 | QQ群参与 | 原判断读取effects.chatty；权限和群触发规则保留 |
 | ClawChat回复 | Runtime确认语音送达后改显示短标记；失败保留文字，单条回复不人为分气泡 |

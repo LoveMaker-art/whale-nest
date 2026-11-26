@@ -7,6 +7,8 @@ import {buildConnectBridge,bridgeAssets} from './build-connect.mjs';
 import {buildRuntimeBase} from './build-runtime-base.mjs';
 import {buildAurabotHost} from './build-aurabot-host.mjs';
 import {updateCompatibility,updatePrerequisites,validateUpdatePrerequisites,updateProtocol,validateUpdatePath} from '../src/plugin-release.mjs';
+import {workspaceInstructionsSource} from '../src/workspace-instructions.mjs';
+import '../src/voice-catalog.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const integrity=bytes=>'sha256-'+createHash('sha256').update(bytes).digest('base64');
@@ -16,6 +18,7 @@ export async function buildDistribution(destination,{target='linux-x64',version=
  assert.ok(['linux-x64','darwin-arm64'].includes(target),'Unsupported distribution target');
  assert.ok(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version),'Invalid distribution version');
  prerequisites=validateUpdatePrerequisites(prerequisites);
+ assert.ok(workspaceInstructionsSource(),'Managed instructions must be valid before packaging');
  updatePath=validateUpdatePath(updatePath,version);
  destination=resolve(destination);await mkdir(destination,{recursive:true,mode:0o700});
  await buildAurabotHost();

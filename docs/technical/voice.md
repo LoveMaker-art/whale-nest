@@ -26,9 +26,17 @@ expressions/settings.json是共同表达设置的权威来源，两端管理更�
 
 兼容构建从原Hub提取唯一短语音/表情选择函数，两端调用；沿用原心情倍率和标签处理，CC现有expressions保留原生回合识别、媒体回执及显示标记，移除重复概率决策。QQ仍由Hub实际发送，CC沿既有媒体发送；每轮只选择一次，发送层不再二次随机。
 
-基础语音15%、表情35%，自动语音最多80字。手动已发媒体不再自动补发，明确文字偏好优先；关闭随机语音不阻止后续明确语音请求。此接缝同时服务[表情设计](stickers.md)，不建立通用表达计划引擎或第二套心情。
+基础语音15%、表情50%，自动语音最多80字。手动已发媒体不再自动补发，明确文字偏好优先；关闭随机语音不阻止后续明确语音请求。此接缝同时服务[表情设计](stickers.md)，不建立通用表达计划引擎或第二套心情。
 
-companion_voice在两端主人私聊提供status/list/update。实机模型目录没有返回音色枚举，list只列本实例已验证音色；update对新音色做一次固定短语的真实合成检查，成功后才持久化，检查属于前台TTS用量。新实例的初始音色为 `qwen-audio-3.0-tts-flash-fy1ae4cdd1-95f01c83d3984a62bffbfcaae018a8cf`，使用 `qwen-audio-3.0-tts-flash` 合成。
+ClawChat的成功语音不再附带文字确认：自动表达仅在state=confirmed且具有非空messageId时返回空replacementText，现有自有Runtime Adapter沿原接口输出该最终文本；原生模型正文保留在Session。旧自动表达回执读取时按原语音确认结果移除占位，不重复合成或发送。语音同时选中表情时，先取得语音ACK，再沿既有表情发送入口执行一次；文字为主的回合仍等待原正文ACK。
+
+手动send_voice以结构化结果保留state/messageId；表达出口只识别当前完成回合中与该工具调用ID匹配的成功结果。关闭自动表达或暂停自动活动不改变手动语音成功后的显示处理。仅有send_voice调用且全部确认成功时省去额外确认文字；失败、未知、回执缺失、其他工具混合或主人明确要求同时提供文字时保留正文。textReply=true只用于主人同时要求文字的场景。语音场景指令也移除成功后补文字确认的要求，媒体发送和官方连接器保持原实现。
+
+companion_voice在两端主人私聊提供status/list/update。[voice-catalog](../../src/voice-catalog.mjs)从随包[voices.json](../../src/assets/voices.json)读取唯一昵称/ID目录及默认值：鲸鱼娘、小鲸娘1～4和大鲸娘1。list仅发布昵称、声音特点及现有内部选择字段，不发布aliases中的后台原名；工具说明与能力模板要求模型面向用户使用昵称和特点，不展示原名或ID。update接受昵称或“默认”，后台保留原名及完整ID兼容；保存仍使用相同ID，因此已有选择和按ID生成的回执不需迁移。内置目录仅适用于登记的模型，保留实例已验证自定义ID；它不是平台完整音色目录。候选不会在启动时自动替换用户选择。
+
+[voice-selection](../../src/voice-selection.mjs)集中处理状态、名称解析、短语合成核验、串行提交和稳定操作回执。唯一管理入口为两端主人私聊中的companion_voice，沿用原生手动主人授权及持久工具调用身份。设置仍只写原voice.platformVoice/platformVoices，由SDK的原setConfig持久化。核验属于前台TTS用量；失败保留原音色，同一请求不重新合成或重放已完成的旧选择。回执先记录checking，再记录checked和completed；配置保存中断时恢复已核验操作。提交前后核对当前音色；并发聊天切换按顺序执行，无关配置修改在保存时保留。
+
+通话Liveware沿用固定ClawNest网关及原页面，无音色选择控件和写入接口。每次通话开始时，经既有鉴权GET /voice/v1/settings读取当前音色并固定到本次通话；聊天中的后续切换用于下次通话。没有为音色管理新增Runtime RPC、页面进程配置写入或官方连接器补丁，SSE/WS及HTTPS传输保持原接线。
 
 兼容构建从原Hub提取aurabot-expression.generated.mjs，QQ与CC均调用这一个选择函数；expressions/settings.json保持唯一表达偏好。QQ输入识别、随机选择及语音发送按原消息/回合身份保存，未知不自动换ID重试。旧版回退保留文件与回执，将当前音色投影给旧CC客户端并关闭尚无平台接缝的旧QQ voice，避免启动桌面TTS；重新升级恢复原模块。
 

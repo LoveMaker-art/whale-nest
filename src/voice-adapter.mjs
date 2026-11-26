@@ -4,7 +4,8 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import originalVoice from './aurabot-voice.generated.mjs';
 import {selectReplyItems} from './aurabot-expression.generated.mjs';
-import {createSpeechClient,defaultPlatformVoice,platformVoiceIdPattern} from './speech.mjs';
+import {createSpeechClient} from './speech.mjs';
+import {createVoiceSelection} from './voice-selection.mjs';
 import {readState,writeState} from './state.mjs';
 import {hash} from './routing.mjs';
 import {nativeOperationId,requireManualOwnerTurn} from './native-tool.mjs';
@@ -17,12 +18,8 @@ import {parseWav} from '../vendor/aurabot/src/voice/wav.js';
 export function createVoiceAdapter(ctx,options,{getConfig,setConfig,getNative,expressionSettings,policy,fetchImpl=fetch}={}){
  const delivery=new AsyncLocalStorage(),toolCalls=new AsyncLocalStorage(),flights=new Map(),dir=join(options.dataDir,'voice');
  const enabled=options.speech?.enabled===true;
- const initialVoice=options.speech?.voice??(enabled?defaultPlatformVoice:null);
- const currentVoice=()=>getConfig().voice.platformVoice??initialVoice;
- const speech=createSpeechClient(options,fetchImpl,{getVoice:currentVoice});
- const status=()=>({enabled,voice:currentVoice(),
-  verifiedVoices:[...new Set([initialVoice,...(getConfig().voice.platformVoices??[])].filter(Boolean))],
-  voiceCatalog:'verified-on-this-backend',ttsModel:options.speech?.ttsModel??null,asrModel:options.speech?.asrModel??null});
+ const speech=createSpeechClient(options,fetchImpl,{getVoice:()=>selection.current()});
+ const selection=createVoiceSelection(options,{getConfig,setConfig,speech}),status=selection.status;
  async function speak(text,request){
   assert.ok(request?.requestId,'语音合成需要持久调用标识');
   // Both channels enter the original voice module. Read its shared mood,
@@ -79,15 +76,11 @@ export function createVoiceAdapter(ctx,options,{getConfig,setConfig,getNative,ex
    if(flights.has(id))return flights.get(id);const promise=run();flights.set(id,promise);try{return await promise;}finally{flights.delete(id);}
   },
  };
- function tool(){return defineTool({name:'companion_voice',description:'主人管理两端共用默认音色。status查看当前音色；list列本实例已验证音色（平台未提供完整目录）；update指定voice，新音色会先用一句固定短语实际合成验证，产生一次前台TTS用量，成功才保存。仅改变后续新请求，既有或结果不确定的请求保留原音频。自动文字/语音偏好请用companion_expression。',properties:{action:str('status/list/update'),voice:str('平台实际音色标识')},
+ function tool(){return defineTool({name:'companion_voice',description:'主人通过私聊管理语音消息和实时通话共用音色。status查看当前音色；list查询昵称、声音特点和当前选择。面向用户使用目录返回的昵称（如小鲸娘1、大鲸娘1、默认鲸鱼娘）和声音特点，不展示后台原名或ID，也不要求用户提供ID。update的voice填所选昵称，“默认”恢复鲸鱼娘；后台兼容原名及完整ID。用户可说“查看可选音色”“换成小鲸娘4”。切换先实际合成一句短语验证，成功才保存，失败保留原音色；仅影响后续语音和下次通话，歌曲演唱预设独立。自动文字/语音偏好用companion_expression。',properties:{action:str('status/list/update'),voice:str('音色昵称，如小鲸娘1、大鲸娘1或默认')},
   render:(_a,value)=>[{type:'text',text:JSON.stringify(value)}],
   async execute(args,exec){requireManualOwnerTurn(exec);const action=args.action??'status';assert.ok(['status','list','update'].includes(action),'Unknown voice action');
    if(action!=='update')return {ok:true,...status()};
-   assert.ok(enabled&&options.speech.ttsModel,'平台TTS尚未启用');assert.match(String(args.voice??''),platformVoiceIdPattern,'音色标识无效');
-   const previous=status(),requestId='whalenest-voice-check-'+hash([options.instanceId,nativeOperationId(exec)]);
-   if(previous.voice!==args.voice){const checked=await speech.synthesize('你好，我是大肥鱼。',requestId,{voice:args.voice,signal:exec.signal});assert.equal(checked.voice,args.voice,'音色检查请求标识冲突');}
-   const cfg=getConfig();setConfig({...cfg,voice:{...cfg.voice,platformVoice:args.voice,platformVoices:[...new Set([...previous.verifiedVoices,args.voice])]}});
-   assert.equal(getConfig().voice.platformVoice,args.voice,'音色设置未保存');return {ok:true,...status()};
+   return selection.change(args.voice,{requestId:'whalenest-voice-check-'+hash([options.instanceId,nativeOperationId(exec)]),signal:exec.signal});
   }});}
  return {ports,speech,status,tool,speak,
   wrapTools(def){return {...def,setup(api){return def.setup({...api,tool(factory){return api.tool(where=>factory(where).map(t=>({...t,execute:(args,exec)=>toolCalls.run(nativeOperationId(exec),()=>t.execute(args,exec))})));}});}};},

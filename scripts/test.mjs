@@ -24,7 +24,7 @@ const options = { ...process.env, TMPDIR: realpathSync(tmpdir()), NODE_OPTIONS: 
 const report = { schema: 2, selectedFiles: files, platform: process.platform, node: process.version, concurrency: 1, upstream, files: files.length,
   startedAt: new Date().toISOString(), modelTransport: upstream ? 'upstream fixtures' : 'fixture; native DSH and real storage',
   maxCgroupBytes: 0, maxEffectiveBytes: 0, resourceStopped: false };
-const livewareTests = ['realtime-call.test.mjs', 'realtime-native.test.mjs', 'liveware-managed.test.mjs'].map(file => join('test', file));
+const livewareTests = ['realtime-call.test.mjs', 'realtime-native.test.mjs', 'voice-chat-native.test.mjs', 'liveware-managed.test.mjs'].map(file => join('test', file));
 if (files.some(file => livewareTests.includes(file))) {
   const automatic = ['python3', 'python3.11', 'python3.12', 'python3.13', 'python3.14'];
   const candidates = options.WHALENEST_TEST_PYTHON ? [options.WHALENEST_TEST_PYTHON] : automatic;

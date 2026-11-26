@@ -1,0 +1,55 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {withCompanionDefaults} from '../src/companion-defaults.mjs';
+import {createCompanionPolicy} from '../src/companion-policy.mjs';
+import {createMemoryAdapter} from '../src/memory-adapter.mjs';
+
+test('fresh companion starts contact, discovery, diary and memory with the shared budget',async t=>{
+ const dataDir=await mkdtemp(join(tmpdir(),'whalenest-defaults-'));t.after(()=>rm(dataDir,{recursive:true,force:true}));
+ let at=Date.parse('2026-11-26T01:00:00Z');
+ const route={channel:'clawchat',account:'dsh',sender:'owner',kind:'private',conversation:'dm'};
+ const options={instanceId:'defaults',dataDir,owners:[route],clawchat:{route}};
+ const policy=createCompanionPolicy(options,route,{now:()=>at});
+ const s=policy.status();assert.equal(s.settings.automatic,true);assert.equal(s.settings.contactEnabled,true);
+ assert.equal(s.dailyModelRequestLimit,5);assert.ok(s.settings.interests.length>0);
+ assert.equal(policy.contactReason(),'owner-recently-active');
+ at+=2*60*60*1000;
+ const browse=await policy.tick({dispatch:job=>{policy.accept(job.id,'native','input');return true;}});
+ assert.equal(policy.getJob(browse.jobId).kind,'browse');
+ assert.equal(policy.getJob(browse.jobId).interest,'音乐');
+ policy.finish(['input'],{text:'已记录真实浏览资料',completed:true});
+ policy.delivery(browse.jobId,{begin:true});policy.delivery(browse.jobId,{confirmed:true});
+ at=Date.parse('2026-11-26T13:00:00Z');
+ const diary=await policy.tick({hasDiarySources:()=>true,dispatch:job=>{policy.accept(job.id,'native','diary-input');return true;}});
+ assert.equal(policy.getJob(diary.jobId).kind,'diary');
+ const memory=createMemoryAdapter({},options,policy);t.after(()=>memory.close());
+ assert.equal(memory.status().automatic,true);
+ const prepared=withCompanionDefaults(options);
+ assert.equal(prepared.expressions.enabled,true);assert.equal(prepared.expressions.stickerChance,0.5);
+ assert.deepEqual(prepared.memory.consolidateTimes,['21:00']);
+});
+
+test('saved opt-outs, empty topics, limits and pending results survive a restart',async t=>{
+ const dataDir=await mkdtemp(join(tmpdir(),'whalenest-defaults-'));t.after(()=>rm(dataDir,{recursive:true,force:true}));
+ const route={channel:'clawchat',account:'dsh',sender:'owner',kind:'private',conversation:'dm'};
+ const options={instanceId:'defaults',dataDir,owners:[route],clawchat:{route}};
+ const now=()=>Date.parse('2026-11-26T03:00:00Z');
+ const p=createCompanionPolicy(options,route,{now});
+ p.configure({idleMinutes:0,interests:['海洋']});
+ const started=await p.tick({dispatch:job=>{p.accept(job.id,'native','input');return true;}});
+ p.reserve(started.jobId);
+ p.configure({automatic:false,contactEnabled:false,paused:true,interests:[]});
+ const restored=createCompanionPolicy(options,route,{now});
+ assert.equal(restored.status().settings.automatic,false);assert.equal(restored.status().settings.contactEnabled,false);
+ assert.equal(restored.status().settings.paused,true);assert.deepEqual(restored.status().settings.interests,[]);
+ assert.equal(restored.status().usage.modelRequests,1);assert.equal(restored.getJob(started.jobId).state,'uncertain');
+ assert.equal((await restored.tick()).reason,'paused');
+ const explicit=withCompanionDefaults({...options,activities:{automatic:false,maxDailyBackgroundModelCalls:0},memory:{automatic:false},expressions:{enabled:false,stickerChance:0.1}});
+ assert.equal(explicit.activities.automatic,false);assert.equal(explicit.activities.maxDailyBackgroundModelCalls,0);
+ assert.equal(explicit.memory.automatic,false);assert.equal(explicit.expressions.enabled,false);
+ assert.equal(explicit.expressions.stickerChance,0.1);
+ assert.equal(explicit.qq,undefined,'Feature defaults cannot authenticate an account');
+});

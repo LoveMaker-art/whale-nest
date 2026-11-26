@@ -38,7 +38,7 @@ npm run test:deployment
 
 ## 构建测试版
 
-发布新版本按[项目交付约定](../AGENTS.md#5-更新状态并交付)申请授权。
+先完成测试机源码验证并汇报，用户同意打包后才执行本节构建命令。公开发布另按[项目交付约定](../AGENTS.md#5-更新状态并交付)申请授权。
 
 Node.js 24 执行 `npm ci` 后，运行 `npm run build:distribution`。默认版本来自根 `package.json`，产物保存在 `.whale-nest/distribution/`。可用第四个参数传入同版本的发行说明，将摘要保存在 `distribution.json`。
 
@@ -52,13 +52,23 @@ GitHub 预发行标签使用 `v` 加完整版本号。发行资产包含同版�
 
 ## 本地开发后进行测试机最终验收
 
-后续默认在本地仓库完成已确认需求的开发、对应回归及候选构建，再在测试机做最终实测；测试机暂不可达不阻断本地开发。沿用STATUS记录的DSH/Core与宿主基线，不另写一套本地业务。环境或平台合同未明确的部分保留具体依赖，不以模拟结果认定平台支持。
+后续默认按“本地修改与受影响回归 → 测试机源码部署与实测 → 汇报并申请打包 → 获准后构建及验包”推进；公开发行另需用户明确同意。源码验收前不运行发行构建，也不运行会触发完整打包的分发测试。测试机暂不可达不阻断本地开发。沿用STATUS记录的DSH/Core与宿主基线，不另写一套本地业务。环境或平台合同未明确的部分保留具体依赖，不以模拟结果认定平台支持。
 
-本地交付包含同一份源码、候选包及摘要、受影响回归报告和远端待验清单。分别记录代码完成、本地回归通过、已部署和远端验收通过；本机macOS测试及Linux包构建各有证据，不将构建成功计作Linux运行通过。
+源码阶段交付同一份源码清单及摘要、受影响回归报告和远端待验清单；获准打包后再补发行包及摘要。分别记录代码完成、本地回归通过、已部署和远端验收通过；本机macOS测试及Linux运行各有证据，不将构建成功计作Linux运行通过。
+
+源码测试使用[scripts/source-mode.mjs](../scripts/source-mode.mjs)：同步原始源码和`source-manifest.json`（schema=1、version、files相对路径到SHA-256的映射），不执行发行构建。preflight校验源码、原绑定、安装记录、任务和通话空闲及受控AGENTS；activate保存独立恢复点，停止原服务，切换自有启动接线和dataDir/source-candidate.json，再恢复同一Core/SDK及两个Liveware。失败恢复启动文件和原指令来源，用户会话、设置与回执保留。
+
+```sh
+node /absolute/source/scripts/source-mode.mjs preflight /absolute/instance.json /absolute/source /absolute/project
+node /absolute/source/scripts/source-mode.mjs activate /absolute/instance.json /absolute/source /absolute/project
+node /absolute/source/scripts/source-mode.mjs rollback /absolute/instance.json /absolute/backup /absolute/project
+```
+
+当前入口验证DSH业务及Liveware源码，Core侧四份Provider/接线入口须与安装版本一致；这部分也变化时先适配源码加载方式，预检失败保持在线。自有Node加载器只映射鲸栖src，原插件存储和官方文件保持。源码版本单独登记；后续插件激活或身份改变时旧源码选择自动失效，回到实际安装版本，不阻断更新。`scripts/update-m2.mjs install`仍用于获准打包后的运行包安装。
 
 本机可运行真实DSH SDK、SQLite、原QQ Hub和ClawChat桥，配合可控模型及模拟网关验证业务、权限、共享状态、投递、迁移和恢复。取得兼容网关、账号范围及有效平台认证后，也可在本地做真实QQ和平台调用实测；本流程不自动授权登录、关联账号或付费生成。
 
-分发目标为 Linux x64。本地通过后固定同一份插件候选及摘要。实机更新前核对宿主版本、实际配置、当前任务和恢复点。最终验收覆盖插件安装、启用、更新、回退、原数据保留，以及真实 ClawChat 和 QQ 下的模型、媒体、重启和资源表现。按版本分别记录本地回归、部署和实机结果。
+分发目标为 Linux x64。本地通过后固定同一份源码候选及摘要。实机更新前核对宿主版本、实际配置、当前任务和恢复点。源码阶段验证启用、原数据保留及受影响通道下的模型、媒体、重启和资源表现；获准打包后补做发行包安装、更新及回退验收，并核对与实测源码一致。真实ClawChat和QQ验收分别按实际账号范围记录，不将禁用通道视作已实测。按版本分别记录本地回归、部署和实机结果。
 
 Beta 预置实例以 2 GiB 为目标。切换前核对实际容器配额、授权范围和恢复路径。
 
@@ -72,7 +82,7 @@ Beta 预置实例以 2 GiB 为目标。切换前核对实际容器配额、授�
 
 ## 现有实例的直接更新
 
-实例更新统一使用 `scripts/update-m2.mjs` 的 `preflight`、`install` 和 `rollback`。单独更新鲸栖时只传运行包，继承已有功能与连接器配置。需要另行更换 Core 扩展时，才使用 `--media-core` 并核对配套来源、程序、技能和宿主修正。[Core 扩展方法](../integration/clawchat/core-media/README.md)
+已获准打包后的实例安装使用 `scripts/update-m2.mjs` 的 `preflight`、`install` 和 `rollback`；测试机先行源码验证遵循上一节，不在此阶段提前打包。单独更新鲸栖时只传运行包，继承已有功能与连接器配置。需要另行更换 Core 扩展时，才使用 `--media-core` 并核对配套来源、程序、技能和宿主修正。[Core 扩展方法](../integration/clawchat/core-media/README.md)
 
 鲸栖启动脚本校验已登记的 Core、兼容启动器、完整 Runtime/Skills 和 Liveware 文件集合，然后进入官方宿主的启动流程。新组合仅在鲸栖桥进程 overlay 禁用原生 JSON-RPC，全局 SDK 接口保持开启，供官方问候及 SDK 客户端使用；旧组合沿用原 profile，不能单独迁移 profile。连接器版本及源码提交的配套核对在构建与安装准备阶段执行。
 
@@ -80,9 +90,9 @@ Beta 预置实例以 2 GiB 为目标。切换前核对实际容器配额、授�
 
 主人手动「检查更新」每次读取发行源；后台自动检查和失败退避继续使用六小时间隔。并发检查复用正在进行的读取。新版本仍需主人确认准确版本号后才安装。
 
-版本号按标准顺序比较。用户已明确批准将测试机当前 `1.0.0-beta.4.dev.20` 按原号发布，本次不改为此前拟定的 `beta.5`。未来目标版本必须高于已安装版本；`beta.4` 低于 `beta.4.dev.N`，不能作为它的后续更新。每次新发行仍须单独取得用户明确同意。
+版本号按标准顺序比较。用户已明确批准将 `1.0.0-beta.4.dev.20` 按原号发布；测试机现已启用内部dev.21，公开版本不随测试部署变化。未来目标版本必须高于已安装版本；`beta.4` 低于 `beta.4.dev.N`，不能作为它的后续更新。每次新发行仍须单独取得用户明确同意。
 
-先在构建环境装依赖并运行 `npm run build:distribution`。将 Linux x64 包和同目录的 `distribution.json` 复制到用户实例，使用现有更新器安装。更新器对实际版本切换要求已构建的运行包，并在预检时核对包摘要。以下命令使用测试机上已准备的包路径。
+完成测试机源码验证、汇报并获准打包后，在构建环境装依赖并运行 `npm run build:distribution`。将 Linux x64 包和同目录的 `distribution.json` 复制到用户实例，使用现有更新器安装并完成安装包验收。更新器对实际版本切换要求已构建的运行包，并在预检时核对包摘要。以下命令只用于已获准打包后的安装环节。
 
 ```sh
 node scripts/update-m2.mjs preflight --runtime-bundle /path/to/whalenest.connect-plugin
@@ -129,7 +139,13 @@ node scripts/update-m2.mjs rollback
 
 ## 测试机用户状态重置
 
+默认表情的审定清单见[素材清单](../deploy/stickers/catalog.json)。保留`instance.json`中`expressions.stickerCatalog`指向的产品资源目录及100张图片，禁止将其当作用户图库或临时缓存删除。完整重置可清空`aurabot/stickers`与`expressions/seed.json`，运行SDK随后恢复整套预置库。普通更新保留初始化记录和用户图库，尊重用户修改及删图。源码测试期间，`source-candidate.json`及其指向的活动源码目录属于运行程序，也必须保留；历史一次性清理脚本未经新范围核对不得复用。
+
 按用户已确认范围只清理用户状态，保留 ClawChat 配对、传输水位、模型与运行配置、随包默认素材及两个 Liveware。先核对实际配置和清理范围，停止所有业务写入者并等待 QQ 子进程退出，再清理用户状态及旧用户备份，不保留用户数据副本。复核默认人格、空用户状态和保留项后恢复服务，重新检查就绪、唯一 SDK 进程、Liveware 及账号登出状态；连接握手、初始工作区等运行元数据不属于清空目标。原始记录留在忽略目录，避免其中包含用户内容。 0.2.22 及后续已适配组合还需清理 `browser-turns.json`、`web-activity/`、`operator-sessions.json` 及含正文的首次问候草稿，保留已有真实 `greeting-receipt.json` 防止重新问候；不能恢复旧 profile 备份覆盖新的 JSON-RPC 接线。无引用自有旧连接器须核对配置、技能、启动器和 profile 引用后才删，官方登记的历史包保持登记一致。群策略的默认同步标记属于运行元数据，不能要求其行数为零；实际群设置和聊天数据必须为空。
+
+官方0.2.23托管Liveware的`plugin_durable_state`绑定记录及鲸栖`managed-liveware.json`属于入口接线，不能作为用户业务状态一并清空。按实际plugin/capability/lifetime核对后保留，其他持久状态逐项分类。源码模式保留活动候选及指针；清理旧候选中的实机副本时，仍须保留插件锁登记的安装包与校验文件，不以目录名推断可整删。新一轮从头测试默认保留用户最后确认的产品人格，清除其他自定义卡及个人偏好，音色、记忆整理时段和表达策略恢复当前产品默认。工作目录清空后重建产品问候与受控AGENTS，不恢复用户扩展区。清空后的最终验收只读，不新建模型会话、发送运维消息或生成媒体；同代码的真实模型证据在清理前完成并注明边界。
+
+QQ的`managed-desktop.json`仅登记受管桌面资料目录，是启动所需运行文件，和QQ账号资料、cookies分开保留。检查清空后的`session_intents`时，允许官方重新建立一条仅指向当前默认工作目录、名称/模式/模型/推理均为空、选项为`{}`的初始路由；实际会话、正文、用户模型选择和消息仍须为空，不能把保留个人选择的记录当作初始路由。
 
 ## 离线恢复与迁移操作
 
@@ -149,11 +165,19 @@ Core桥从原生已完成调度日志恢复投递意图及检查点，不重新�
 
 ## 首次开通
 
+能力总览由[运行模板](../src/assets/capabilities.md)与其同目录摘要清单管理。首次准备、Runtime启动和受控更新会在实例实际工作目录的`AGENTS.md`维护鲸栖托管区块；手工说明放在区块外。预检发现托管区块被修改时保留原文件并停止受控切换，先核对该修改的归属。回退选择原安装包的模板；原包没有模板时仅移除仍匹配托管摘要的区块，保留其他内容。不要把本项目根目录给开发者使用的AGENTS.md复制给运行实例。
+
+模板采用普通Markdown，围绕鲸鱼娘自身能力分节，简短说明各自的使用入口，语气沿用当前人格；QQ接入、两端聊天与共用档案属于伙伴能力，保留在总览。ClawChat通用平台管理及更新操作沿用各自工具和Skill入口。修改模板时同步更新`src/assets/workspace-instructions.json`的SHA-256，运行`node scripts/test.mjs test/workspace-instructions.test.mjs test/workspace-instructions-native.test.mjs test/distribution.test.mjs`，验证摘要、实际原生加载和随包分发。格式依据与本轮内容审阅见[连续任务记录](tasks/connector-convergence-023.md#agents内容与格式优化)。
+
+官方首次问候读取实际工作目录的`clawchat/greeting.md`，已确认模板位于[deploy/clawchat/greeting.md](../deploy/clawchat/greeting.md)。当前源机已显式同步该文件，尚无自动安装接线。同步文案保留既有`greeting-receipt.json`，不会让已完成问候的用户重新收到消息；仅改文案不代表鲸栖重复问候入口已经移除，当前实施边界见[STATUS](STATUS.md#首次问候文案已同步入口收敛待实施)。
+
 平台准备全新用户实例时，在实际 `DSH_HOME/companion/aurabot-v1/instance.json` 的 `clawchat` 段设置 `"firstBinding": true`，沿用实例内 Connect 程序和配置的绝对路径。新实例的 `owners` 为空，由 Connect 在配对后提供身份。准备未绑定的桥时可将同一实例配置传给 `prepare:connect`。已有绑定实例沿正常更新流程保留其身份和资料。
 
 用 `prepare:connect` 处理未绑定模板时，输出的 `instance.json` 默认开启写歌、歌曲作品页和实时通话，并准备平台模型接线。预装实例使用这份配置经过支持 Liveware 中继的 Connect 启动。用现有更新入口准备源实例时，使用 `--media-core --speech --songs --song-liveware --realtime`。首次绑定核验主人后，两个本地服务启动，并通过原 Connect 绑定登记私有入口。已登记的私有入口分别保存在 `dataDir/call-liveware.json` 和 `dataDir/song-liveware.json`。验收时在原私聊打开[歌曲作品页](#歌曲-liveware)和[通话入口](tasks/realtime-call.md#接入与验收)。
 
-Connect 完成配对并准备 DSH 时，桥从本机 Connect 数据库核对原生绑定、安装主人和私聊，写入实例路由。握手成功后，插件经既有 Connect 工具生成并投递开场白，读取并按需初始化 Agent 头像。首配记录保存在 `dataDir/first-binding.json`。开场白在这次用户开通中最多调用一次模型。内存保护或模型失败时仍发送文字兜底并处理头像。头像使用随包的[鲸鱼娘头像 PNG](../src/assets/whalenest-avatar.png)。未知发送结果按原请求核对回执。真实平台验收从新配对码开始，查看手机端头像和首条文字，再发送一条普通聊天消息并重启复查。[开通体验](tasks/feature-experience-review.md#3-开场白与头像)
+启动准备和桥从本机 Connect 集中身份适配核对已验证的agent、安装主人与私聊，按身份维护`dataDir/first-binding.json`。复制来的runtime存在不再跳过首配；同一主人新账号只重建账号接线和应用引用，不删除源机云端应用或个人内容。仅私聊变化时更新路由并复用头像完成状态；源码候选在校验原安装与完整性后同批登记新接线，中断通过`binding-transition.json`恢复。不同主人仍须明确完成个人数据交接，不能直接继承旧授权。
+
+开场由官方Runtime独占生成、发送并保管回执，鲸栖不再另外发送欢迎语。鲸栖在首次准备、Core启动前和人格切换／编辑时，用当前完整人格加[问候模板](../src/assets/greeting.md)维护工作目录的`greeting.md`；自定义文件发生冲突时保留，需另行检查。AGENTS继续只管能力总览。头像通过既有官方工具读取，已有头像直接保留，空头像按需设置随包的[鲸鱼娘头像 PNG](../src/assets/whalenest-avatar.png)。未知操作只核对原回执，不重发。真实首次开场和新账号应用验收须使用新实例；既有实例重启不会重发开场。[本轮初始化修复](tasks/image-machine-audit.md#2026-11-26初始化修复执行记录)
 
 ## ClawChat 对话自测
 
@@ -185,7 +209,7 @@ scripts/probe-live.mjs参数依次为INSTANCE_JSON BRIDGE_PATH OUTPUT_JSON [PROM
 | --- | --- |
 | 人格/记忆 | companion_persona、companion_memory；[人格设计](technical/persona-management.md)、[记忆设计](technical/long-term-memory.md) |
 | 自动策略与首选 | companion_settings；[共同投递](technical/proactive-delivery.md)、[主动联系](technical/active-contact.md) |
-| 音色与自动表达 | companion_voice、companion_expression；[语音](technical/voice.md)、[心情](technical/mood.md) |
+| 音色与自动表达 | 主人私聊说“查看可选音色”“换成小鲸娘4”“恢复默认音色”，语音消息与下次通话使用保存的选择。companion_voice、companion_expression；[语音](technical/voice.md)、[心情](technical/mood.md) |
 | 表情 | companion_stickers及QQ原别名；[共同图库](technical/stickers.md) |
 | B站 | 原工具、bili_config、bili_inbox；[设计](technical/bili.md) |
 | 私人日记与发布 | companion_diary；[共同档案与分平台发布](technical/diary.md) |

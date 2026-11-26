@@ -51,6 +51,12 @@ flowchart TB
 
 人格每轮首次组装时固定正文到内存，下一轮再读取当前选择。记忆和心情不随切换人格清空；日记首轮只读取真实活动，不自动摘取私聊。公开发布使用单独正文、受众及权限检查。
 
+## 插件托管的运行指令
+
+能力总览的权威模板位于[capabilities.md](../src/assets/capabilities.md)，同目录清单登记模板摘要，随鲸栖运行包分发。实例工作目录的`AGENTS.md`是受控部署结果，由DSH原生指令加载器读取；鲸栖不再把同一段总览额外注入提示词。人格继续由原卡片库提供，能力执行范围取决于当前工具、渠道、主人授权、功能开关及账号状态。
+
+[workspace-instructions](../src/workspace-instructions.mjs)集中处理模板读取、预检和原子同步。托管区块使用实例数据目录的归属/摘要记录，保留区块外的用户说明；区块内手改、路径替换或归属不符时保留文件并报告冲突。双文件提交使用持久恢复记录，重启后核对原输入或已写结果再恢复。安装、受控更新、SDK启动和回退共用该模块；较早未携带模板的包仅移除仍可证明归属的托管区块，保留升级后新增的用户说明。
+
 ## 消息与投递
 
 | 对象 | 必需信息 | 约束 |
@@ -97,6 +103,8 @@ Runtime 默认单回合最多 4 个附件、单个 16 MiB、合计 32 MiB。最�
 新候选由鲸栖贡献真实 Managed Web App，官方 Exposure 负责发布、认证和账号中继。独立稳定通话 App 保留聊天卡 URL，其 launcher 注销；官方托管入口和独立歌曲入口作为两个可见应用。官方在线更新可重建托管入口，产品聊天卡仍指向保留的稳定地址。停机沿用官方保留发布开关，组合回退通过公开动作恢复旧入口，不删除作品、原 App 或未确认请求。当前验收进度见[收敛任务](tasks/connector-convergence-023.md)。
 
 语音网关通过本机鉴权接口接入鲸栖 Runtime。Core 使用当前已验证的主人私聊及其原 Session 队列，通话转写带实时通话来源进入同一原生历史。回执区分生成文本和已播放前缀。模型继续读取原生历史，ClawChat 恢复界面时只投影私聊可见的回合。[Liveware 服务](../src/liveware-service.mjs) · [回合入口](../src/platform-voice-bridge.mjs) · [Core 扩展](../integration/clawchat/core-media/core-extension.patch)
+
+音色目录由鲸栖随包资源管理，主人在ClawChat或已关联QQ私聊中通过companion_voice调用[voice-selection](../src/voice-selection.mjs)，由SDK的原配置写入者保存统一说话偏好。通话页只在开始时读取已保存的音色，无切换控件或写入接口；不为该设置扩展Runtime RPC或官方连接器。音色在合成请求或通话开始时固定，变更只影响后续请求或下次通话，原音频和未知回执保留。[接线与恢复](technical/voice.md)
 
 部署与实测范围见[实时通话任务](tasks/realtime-call.md)和[当前状态](STATUS.md)。
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {mkdirSync, readFileSync} from 'node:fs';
-import {isAbsolute, join, resolve} from 'node:path';
+import {dirname,isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -16,6 +16,7 @@ import {createClawChatCore} from './clawchat-core.mjs';
 import {connectorRequirement,createOfficialConnectorUpdater,connectorPlan,connectorSnapshot} from './official-connector-update.mjs';
 import {ensureRuntimeActivation,runtimeActivationTarget} from './runtime-activation.mjs';
 import {runPluginUpdatePlan,isInstalledUpdateWorker} from './plugin-update-orchestrator.mjs';
+import {workspaceInstructionsSource,planWorkspaceInstructions,applyWorkspaceInstructions} from './workspace-instructions.mjs';
 
 const exec = promisify(execFile);
 const terminal = new Set(['completed','rolled-back','failed']);
@@ -65,7 +66,13 @@ export function connectUpdateHost(options, {fetchImpl=fetch,run=exec}={}) {
     // verifies selection before deciding between holding and rolling back.
     return core.change(pluginId,operation,body);
   }
-  return {installed,identity,versions,change};
+  function instructions(entry=installed(),apply=false) {
+    assert.ok(isAbsolute(entry.activeArtifact),'Installed Runtime artifact must be absolute');
+    const source=workspaceInstructionsSource({installedRoot:join(dirname(entry.activeArtifact),'whalenest')});
+    const plan=planWorkspaceInstructions(options,source);
+    return apply?applyWorkspaceInstructions(plan):{state:'prepared',changed:plan.changed};
+  }
+  return {installed,identity,versions,change,prepareInstructions:()=>instructions(),syncInstructions:entry=>instructions(entry,true)};
 }
 
 const selection = entry => ({version:entry.version,integrity:entry.integrity});
@@ -130,6 +137,7 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
   async function activateCurrent(key) {
     const installed=host.installed(),identity=await host.identity();
     if(!identity||identity.key!==progress.identity)return {state:'pending',reason:'runtime-unavailable'};
+    if(host.syncInstructions)save({workspaceInstructions:await host.syncInstructions(installed)});
     const expected=runtimeActivationTarget(installed,identity);
     return await activate(options,{host,expected,required:true,read:()=>progress[key],save:record=>save({[key]:record}),wait});
   }
@@ -251,6 +259,7 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
       assert.ok(current.source?.type==='local' || current.source?.type==='github' && current.source.repository===release.repository);
       if(current.source.type==='github')assert.ok(current.source.apiBase===undefined||current.source.apiBase==='https://api.github.com');
       assert.equal(options.pluginUpdates.repository,release.repository);
+      if(host.prepareInstructions)await host.prepareInstructions();
       assert.deepEqual(await discover(options.pluginUpdates,current.version,{tag:release.tag}),release);
       verifyUpdateCompatibility(await host.versions(),release.compatibility);
       let connectorStatus;
@@ -290,6 +299,7 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
         assert.deepEqual(connectorSnapshot(status),connectorSnapshot(connectorStatus),'Official integration changed before Whale Nest switch');
         assert.equal(connectorPlan(status,requirement).state,'ready');
       }
+      if(host.prepareInstructions)await host.prepareInstructions();
       save({phase:'switching',previous:selection(current),identity:identity.key});
       try {
         const accepted=await host.change(current.source.type==='local'?'replace':'update',{source:'github:'+release.repository+'@'+release.tag});
@@ -311,6 +321,7 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
       }
       const selected=host.installed(), previous=progress.previous;
       if (selected?.version===previous?.version && selected?.integrity===previous?.integrity && selected.status==='active') {
+        if(host.syncInstructions)save({workspaceInstructions:await host.syncInstructions(selected)});
         if (progress.ack==='rejected' && progress.connectorDone) {
           await restoreConnector('failed','switch-rejected');return progress;
         }

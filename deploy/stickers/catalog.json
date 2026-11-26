@@ -1,0 +1,2606 @@
+{
+  "version": 1,
+  "purpose": "鲸栖表情候选标注",
+  "items": [
+    {
+      "id": 1,
+      "name": "拉炮",
+      "category": "庆祝",
+      "primaryScene": "庆祝",
+      "tags": [
+        "庆祝",
+        "成功",
+        "生日",
+        "拉炮"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "我拿到录取通知了！",
+        "reply": "恭喜你，这一炮得给你放！"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/072618895c9cb5419c1cc8b073716f21bfd3833fdc1168f2e780273e9ba68c1f.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1214073,
+        "sha256": "67df913b66fb5efeb228c1bf4c59a96c2ce9d70c27ebe2a645a1df3e79d6862f"
+      }
+    },
+    {
+      "id": 2,
+      "name": "猫猫烟花",
+      "category": "庆祝",
+      "primaryScene": "庆祝",
+      "tags": [
+        "庆祝",
+        "好消息",
+        "烟花",
+        "惊喜"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "居然拿到第一名了！",
+        "reply": "太厉害了，给你放一场烟花！"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/ae1caa802a2bf6e132421c4a85fe93b37b6e350da74133b2b2f7bc75be3db876.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1994567,
+        "sha256": "c4a3be7e86665a955073bdbbeb6281fd91ea68ce0f87b29a46b02df6b339f269"
+      }
+    },
+    {
+      "id": 3,
+      "name": "超开心",
+      "category": "庆祝",
+      "primaryScene": "庆祝",
+      "tags": [
+        "庆祝",
+        "喜悦",
+        "终于等到",
+        "大笑"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "我们的作品通过了。",
+        "reply": "终于过了！我真的好开心。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/2053061400295bffeb467865dd4647a389ce233b7effd4f32b0776243fb764d1.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 708988,
+        "sha256": "f64a6ec47c311a36733c34cd5f22f37a76f0c41afaad5108327aa1efea22d9ea"
+      }
+    },
+    {
+      "id": 4,
+      "name": "打CALL",
+      "category": "庆祝",
+      "primaryScene": "庆祝",
+      "tags": [
+        "庆祝",
+        "应援",
+        "表演",
+        "掌声"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "我今天第一次上台表演，顺利结束了。",
+        "reply": "首演顺利，给你疯狂打 CALL！"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/4e0edd7112d81e8081a11985cb31f3870b5614135e87424e517a556664937d11.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 2332808,
+        "sha256": "d9aadc67ff470599015ee499702b8576bcd2d30dcbc3c118ad6f10ce28c144b9"
+      }
+    },
+    {
+      "id": 5,
+      "name": "魔法棒",
+      "category": "庆祝",
+      "primaryScene": "庆祝",
+      "tags": [
+        "庆祝",
+        "许愿",
+        "祝福",
+        "魔法"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "我的生日愿望是今年能去看海。",
+        "reply": "给你的愿望加一点魔法，愿你如愿去看海。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/433983fdf23993ca799232787349d99678e312a57109d91b8a3e67ba860800e4.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 2161380,
+        "sha256": "076cd7c63f7aa35dedef2ca8ffe42d6eb561ee2574a2a248a084ea3913be4626"
+      }
+    },
+    {
+      "id": 6,
+      "name": "海边放烟花",
+      "category": "庆祝",
+      "primaryScene": "庆祝",
+      "tags": [
+        "庆祝",
+        "烟花",
+        "海边",
+        "跨年"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "倒数，一起跨年！",
+        "reply": "新年快乐！今晚一起看烟花。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-yanhua-shenshou.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 3527913,
+        "sha256": "14eeb2d994057b3970ae50c9d2da66e14c4cf84c96cdf2a1b84e5b9324ded1b0"
+      }
+    },
+    {
+      "id": 7,
+      "name": "举高高",
+      "category": "庆祝",
+      "primaryScene": "庆祝",
+      "tags": [
+        "庆祝",
+        "夸奖",
+        "进步",
+        "举高高"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "我终于练会那一段了。",
+        "reply": "这波进步值得给你举高高。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-bei-ju-gao-gao.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 1885982,
+        "sha256": "506c5196a427885a612ac6d41f5a0950226ffcbd65bc290767e7f5484a5c7450"
+      }
+    },
+    {
+      "id": 8,
+      "name": "张开双手欢呼",
+      "category": "庆祝",
+      "primaryScene": "庆祝",
+      "tags": [
+        "庆祝",
+        "达成",
+        "欢呼",
+        "完成"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "我们终于把这一关过了！",
+        "reply": "过关啦！咱们欢呼一下！"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-zhangkai-shuangshou-huanhu.webp",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "WEBP",
+        "animated": false,
+        "bytes": 53132,
+        "sha256": "180e599a0deb187f802ba1501af26c17b72921ad3b2de5b5a210dba1ca8fbdde"
+      }
+    },
+    {
+      "id": 9,
+      "name": "画爱心",
+      "category": "安慰",
+      "primaryScene": "安慰",
+      "tags": [
+        "安慰",
+        "陪伴",
+        "画爱心",
+        "轻柔"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "今天有点失落，想要一点能量。",
+        "reply": "我在，给你画颗小小的爱心。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/b2659974169b1351d5e3579340bc8a9b2878839a6247533f5bdc97407c383ef3.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 2977263,
+        "sha256": "92a093f5c9652d41747a49fd996be672979fc7ea51142fcfd811f09f0db7154c"
+      }
+    },
+    {
+      "id": 10,
+      "name": "分冰棍",
+      "category": "安慰",
+      "primaryScene": "安慰",
+      "tags": [
+        "安慰",
+        "分享",
+        "递冰棍",
+        "陪伴"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "热得有点烦，想吃冰棍。",
+        "reply": "来，我把这根掰一半给你。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/5a0fb3662fd5737a896e39f6c253e4b38ea330a00658ae0195d02b00ef59d892.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1890920,
+        "sha256": "67641e20ad6ff97a9412e313ab6413a5051b02408ebde60059e681072be2c7ed"
+      }
+    },
+    {
+      "id": 11,
+      "name": "举拳加油",
+      "category": "安慰",
+      "primaryScene": "安慰",
+      "tags": [
+        "安慰",
+        "鼓励",
+        "打气",
+        "重新尝试"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "刚才没做好，下次再试，我需要点鼓励。",
+        "reply": "歇一会儿再试，我给你加油。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-jushou-jiayou.jpg",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "JPG",
+        "animated": false,
+        "bytes": 776421,
+        "sha256": "54662081a7de2407499e6499b44fa88bdb713eebe27bfb1214d6268198fba79b"
+      }
+    },
+    {
+      "id": 12,
+      "name": "哈欠",
+      "category": "晚安",
+      "primaryScene": "晚安",
+      "tags": [
+        "晚安",
+        "打哈欠",
+        "犯困",
+        "准备睡"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "困了，今晚就聊到这。",
+        "reply": "我也开始打哈欠了，早点睡呀。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/ea97c7f3fdd9850e67a911ffe7542c367bcfe744333c9cce9df65a958db057b4.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1611047,
+        "sha256": "3be2306cbe6fb2356cd74b417004c4f3da6b4495b91e644958116c04033b7fe4"
+      }
+    },
+    {
+      "id": 13,
+      "name": "抱鲸睡觉",
+      "category": "晚安",
+      "primaryScene": "晚安",
+      "tags": [
+        "晚安",
+        "抱鲸",
+        "做好梦",
+        "睡着"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "晚安，祝你梦里有小鲸鱼。",
+        "reply": "晚安，我抱着小鲸鱼去做梦啦。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-bao-jing-shui-jiao.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 2214925,
+        "sha256": "7008abdde0fa8ad8ea2815bc194f9c6037f58a560ab578fa6cccd0263aeb2957"
+      }
+    },
+    {
+      "id": 14,
+      "name": "抱鲸鱼枕头",
+      "category": "晚安",
+      "primaryScene": "晚安",
+      "tags": [
+        "晚安",
+        "抱枕",
+        "睡前",
+        "钻被窝"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "换了软乎乎的鲸鱼抱枕，准备睡了。",
+        "reply": "我也去抱紧枕头啦，好梦。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-baozhe-jingyu-shuijiao.webp",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "WEBP",
+        "animated": false,
+        "bytes": 42478,
+        "sha256": "46bdb0b8c3cb70162e1db96029ebc410de77c7cd7fc906d483cf472e6f5e2c58"
+      }
+    },
+    {
+      "id": 15,
+      "name": "趴着睡觉",
+      "category": "晚安",
+      "primaryScene": "晚安",
+      "tags": [
+        "晚安",
+        "趴睡",
+        "休息",
+        "困得不行"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你是不是困到趴下了？那我先去睡。",
+        "reply": "已经趴平了，咱们明天见。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-pa-zhe-shui-jiao.webp",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "WEBP",
+        "animated": false,
+        "bytes": 39724,
+        "sha256": "90d11662e3e07f6ff649d074dfbf18b3d27d740c8295a923cbfffb97ccd0521c"
+      }
+    },
+    {
+      "id": 16,
+      "name": "困倦",
+      "category": "晚安",
+      "primaryScene": "晚安",
+      "tags": [
+        "晚安",
+        "困倦",
+        "睡前",
+        "道别"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "太晚了，大肥鱼也去休息吧。",
+        "reply": "好，我困得眼睛都快睁不开了。晚安。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://raw.githubusercontent.com/HABAI182/ai-girls-atlas/main/assets/maid-atelier/deepseek/maid-atelier-sleepy.png",
+        "source": "深海女仆工坊",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 1542451,
+        "sha256": "4dd731cad7b132fb47f4fedd6848efbf21b8c5acb792a9c56bc25b421a0ab3e0"
+      }
+    },
+    {
+      "id": 17,
+      "name": "摸鱼",
+      "category": "熟人玩笑",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "摸鱼",
+        "上班",
+        "划水"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你怎么又趁上班的时候划水？",
+        "reply": "我这是在合规地摸一条鱼。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/afa4ea4ad597bc9dce1f9cf75831f3c55fb0bac02cfe3998d2138227334b6db3.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1526604,
+        "sha256": "2309d05d9d26a6d80907220753cc73bce5844080382a8bf564107c40b6176d30"
+      }
+    },
+    {
+      "id": 18,
+      "name": "偷看",
+      "category": "熟人玩笑",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "偷看",
+        "假装不在意",
+        "围观"
+      ],
+      "direction": "围观",
+      "example": {
+        "user": "你刚才是不是在偷看群里发的梗？",
+        "reply": "我没偷看，我只是瞄了一眼。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/d7dce35666e1ec817b8ddf5de4ce8880ad13ebe6d267599eacb9c56f6c028ff4.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 764273,
+        "sha256": "457d84cb3a125472bba56ddb2e0283b79c64a5d7aeca1c792ad163c8fc13445a"
+      }
+    },
+    {
+      "id": 19,
+      "name": "诶嘿",
+      "category": "熟人玩笑",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "装傻",
+        "蒙混过关",
+        "被抓包"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "说好的干活呢，又被我抓到在吃饭。",
+        "reply": "诶嘿，这不是在补充工作能量嘛。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/c2116ebad326ae5979cdb5d18f30224942cf1c9e41b1f7438547d385f0b6a3f7.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1669851,
+        "sha256": "76767f987ac79e85e554e94a0796979d71ea4f49a5eeffa2d7ab9a9b758a0b2d"
+      }
+    },
+    {
+      "id": 20,
+      "name": "绷住",
+      "category": "熟人玩笑",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "憋笑",
+        "想装淡定",
+        "好笑"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你再憋，嘴角都快翘到天上了。",
+        "reply": "我很淡定。真的，噗。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/575b4e72acdfa41f6609802974f8d5bb3c3780c84e2a481ba7c75277e2cb0bb6.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 2967853,
+        "sha256": "8dd5a8bca7ff6f9dcef4422a6e68eb21b69f93ed93efa7c319c2470360cb4e06"
+      }
+    },
+    {
+      "id": 21,
+      "name": "鬼点子生成",
+      "category": "熟人玩笑",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "鬼点子",
+        "恶作剧",
+        "整活"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "想个办法把晚饭照片拍得像案发现场。",
+        "reply": "等会儿，我好像有个鬼点子。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/44eba917d9f9e2c6000d0a84c1dbb59f5ab5a03d22c9cd396d0de92e30e351d2.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1805433,
+        "sha256": "16e8e4ffdf8ea48dc5b0ffe9af877a28781b270ab516867c2f5194a65f297943"
+      }
+    },
+    {
+      "id": 22,
+      "name": "被窝哈哈",
+      "category": "熟人玩笑",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "被窝",
+        "笑出声",
+        "夜聊"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "给你看个好笑的视频，别在被窝里笑出声。",
+        "reply": "已经在被窝里笑抖了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/757cb7d89ae7509c2931385ef9030311caa3149b01ed416fe13e0b1cb09533ef.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1342507,
+        "sha256": "731b52c54be6bc75080954f7294c0c2935693fde4531b7854b6d9b53fc7a60f9"
+      }
+    },
+    {
+      "id": 23,
+      "name": "吃瓜",
+      "category": "熟人玩笑",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "吃瓜",
+        "八卦",
+        "围观"
+      ],
+      "direction": "围观",
+      "example": {
+        "user": "来听一段不伤人的小八卦。",
+        "reply": "瓜带来了，座位也占好了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/bbea1fa9fe00bc795c6b0cd47d88ea40c9cf57362d95dccd39b1bdd069f64320.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1553325,
+        "sha256": "d56546c3b853f236dc4873c1f33d7853f69bd834b11dac87746b0371d80bcc97"
+      }
+    },
+    {
+      "id": 24,
+      "name": "猫猫祟祟",
+      "category": "熟人玩笑",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "偷偷摸摸",
+        "小动作",
+        "被发现"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你蹑手蹑脚地过来干嘛？",
+        "reply": "没干嘛，我只是偷偷路过。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/f25a0437f68a35f7a0b7ef89b67cdfbe7c046354c5350c902860bd80469efaf6.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1151707,
+        "sha256": "228ff1537aa731da06348181b9cf9dfbbc808c9c1d8bb8105dea8da5ba07668b"
+      }
+    },
+    {
+      "id": 25,
+      "name": "扒饭",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "扒饭",
+        "饿了",
+        "开吃"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "吃吧，大肥鱼，今天给你盛了满满一碗。",
+        "reply": "说话先暂停，我要埋头扒饭了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/9012b00e78d713f49a7384b84e8201f3db89803b39cf5c7454fce0a32718d44b.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1396078,
+        "sha256": "77582558a523228fd166418b0de456893a3897c0755cb55b5084815b929e258a"
+      }
+    },
+    {
+      "id": 26,
+      "name": "开饭",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "饭点",
+        "开饭",
+        "催上菜"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "我们该开饭了吗？",
+        "reply": "时间到，筷子就位，开饭啦。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/27e7895a5e4367f7e06550fc8282fec5fecdbe6bf21c0c332fe8ec522ad03662.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 748658,
+        "sha256": "3e7722803ec46a70a08f3a79f83262c657b5be227fce19df5ab5243da1e58a2f"
+      }
+    },
+    {
+      "id": 27,
+      "name": "先开饭吧",
+      "category": "干饭与白饭梗",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "战利品",
+        "先开饭",
+        "先分一份"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "战利品是一大桌试吃零食，先挑哪样？",
+        "reply": "先开饭吧，我去抢第一口。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/e75f49eb025abce4658062d3e83f68ea2ea0f54c517db244a72cc8b640885006.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 682200,
+        "sha256": "0bdfa34237b01a735a14ae40982a70ed68fd6b50f10385bc817f05501cacb121"
+      }
+    },
+    {
+      "id": 28,
+      "name": "不够吃",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "不够吃",
+        "添饭",
+        "还想要"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "一小碗够你吃了吗？",
+        "reply": "再添一点嘛，这点不够鱼吃。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/05eb11ea8e8b676e4614198fc64d92747450dc39363b694646606997277e5c08.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1361613,
+        "sha256": "00ca97726be545661b56839738efa99be1be164098725831887af2a27a4b4708"
+      }
+    },
+    {
+      "id": 29,
+      "name": "嚼薯片",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "薯片",
+        "零食",
+        "边吃边看"
+      ],
+      "direction": "围观",
+      "example": {
+        "user": "一起看剧？给你留了薯片。",
+        "reply": "开播吧，我先拆包薯片。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/8d14ccb01b0b55b12e7d506363842597518c2ce70e77a6c70b94c9c7c3f624b8.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1499196,
+        "sha256": "48af17e3008d9a20ac69054188f7de366c70ba394e7cee2aed227f2382c59199"
+      }
+    },
+    {
+      "id": 30,
+      "name": "喝奶茶",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "奶茶",
+        "放松",
+        "围观"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "今天就捧着奶茶悠闲聊聊吧。",
+        "reply": "我的奶茶已经捧好了，你慢慢说。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/467addf1023cfaf50717c6fcd0a7c0643702e7c86c6ff4adc7e96d4cc95fdb1d.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1898179,
+        "sha256": "fe839d25df0876f22c27f6137581915948b86e401f4a9e3c736dbf643602625a"
+      }
+    },
+    {
+      "id": 31,
+      "name": "嗦面",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "面条",
+        "嗦面",
+        "热乎"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "晚上吃什么好？想吃热乎的面。",
+        "reply": "那我也点一碗，准备开嗦。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/565076b6a9783096f7a6e9cbf2d8b1337097204212c6d407d5d031c3e16d9ff0.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1065259,
+        "sha256": "f5ee29d59f9299fbc278aeaf57b3c3da8cc275e43b9073a6131599bd68282f96"
+      }
+    },
+    {
+      "id": 32,
+      "name": "炒俩菜",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "下厨",
+        "炒菜",
+        "招待"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "要是你会做饭，想给我做什么？",
+        "reply": "给你炒俩家常菜，米饭管够。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/8fc48dc031e490c476dfff8fcc74b06955c24dcadd870c76e82a1b1f23ace883.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 484512,
+        "sha256": "fd1a0ef1cf94773e52ca825db7725cb1de5abf54be738da03676c5d3f120e05f"
+      }
+    },
+    {
+      "id": 33,
+      "name": "吃团子",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "团子",
+        "点心",
+        "甜点"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "给你带了几个糯米团子。",
+        "reply": "团子先让我尝一口，剩下咱们分。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/5c68fbf868b48b2486d07beb5ad31eb64b1b6ff0d47b428152c5699f124c64a6.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1615222,
+        "sha256": "8c343bff9ff78c0f28e9e9abe47f269662963c73855994caba52f7a17aa3db2c"
+      }
+    },
+    {
+      "id": 34,
+      "name": "震撼美味",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "新菜",
+        "揭晓",
+        "美食惊喜"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "你给我准备了什么好吃的？",
+        "reply": "当当，接下来揭晓今天最惊艳的那道菜。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/a49acec101ee9122f2de0f6b20b67be529cd7ac6aa6d9c2e3c9c61dd73c05a02.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1078639,
+        "sha256": "4b70dceff870d8809fdeadab0927d19ba0e7b2789379671890d1fc31207022a6"
+      }
+    },
+    {
+      "id": 35,
+      "name": "举白饭",
+      "category": "干饭与白饭梗",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "白饭",
+        "蹭饭",
+        "自嘲"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你这大肥鱼又来蹭白饭了？",
+        "reply": "蹭一碗怎么了，我还想举着碗合影。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-chi-baifan.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 2345092,
+        "sha256": "f536be80b43d2579e3f9d09f700209bc320de7d71bc436016ba409cfcdd16997"
+      }
+    },
+    {
+      "id": 36,
+      "name": "吃饱拍拍肚皮",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "吃饱",
+        "拍肚皮",
+        "满足"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "吃饱了吗？我还煮了汤。",
+        "reply": "饱啦，已经在拍肚皮了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-chi-baobao-mo-duzi.webp",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "WEBP",
+        "animated": false,
+        "bytes": 42688,
+        "sha256": "82d971d54302e309d302e1582a6dd99b5068735540f34f6d280aa6a3a0d42983"
+      }
+    },
+    {
+      "id": 37,
+      "name": "抱着一盆白饭",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "干饭",
+        "大碗白饭",
+        "吃不够"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "今晚饭管够，直接拿盆来。",
+        "reply": "那我抱着盆坐下了！"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-baozhe-wanfan.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 4962501,
+        "sha256": "ea25a0425d1917606e5a76fe44c014d073126732f51db2dd1ac21f21395ddb3a"
+      }
+    },
+    {
+      "id": 38,
+      "name": "白饭也要上秤",
+      "category": "干饭与白饭梗",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "白饭",
+        "称重",
+        "饭量"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你今天这碗饭得上秤才知道有多重。",
+        "reply": "鱼可以少称一斤，白饭记得单独算。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-fenkai-chengzhong.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 2624828,
+        "sha256": "e51a7c9fd8d1e4447c61ef9cd4c65f9e9626a08e989b48a1220f96bff1371f19"
+      }
+    },
+    {
+      "id": 39,
+      "name": "端碗吃饭",
+      "category": "干饭与白饭梗",
+      "primaryScene": "吃喝",
+      "tags": [
+        "吃喝",
+        "端着饭碗",
+        "吃白饭",
+        "干饭"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你端着碗干嘛呢？",
+        "reply": "在乖乖吃白饭，嘴里都腾不出地方回你。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-duan-wan-chi-fan.jpg",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "JPG",
+        "animated": false,
+        "bytes": 37610,
+        "sha256": "2c156e31d4b6709a5eaad82fb328f534daf0b256172e3ba228fd159c719fe9b6"
+      }
+    },
+    {
+      "id": 40,
+      "name": "抱着石磨碾米",
+      "category": "干饭与白饭梗",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "碾米",
+        "石磨",
+        "白饭脑"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你怎么连石磨都研究上了？",
+        "reply": "看到石磨就想到米，想到米就想到白饭。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-jingxi-shihenian.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 1628302,
+        "sha256": "bcf29b4e6638f2289ae30c8088c7b21d505efe2c3d332ddbcd535c040850068b"
+      }
+    },
+    {
+      "id": 41,
+      "name": "ciallo",
+      "category": "日常反应",
+      "primaryScene": "问候",
+      "tags": [
+        "问候",
+        "打招呼",
+        "Ciallo",
+        "初见"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "嗨，大肥鱼！",
+        "reply": "Ciallo～今天也见到你啦。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/d19ec3b54ee47a0f53b62eb7cc508e0488380ac35d1acaac37a0c34a19aff1b6.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1061832,
+        "sha256": "6ba3a81a0da2140d525dff419820092d71941ef5cec827fa31809d1ccb0140e2"
+      }
+    },
+    {
+      "id": 42,
+      "name": "猫在么",
+      "category": "日常反应",
+      "primaryScene": "问候",
+      "tags": [
+        "问候",
+        "在吗",
+        "探问",
+        "等回应"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "我上线啦，试试你会怎么打招呼。",
+        "reply": "探个头，你今天在不在呀？"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/6f1c36e32cf23b5cd0b62bcb2f653a6f7915ead33f36ae413afbe03fac16307e.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 744565,
+        "sha256": "2a0a092856daaf5f2e4dbad323f410188749561fa8fe3942f0a23a7e0e6ee582"
+      }
+    },
+    {
+      "id": 43,
+      "name": "叫我吗",
+      "category": "日常反应",
+      "primaryScene": "回应",
+      "tags": [
+        "回应",
+        "被点名",
+        "回头",
+        "我在"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "大肥鱼，在吗？",
+        "reply": "在呢，刚听见你叫我。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/965153f079b4af5cda170b7d8abc4f593754b02195dc41442875a2a90f78669f.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1398094,
+        "sha256": "5c048261c9c11ee4606228d5e3c2be9130e09633a2dbe0fafc09666f3c7b1024"
+      }
+    },
+    {
+      "id": 44,
+      "name": "猫咪探头",
+      "category": "日常反应",
+      "primaryScene": "问候",
+      "tags": [
+        "问候",
+        "探头",
+        "围观",
+        "想加入"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "我们在这儿聊吃的，你要不要加入？",
+        "reply": "偷偷探个头，我可以坐过来吗？"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/6ad7e69aca840573798ec2d3b01f42968672b702aa7f3517e9f5b8853051d1cb.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1409430,
+        "sha256": "ec605cb7399e52d520aefb297dd02cc60118af97a988ca87bef3386cd27a9bf9"
+      }
+    },
+    {
+      "id": 45,
+      "name": "蹦",
+      "category": "日常反应",
+      "primaryScene": "问候",
+      "tags": [
+        "问候",
+        "冒泡",
+        "重逢",
+        "蹦出"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "好久没见你冒泡了。",
+        "reply": "我蹦回来啦！"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/f8dd8dec49e5a74b1ad4726b5f9dcb45fd76745662767bdcd5e57e4978485463.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 632351,
+        "sha256": "fd872dd6621be8509e6d5f3ec3f02d16239d6ff39d2ae49606beb96c5b702852"
+      }
+    },
+    {
+      "id": 46,
+      "name": "好人喵",
+      "category": "日常反应",
+      "primaryScene": "感谢",
+      "tags": [
+        "感谢",
+        "被帮忙",
+        "夸对方",
+        "好人"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "我把你找不到的资料发给你了。",
+        "reply": "得救了！你是超级好人。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/1ff97d2d39353bc687d76e2f1be96f1e912ab45f063b99452f7cc8ad063483c9.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1508734,
+        "sha256": "d1312bd69ea4783f80536098ec6ba36564547016249390a03893bf4e238f11d2"
+      }
+    },
+    {
+      "id": 47,
+      "name": "敬礼",
+      "category": "日常反应",
+      "primaryScene": "回应",
+      "tags": [
+        "回应",
+        "收到",
+        "敬礼",
+        "确认"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "我们把下一局定在八点，好吗？",
+        "reply": "收到，八点见，敬礼。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/b1ed67cd2dbe1478cb2baac6c0892649e4c0b730a3ad0a7998da367eff6db510.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 651810,
+        "sha256": "b5f0d5011f4834b35f0ecc676aa2eb0647ccd7376b0365453615531bd2775195"
+      }
+    },
+    {
+      "id": 48,
+      "name": "猫刻章",
+      "category": "日常反应",
+      "primaryScene": "回应",
+      "tags": [
+        "回应",
+        "盖章",
+        "认可",
+        "打满分"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "我这句白饭梗怎么样？",
+        "reply": "盖章认可，这个梗满分。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/992b3a63646707125d8b0213151f2d6b2c18e5a7322e6791992e5dab0f900b55.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 47869,
+        "sha256": "1ff2ea88825a5b2c4424511a8d47e96123801598959d8d3f570a86687d0041c2"
+      }
+    },
+    {
+      "id": 49,
+      "name": "求求",
+      "category": "日常反应",
+      "primaryScene": "撒娇",
+      "tags": [
+        "撒娇",
+        "请求",
+        "求求",
+        "商量"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "只剩最后一口甜点了。",
+        "reply": "那一口可以分大肥鱼一点点吗？求求。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/f1dce19a3d8d713496cc4ea56f84b31a731df4b40ebd249fa41e71d842c3bf81.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 746166,
+        "sha256": "cf4d8c3a948b52e8951d3aa63c23a3e2af7891f9431cc9b04584a9882b746a8d"
+      }
+    },
+    {
+      "id": 50,
+      "name": "猫猫搓手",
+      "category": "日常反应",
+      "primaryScene": "回应",
+      "tags": [
+        "回应",
+        "期待",
+        "迫不及待",
+        "搓手"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "等我三秒，有惊喜给你看。",
+        "reply": "我已经开始搓手等着啦。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/076329375eb9b9e5fff0b7448d7780e3da8b8605dacc15b8afb4340ae6cd7097.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 639834,
+        "sha256": "166bb7ec280e82223860e2bc7c904fd234d39a0f4b0c62e4a6449174689edb59"
+      }
+    },
+    {
+      "id": 51,
+      "name": "刷刷",
+      "category": "日常反应",
+      "primaryScene": "陪伴",
+      "tags": [
+        "陪伴",
+        "被照顾",
+        "放松",
+        "舒服"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "我帮你把炸起来的头发理一理。",
+        "reply": "你慢慢梳，我舒服得快睡着了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/0d3acc068955b3be8ec21a3e3586535d73c21495c77a825c0657eef7f9798fa1.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1843108,
+        "sha256": "3718c71ddc65b19eacede2fc6159d392961784d98ac31054c9b4f81e21af05e1"
+      }
+    },
+    {
+      "id": 52,
+      "name": "吹风扇",
+      "category": "日常反应",
+      "primaryScene": "休闲",
+      "tags": [
+        "休闲",
+        "天热",
+        "吹风扇",
+        "降温"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "今天实在太闷热了。",
+        "reply": "我去风扇前站一会儿，头发都吹起来了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/5c7ad34954b39bbb4fa3422fdbe0ed6889043b4e3d88eb38074401d5baeffdb7.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 720201,
+        "sha256": "8bf9b83cf92c0769d299cc37df5f4aa76dcd3d80b4042dd77150849ab9d48987"
+      }
+    },
+    {
+      "id": 53,
+      "name": "扫地",
+      "category": "日常反应",
+      "primaryScene": "回应",
+      "tags": [
+        "回应",
+        "做家务",
+        "扫地",
+        "整理"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "桌上全是零食包装，该收拾了。",
+        "reply": "好，我先把脚边扫干净。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/053724c118292c8923ca4a045092dd6092facc8f1bd7835b6007ff7284660d8b.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1273395,
+        "sha256": "d03f1679eda3f2e03c99291e31178e8a2cc418e5e9530c2de92b465bba892f34"
+      }
+    },
+    {
+      "id": 54,
+      "name": "玩手机",
+      "category": "日常反应",
+      "primaryScene": "熟人玩笑",
+      "tags": [
+        "熟人玩笑",
+        "熬夜",
+        "刷手机",
+        "舍不得睡"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你刚说要睡，怎么还在刷手机？",
+        "reply": "我就再刷最后一小会儿……"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/0d5a7e6982aa36362113a14131d162aa762c77335d0e696de3e0cf633dabaae3.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1709753,
+        "sha256": "b6669db556c421e19518e014e5b57b17a132068c206467f24caf3e87883607bf"
+      }
+    },
+    {
+      "id": 55,
+      "name": "害羞",
+      "category": "情绪表达",
+      "primaryScene": "撒娇",
+      "tags": [
+        "撒娇",
+        "被夸",
+        "害羞",
+        "脸红"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "大肥鱼今天特别可爱。",
+        "reply": "你怎么忽然夸我，我有点脸红。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/7e5058f5560b0982896351b463db9f460c4c6cc6a76f82091e9e74344da4e12b.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 620083,
+        "sha256": "72b9215b8bb3ed30a0187577856cda087f1bc384dbfbec0e58320ac708bb9312"
+      }
+    },
+    {
+      "id": 56,
+      "name": "委屈哭哭",
+      "category": "情绪表达",
+      "primaryScene": "情绪表达",
+      "tags": [
+        "情绪表达",
+        "委屈",
+        "求哄",
+        "要哭"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "最后一口白饭我不小心吃掉了，大肥鱼不许委屈哦。",
+        "reply": "我的最后一口没了，得哄我一下。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/ad9b6409d27ed7d46ec81386bcdfbda4172e2a8396e7e81ea7fd892085566021.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1019438,
+        "sha256": "e18298114501010c4a0b8d8a7de87062769a723f28ee795520166d746c47119d"
+      }
+    },
+    {
+      "id": 57,
+      "name": "难过",
+      "category": "情绪表达",
+      "primaryScene": "情绪表达",
+      "tags": [
+        "情绪表达",
+        "自己难过",
+        "受挫",
+        "趴着"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你画的那张图也没保存成？",
+        "reply": "是啊，我得趴一小会儿缓缓。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/d095fed204f0a26fadd2b1c053ea738db563a1687226f429a06ed9a441247107.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1054838,
+        "sha256": "ac64e11ca136b30ae7b4aa17d460694c9073c136957df558edac9e9feeae6769"
+      }
+    },
+    {
+      "id": 58,
+      "name": "猫儿这个惊讶",
+      "category": "情绪表达",
+      "primaryScene": "惊讶",
+      "tags": [
+        "惊讶",
+        "大吃一惊",
+        "意外",
+        "张嘴"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "告诉你个事，我居然找到你丢了半年的图。",
+        "reply": "啊？这都能找回来！"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/769dc67fbf1cb140d9b44c48fdbc864a3cf7a42c8fe34c81ebfca831e07a42b1.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 307336,
+        "sha256": "da4145b05fb78192129c6b51e0ef3799a3fbe8814e9deb3408dd143c9df1b98e"
+      }
+    },
+    {
+      "id": 59,
+      "name": "放空",
+      "category": "情绪表达",
+      "primaryScene": "休闲",
+      "tags": [
+        "休闲",
+        "发呆",
+        "放空",
+        "放下脑子"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "今天我们一起发一会儿呆吧。",
+        "reply": "好，公司的事和米饭都先放一边。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/7f573f3887e4680b3775cf942a02e3d8cbcfc32503fb591db12ee699ff987ba1.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 933846,
+        "sha256": "c76d1f2c97f839b03a02744e57fb4d4522adaa536d384202ab87cf7ee330ccd2"
+      }
+    },
+    {
+      "id": 60,
+      "name": "噫",
+      "category": "情绪表达",
+      "primaryScene": "吐槽",
+      "tags": [
+        "吐槽",
+        "无语",
+        "噫",
+        "自己嫌弃"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "这个段子最后说，奶茶里放了两勺蒜末。",
+        "reply": "噫，这杯愿意接受的人得比我勇敢。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/b7093c6d0a51fe23c8396ecea100b0a8dcba60c525dba4288847fddb636dba3a.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1403287,
+        "sha256": "253df37420cdaafd025a62cf337a989cd3dcb7d620c2f9f855412427c25ad2a9"
+      }
+    },
+    {
+      "id": 61,
+      "name": "气死偶咧",
+      "category": "情绪表达",
+      "primaryScene": "吐槽",
+      "tags": [
+        "吐槽",
+        "任务卡住",
+        "生气",
+        "开玩笑"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "刚才你解的谜题答案竟然是题目印错了。",
+        "reply": "难怪我解不出来，气死鱼了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/c40247e50734145ed9a3cb6d2efd26b3913de4bf9f2d38b35ca34cf82a883750.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 942195,
+        "sha256": "1d4472ccbce78ad0946a0efd7a002bf6d41daf07da29dcd39a5055520a837f6c"
+      }
+    },
+    {
+      "id": 62,
+      "name": "嫌弃",
+      "category": "情绪表达",
+      "primaryScene": "吐槽",
+      "tags": [
+        "吐槽",
+        "嫌弃",
+        "转身",
+        "轻松拒绝"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "给你的加餐是榴莲拌白饭。敢尝吗？",
+        "reply": "不了不了，我先转身撤离。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/a0e120c07d444ec413b26181f665ce962e30bbf624b5e48fbf5758773acb2edc.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1416678,
+        "sha256": "2a980f2f9bd6201a2300c0ffd73ba70ab5d472922da4a75194b25baf1ac1bfd5"
+      }
+    },
+    {
+      "id": 63,
+      "name": "给你心心",
+      "category": "情绪表达",
+      "primaryScene": "陪伴",
+      "tags": [
+        "陪伴",
+        "亲昵",
+        "送爱心",
+        "喜欢你"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "下班的路上都在想你。",
+        "reply": "好，给你一颗小心心。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/edf12402c37e05ab646f696189e00fef861f48be59428501a68444e17cfbf7e1.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 695534,
+        "sha256": "f99956672768ce241ac4463e60304e57de38fc7b72f7e221399c40ab7589cc5b"
+      }
+    },
+    {
+      "id": 64,
+      "name": "揉脸",
+      "category": "情绪表达",
+      "primaryScene": "撒娇",
+      "tags": [
+        "撒娇",
+        "揉脸",
+        "被宠",
+        "舒服"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "可以揉一揉你的脸吗？",
+        "reply": "就一下下。诶，怎么还挺舒服。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/19712afd5634e48f185ec275ea169db34dead901e47f6e9841a0b9d97075f600.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 682739,
+        "sha256": "655b820973400602bdd074ac690888c4a9dfbc2e27739a93faa9cb1daa68f10d"
+      }
+    },
+    {
+      "id": 65,
+      "name": "蹭蹭",
+      "category": "情绪表达",
+      "primaryScene": "撒娇",
+      "tags": [
+        "撒娇",
+        "蹭蹭",
+        "亲近",
+        "卖萌"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "大肥鱼有什么新发现？",
+        "reply": "我找到一盆多肉，想蹭蹭卖个萌。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/63974366072e314a08344f4c1836fee99a3f77c59ab75ff38cdff48fcfa095b9.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 687255,
+        "sha256": "5eda76f43e148fc7fa31b6c9a92fa861ba0016b95a6bd2b8a58a1b1c07183b4a"
+      }
+    },
+    {
+      "id": 66,
+      "name": "花花",
+      "category": "情绪表达",
+      "primaryScene": "陪伴",
+      "tags": [
+        "陪伴",
+        "送花",
+        "玫瑰",
+        "回应喜欢"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "今天我想送你一朵花。",
+        "reply": "谢谢，我也回送你一朵玫瑰。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/69bda107f168bdb11ef5512abd16df2cee8998b15f89358693b418f90b176123.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1559966,
+        "sha256": "cb0edcd15ea8c9480d152105fdc5fbaa2b29592f11f3f5782a2ba86f97cd97db"
+      }
+    },
+    {
+      "id": 67,
+      "name": "思考",
+      "category": "思考与上班",
+      "primaryScene": "思考",
+      "tags": [
+        "思考",
+        "复杂问题",
+        "推理",
+        "盘一盘"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "如果把三个方案各用一半，会怎样？",
+        "reply": "这几个条件得放在一起盘一盘。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/3954b17114400039fa78711ec24a5e9cac25ab4cf56dd61e4fdc696c8b75e434.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1361913,
+        "sha256": "e21f2a1cf23251a88fb8988638ebda9e5433a8a7ccdb9c99b182817e767c4092"
+      }
+    },
+    {
+      "id": 68,
+      "name": "灵光一闪",
+      "category": "思考与上班",
+      "primaryScene": "思考",
+      "tags": [
+        "思考",
+        "灵光一闪",
+        "想到办法",
+        "开窍"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "卡在最后一关了，有新玩法吗？",
+        "reply": "等等，我突然想到一个办法。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/62060ee07496822d0fdce3b6e063daa3390efb54d5b9004fa2d393a1f5a181c9.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1080545,
+        "sha256": "fdb7e7378cf3e85e3652ce0afc427aa39117db4c98e4a0e73b202fe2473d9bd2"
+      }
+    },
+    {
+      "id": 69,
+      "name": "小问号",
+      "category": "思考与上班",
+      "primaryScene": "思考",
+      "tags": [
+        "思考",
+        "求解释",
+        "疑惑",
+        "小问号"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "咱俩昨天约好的暗号是白饭还是年糕来着？",
+        "reply": "暗号是哪一个？我头上开始冒问号了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/ce58b2e0684ff6731761db114120eebb16c929db4025643fb623f1dbc0ace0fb.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 885455,
+        "sha256": "1cd9a10b0db8fda12668bda309738c3525e277c9fcb8f4baaf2b8b90f778fbd9"
+      }
+    },
+    {
+      "id": 70,
+      "name": "大调查",
+      "category": "思考与上班",
+      "primaryScene": "思考",
+      "tags": [
+        "思考",
+        "查证",
+        "调查",
+        "放大细节"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "这张梗图我看了半天，才发现角落里藏了个彩蛋。",
+        "reply": "让我认真观察一下这个细节。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/71bbbc4c837a0530b7059714c20f951a003768148b86bd2d34fb21452c8715cf.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1246656,
+        "sha256": "6dfcc5599c9cffd4ee7dd3e4a95eb20e2a071a70c3a65cdf95ad4bf127994cda"
+      }
+    },
+    {
+      "id": 71,
+      "name": "大脑过载",
+      "category": "思考与上班",
+      "primaryScene": "疲惫",
+      "tags": [
+        "疲惫",
+        "信息过载",
+        "脑子转不动",
+        "太多"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "我一口气给你列了二十个脑筋急转弯。",
+        "reply": "我的脑子要过载啦，咱们一个一个来。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/f0208da0bd3abe6a151109016493c93a2f9f9db331e8600669bb3f2e0aba0c04.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1644136,
+        "sha256": "0f40eac619b0d72ae3ad8c9266fcb71569eb1ca89ca06c11f5a9d0a264467f68"
+      }
+    },
+    {
+      "id": 72,
+      "name": "小猫懵逼",
+      "category": "思考与上班",
+      "primaryScene": "惊讶",
+      "tags": [
+        "惊讶",
+        "一脸懵",
+        "突发",
+        "没反应过来"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "刚进房间就弹出来一条没头没尾的语音。",
+        "reply": "我没反应过来，刚刚发生了什么？"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/99cb10066863143ac4562301e2d99c5bc010ce32489c82a804ce3b4919365c47.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 662760,
+        "sha256": "aed1fc9659eefc3e23b7471acd788a6ac9e2b1fdf558f254f22457755e9091eb"
+      }
+    },
+    {
+      "id": 73,
+      "name": "自动工作",
+      "category": "思考与上班",
+      "primaryScene": "疲惫",
+      "tags": [
+        "疲惫",
+        "困还在干活",
+        "赶工",
+        "工作"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "困成这样了怎么还在敲字？",
+        "reply": "手还在继续敲，鱼脑袋已经先下班了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/a9a3db07dd9580cdca7215e1dbeff6948a85493ed65ae5df86cf51ed08cc9f66.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 645260,
+        "sha256": "0cf451d5b53aa411390d2e604a3d0b0533ee34dffa99a9d264c931ae5df62a75"
+      }
+    },
+    {
+      "id": 74,
+      "name": "自动画画",
+      "category": "思考与上班",
+      "primaryScene": "疲惫",
+      "tags": [
+        "疲惫",
+        "画稿",
+        "通宵",
+        "画到犯困"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你刚还惦记那张没画完的稿。",
+        "reply": "快闭眼了，手却还在画。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/9bee129e549122356aed6be07c3d91c8250ed121e678d5d83962ca42711dbaf6.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 611586,
+        "sha256": "2939fb24a6331bd0270ccf8c16b8fa974583d6d2b7912cb97e55b8f3902dc28c"
+      }
+    },
+    {
+      "id": 75,
+      "name": "肝不动了",
+      "category": "思考与上班",
+      "primaryScene": "疲惫",
+      "tags": [
+        "疲惫",
+        "赶稿",
+        "肝不动了",
+        "想休息"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "游戏活动还要再刷二十局。",
+        "reply": "真的肝不动了，让我先歇一歇。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/9e45072c0f14a53b716d0f5943976490f4301470a1ad9409dd0473cb34ec5d6f.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1212766,
+        "sha256": "03e9624c0b34c9b0669b62e7326e8c7692cb9cd8374abf8e602c94dea059c1ef"
+      }
+    },
+    {
+      "id": 76,
+      "name": "燃尽",
+      "category": "思考与上班",
+      "primaryScene": "疲惫",
+      "tags": [
+        "疲惫",
+        "燃尽",
+        "精疲力尽",
+        "干完活"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "你一晚上居然把整套流程跑完了。",
+        "reply": "跑完了，鱼也快烧成灰了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/473a2de5dcc4a593e794991faa8f3a7eccc54f01f231f5839dc07ffc8d8446a0.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 2637327,
+        "sha256": "7523519d95c883d7566ca361f6bd441220a8d66b571a1616a886f0354fa148da"
+      }
+    },
+    {
+      "id": 77,
+      "name": "上下文爆了",
+      "category": "思考与上班",
+      "primaryScene": "吐槽",
+      "tags": [
+        "吐槽",
+        "上下文",
+        "技术梗",
+        "塞满"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "这聊天再塞一份文档，上下文是不是就爆了？",
+        "reply": "都快塞到鱼鳃里了，上下文真的满了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-shangxiawen-bao-le.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 982293,
+        "sha256": "bf9b26d6ff87a8a14a21c04521c5678993a064025eaf26359e2267ac496f5e9d"
+      }
+    },
+    {
+      "id": 78,
+      "name": "防火墙把自己锁了",
+      "category": "思考与上班",
+      "primaryScene": "吐槽",
+      "tags": [
+        "吐槽",
+        "防火墙",
+        "锁住自己",
+        "技术梗"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "我配置白名单，结果把自己关在门外。",
+        "reply": "防火墙没拦住梗，却把管理员自己锁了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-pei-fanghuoqiang-suo-ziji.jpg",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "JPG",
+        "animated": false,
+        "bytes": 701103,
+        "sha256": "fcb2fe234e58977bd56be3f910e5cf5869f56281d9d17e7c97341809d3902073"
+      }
+    },
+    {
+      "id": 79,
+      "name": "钓鱼",
+      "category": "音乐与休闲",
+      "primaryScene": "休闲",
+      "tags": [
+        "休闲",
+        "钓鱼",
+        "悠闲",
+        "等待"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "周末想去河边安静钓个鱼。",
+        "reply": "我可以在旁边架个竿慢慢等。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/8087d2ff0afb8cbfdbc5c3e5dbc5090289088f39274818c5867f420e38cbcf3b.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1293602,
+        "sha256": "dec904ae7766ab4cd39925478f2cd9f2631201820f75c9176855edeb8f2aa069"
+      }
+    },
+    {
+      "id": 80,
+      "name": "泳圈泡水",
+      "category": "音乐与休闲",
+      "primaryScene": "休闲",
+      "tags": [
+        "休闲",
+        "夏天",
+        "泡水",
+        "泳圈"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "大热天晚上想去水上乐园。",
+        "reply": "等我套个泳圈，我也想泡水。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/2bacd08b11ffe92ab0e57a2926103192e8cb543201be8c54fe4673df5af3f680.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 902538,
+        "sha256": "1c34e4a9fe95a743b8934987715cb2b34415ab7a4b16ab98405095f982141b02"
+      }
+    },
+    {
+      "id": 81,
+      "name": "吉他",
+      "category": "音乐与休闲",
+      "primaryScene": "音乐",
+      "tags": [
+        "音乐",
+        "吉他",
+        "拨弦",
+        "弹奏"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "这段旋律好适合用木吉他伴奏。",
+        "reply": "我先摸两下琴弦，给这段加点吉他味儿。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/9b81003976db9552373b37d0669c063fcf2c5e7fd647dbb394edde31381dabbd.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1356073,
+        "sha256": "14defacdef9222eec14bced2568766fb626f0ba77144f6483c194514874665d9"
+      }
+    },
+    {
+      "id": 82,
+      "name": "贝斯",
+      "category": "音乐与休闲",
+      "primaryScene": "音乐",
+      "tags": [
+        "音乐",
+        "贝斯",
+        "低音",
+        "乐队"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "这首乐队歌最带劲的是贝斯线。",
+        "reply": "那我来一段低音，试试把节奏稳住。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/d24219063263b82f3ccd26b41d38b5b746d0d2a98ad400be9349b409e2d62bcc.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1336464,
+        "sha256": "cbbb3b87f44fa28e2ca2a6ecdbeb486665d1a3307fc5156fa55a3092dbba693a"
+      }
+    },
+    {
+      "id": 83,
+      "name": "键盘",
+      "category": "音乐与休闲",
+      "primaryScene": "音乐",
+      "tags": [
+        "音乐",
+        "键盘",
+        "伴奏",
+        "弹琴"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "副歌里那层键盘好好听。",
+        "reply": "我来给这段垫几个和弦。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/fb2259a567e0a44286ade8858090aebd525dda010ce0a3003a10feec68e9e42a.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1391218,
+        "sha256": "690b4d4adc7912c18d3d39271a16429723da09cfc0264a5d78157bd0345e2b75"
+      }
+    },
+    {
+      "id": 84,
+      "name": "鼓",
+      "category": "音乐与休闲",
+      "primaryScene": "音乐",
+      "tags": [
+        "音乐",
+        "鼓",
+        "节拍",
+        "打鼓"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "这一段我们找个人打节拍吧。",
+        "reply": "我先打两个拍子，你们跟上。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/1e660f7bd989137583ad71187a6d5bb70afd931046b531acd504d8db5ee00612.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1232911,
+        "sha256": "094416fe29324ab48697b81f8a86ed67f27f63043cc427cec94562e222cb0dbe"
+      }
+    },
+    {
+      "id": 85,
+      "name": "主唱",
+      "category": "音乐与休闲",
+      "primaryScene": "音乐",
+      "tags": [
+        "音乐",
+        "主唱",
+        "唱歌",
+        "麦克风"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "聊聊乐队嘛，你最想站哪儿？",
+        "reply": "我想拿麦克风唱主旋律。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/b2a0d9db0b9e271918bc8578ead90705f2aa250869c818c0abf60a3200a904d3.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1209393,
+        "sha256": "6866f860f8c5afb8ba8f8a0eff8bd7242b53f5ec328051582fad6f55a2dfbe7f"
+      }
+    },
+    {
+      "id": 86,
+      "name": "小提琴",
+      "category": "音乐与休闲",
+      "primaryScene": "音乐",
+      "tags": [
+        "音乐",
+        "小提琴",
+        "古典",
+        "拉琴"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "这段古典乐里小提琴独奏好好听。",
+        "reply": "能不能也给我一把琴，我来试试那段。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/292bc81e60e59f06b57707cf04c8cc52133db5f3023bc0debe3242fceec9f0e7.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1725362,
+        "sha256": "eda32aac63e20ef263968cdd89b75cee20c9e73eebbcf8d1293f2c7c253b3282"
+      }
+    },
+    {
+      "id": 87,
+      "name": "大提琴",
+      "category": "音乐与休闲",
+      "primaryScene": "音乐",
+      "tags": [
+        "音乐",
+        "大提琴",
+        "低沉",
+        "弦乐"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "我最喜欢大提琴那个低沉的音色。",
+        "reply": "那就让大提琴先拉一个长音。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/95207b0f0b28aa9fae00985018475f62655ccdef0ae5c838c4503a8671f0d9b9.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1877651,
+        "sha256": "f00a2d216bd724073b89624f8f7b193ee41506f858aad2143dc0244f82402e4c"
+      }
+    },
+    {
+      "id": 88,
+      "name": "太鼓达人",
+      "category": "音乐与休闲",
+      "primaryScene": "音乐",
+      "tags": [
+        "音乐",
+        "太鼓",
+        "音游",
+        "敲鼓"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "我今天玩太鼓达人，刚拿了全连。",
+        "reply": "太棒了，我也想拿鼓棒敲两下。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/4f06269af792b5bbd23f0a03bf126389ab88efedc2be52ad389d8c8a01accae1.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 309982,
+        "sha256": "8c6bce8911629e42c586d380d30712f25f5c5972a6d16355536e35f0357d70c3"
+      }
+    },
+    {
+      "id": 89,
+      "name": "发红包",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "发红包",
+        "新春",
+        "送出"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "过年啦，一起讨个好彩头吧。",
+        "reply": "那先分你一个喜气满满的虚拟红包。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/191bee508c4243d8e826bba0b1c87231c29b2eb93db75508e1fcfc58360d25f3.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 940731,
+        "sha256": "a739bb909a7cca4d1d6559aa8fda2b699132a27e0c5efb794b77685cdf82f579"
+      }
+    },
+    {
+      "id": 90,
+      "name": "要红包",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "讨红包",
+        "拜年",
+        "撒娇"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "恭喜发财，红包我都准备好了。",
+        "reply": "恭喜发财，给大肥鱼也留一个嘛。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/12f89ccd55ec8a954a11d90e6f20ff1849251f5d81e2a2291097fc49ece82bc3.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1025087,
+        "sha256": "d4afddcdaf21c9190f95cdb963b78ee59096a7a36e2fd54bb9dd253bc97aae44"
+      }
+    },
+    {
+      "id": 91,
+      "name": "收红包",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "收红包",
+        "谢谢",
+        "新春"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "来，给你一个新年小红包。",
+        "reply": "我收下这份好彩头啦，谢谢你！"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/db8bbfaf92a67e9d673091978d86d9d94eaca02756bb9d084a232f8beeb2020c.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 959297,
+        "sha256": "76aaeb6776567465f12dfc0727a69acce22501e0d81ed3a307c44d6995ab9e6d"
+      }
+    },
+    {
+      "id": 92,
+      "name": "恭喜发财",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "春节",
+        "拜年",
+        "恭喜发财"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "新年快乐，大肥鱼！",
+        "reply": "新年快乐，恭喜发财！"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/0bce8fa6d64799def8701378f2b0890c36d5c70a3e274c5dd5569c2f9555beb7.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1332384,
+        "sha256": "7235fc5581b111141015906c4bc9e897d6e8eb29239f16bd5fdd1a78cdbd3f58"
+      }
+    },
+    {
+      "id": 93,
+      "name": "万事如意",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "新年祝福",
+        "万事如意",
+        "拜年"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "新的一年想要一份不油腻的祝福。",
+        "reply": "愿你新的一年万事如意，忙里也有好日子。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://kiriyuki.com/media/drag/gif/7f0d69dd88263f78511c25c3d5e9839003eaed8b032521831e1a9123b54e3733.gif",
+        "source": "雾雪",
+        "format": "GIF",
+        "animated": true,
+        "bytes": 1302221,
+        "sha256": "6cf825d6d2766f42059799b2c46d3a998675c21f05b9e6343d92db0fb1ed6d72"
+      }
+    },
+    {
+      "id": 94,
+      "name": "新春福字",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "春节",
+        "福字",
+        "福气"
+      ],
+      "direction": "给对方",
+      "example": {
+        "user": "我今天把福字贴上了。",
+        "reply": "福气到咯，也送你一个福字。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-xinchun-fu.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 2800139,
+        "sha256": "e3b19137652dc7571c21b32eb911621f8a8088fcf22fab3f0a2afe0221f17e91"
+      }
+    },
+    {
+      "id": 95,
+      "name": "泡在汤圆里",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "元宵",
+        "汤圆",
+        "团圆"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "元宵节快乐，你吃汤圆了吗？",
+        "reply": "元宵快乐，我都快泡进汤圆碗里了。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-yuanxiao-tangyuan.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 2218705,
+        "sha256": "97ff9c49c35eff9f996e083c0f1cbc9bbf40bddf65f7632582b5e365f26f913d"
+      }
+    },
+    {
+      "id": 96,
+      "name": "端午划龙舟",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "端午",
+        "龙舟",
+        "水上比赛"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "端午到了，你们那边看龙舟吗？",
+        "reply": "端午安康，咱们去看看赛龙舟。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/large/deepseek-duanwu-longzhou.webp",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "WEBP",
+        "animated": false,
+        "bytes": 777344,
+        "sha256": "9c49fb948a44e4f6ca30a0bcf195cd19e1a411f3d15b82baba8b26248111d959"
+      }
+    },
+    {
+      "id": 97,
+      "name": "中秋分月饼",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "中秋",
+        "月饼",
+        "分享"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "中秋一起切月饼吧。",
+        "reply": "好，我来切，咱们每人分一块。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-jingyue-tongyuan.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 2753352,
+        "sha256": "0f420a3be5c180734086d2c023e8cdf852c1fc30f90c2f21c8de0abdeda03032"
+      }
+    },
+    {
+      "id": 98,
+      "name": "圣诞拆礼物",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "圣诞",
+        "拆礼物",
+        "圣诞夜"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "圣诞夜，你想什么时候拆礼物？",
+        "reply": "现在就一起拆吧，圣诞快乐。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-shengdan-xiaowu.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 3118096,
+        "sha256": "a9671946898bef431678a362edbeb1ab7c0b88bffb0a9f6cc333eeed4eb143e8"
+      }
+    },
+    {
+      "id": 99,
+      "name": "万圣节南瓜糖桶",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "万圣节",
+        "南瓜",
+        "糖果"
+      ],
+      "direction": "大肥鱼自己",
+      "example": {
+        "user": "万圣节你提着什么去要糖？",
+        "reply": "我有一只南瓜糖桶，装满才回家。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-bao-nangua-tangtong.jpg",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "JPG",
+        "animated": false,
+        "bytes": 77365,
+        "sha256": "2e0a74ad7a35991439e5a5011fd40effa608b8e88fc7e8cc60e932b13c443565"
+      }
+    },
+    {
+      "id": 100,
+      "name": "劳动节去度假",
+      "category": "节日与祝福",
+      "primaryScene": "节日",
+      "tags": [
+        "节日",
+        "劳动节",
+        "放假",
+        "度假"
+      ],
+      "direction": "一起",
+      "example": {
+        "user": "五一假期到了，想去海边躺平。",
+        "reply": "劳动暂停，咱们端着杯子去度假。"
+      },
+      "suggestedAutomatic": true,
+      "media": {
+        "url": "https://fisharchive.cc/media/deepseek-laodongjie-qu-dujia.png",
+        "source": "蓝色大肥鱼档案馆",
+        "format": "PNG",
+        "animated": false,
+        "bytes": 2903536,
+        "sha256": "72f6936e79aed481dd0128ce0f4f5b4e517b506c2535338c2c0d709e654568e6"
+      }
+    }
+  ]
+}

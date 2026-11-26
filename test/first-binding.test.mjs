@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, mkdirSync, writeFileSync } from 'node:fs';
+import {createHash} from 'node:crypto';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { join } from 'node:path';
+import { dirname,join } from 'node:path';
 import { writeState } from '../src/state.mjs';
 import { createFirstBinding, firstBindingPorts, prepareFirstBinding } from '../src/first-binding.mjs';
+import {recoverBindingTransition} from '../src/binding-transition.mjs';
+import {sourceIdentity,sourceTarget,inspectSourceCandidate} from '../src/source-candidate.mjs';
 import { bridgeDirectory, bootBridge } from './bridge-helper.mjs';
 
 function parse(path) {
@@ -45,7 +48,7 @@ test('first provisioning uses the Connect identity and the live handshake; crede
   const binding = f.open();
   assert.deepEqual(f.options.clawchat.route, { channel: 'clawchat', kind: 'private', account: 'agent', sender: 'alice', conversation: 'dm-alice' });
   assert.equal(parse(f.configPath).owners[0].sender, 'alice');
-  assert.doesNotMatch(readFileSync(binding.path, 'utf8'), /not-a-real-token|dm-alice/);
+  assert.doesNotMatch(readFileSync(binding.path, 'utf8'), /not-a-real-token/);
   const receipts = [{ id: 'bot-user', avatar_url: '' }, { url: avatarUrl }, { avatar_url: avatarUrl }];
   const calls = [];
   const ports = firstBindingPorts(f.options, binding, undefined, async (_cmd, args) => {
@@ -64,7 +67,8 @@ test('first provisioning uses the Connect identity and the live handshake; crede
   assert.deepEqual(JSON.parse(calls[2].at(-3)), { avatar_url: avatarUrl });
   f.db.exec("UPDATE activations SET conversation_id = 'someone-else'");
   assert.throws(() => ports.ready(), /identity changed/);
-  assert.throws(() => f.open(), /differs/);
+  assert.equal(f.open().conversation,'someone-else');
+  assert.equal(parse(binding.path).id,binding.id,'A private chat change retains actor-scoped avatar receipts');
 });
 
 test('a clean template without verified activation and an upgrade with old data cannot enroll', async t => {
@@ -77,10 +81,80 @@ test('a clean template without verified activation and an upgrade with old data 
   assert.ok(!existsSync(join(f.options.dataDir, 'first-binding.json')));
 });
 
+test('a cloned runtime follows the verified new private chat and leaves greeting delivery to the official owner', async t => {
+  const f = await fresh(t);
+  f.options.clawchat.route = {channel:'clawchat',kind:'private',account:'agent',sender:'alice',conversation:'source-dm'};
+  f.options.owners = [{channel:'clawchat',account:'agent',sender:'alice'}];
+  writeState(f.configPath,f.options);
+  writeState(join(f.options.dataDir,'runtime.json'),{schema:1,instanceId:f.options.instanceId,sessions:{},inputs:{},outbox:{}});
+  const binding=f.open();
+  assert.ok(binding,'A copied runtime must not suppress initialization for a new verified identity');
+  assert.equal(f.options.clawchat.route.conversation,'dm-alice');
+  assert.equal(parse(f.configPath).clawchat.route.conversation,'dm-alice');
+  assert.equal(parse(binding.path).greeting.state,'delegated');
+  assert.equal(parse(binding.path).avatar.state,'pending');
+});
+
+test('a new agent retires only local app references and repeated preparation preserves new progress',async t=>{
+  const f=await fresh(t),initial=f.open();
+  const song=join(f.options.dataDir,'song-liveware.json');
+  writeState(song,{url:'https://app-source.apps.clawling.io/'});
+  const runtime={schema:1,instanceId:f.options.instanceId,sessions:{original:{id:'retained'}},outbox:{}};
+  writeState(join(f.options.dataDir,'runtime.json'),runtime);
+  f.db.exec("UPDATE activations SET user_id='new-agent',conversation_id='new-dm'");
+  const binding=f.open();
+  assert.notEqual(binding.id,initial.id);assert.equal(parse(song),null);
+  const managed=parse(join(f.options.dataDir,'managed-liveware.json'));
+  assert.equal(managed.stableCall.create.state,'unissued');
+  assert.deepEqual(parse(join(f.options.dataDir,'runtime.json')),runtime);
+  writeState(song,{url:'https://app-new.apps.clawling.io/'});
+  assert.equal(f.open().id,binding.id);
+  assert.equal(parse(song).url,'https://app-new.apps.clawling.io/');
+  const before=parse(f.configPath);
+  f.db.exec("UPDATE installation_owner SET owner_user_id='bob'; UPDATE activations SET owner_user_id='bob'");
+  assert.throws(()=>f.open(),/explicit handover/);
+  assert.deepEqual(parse(f.configPath),before);
+});
+
+test('a binding journal recovers an interrupted write and refuses an unrelated edit',async t=>{
+  const f=await fresh(t),binding=f.open(),path=join(f.options.dataDir,'first-binding.json');
+  const before=parse(path),after={...before,avatar:{state:'preserved'}};
+  const journal=join(f.options.dataDir,'binding-transition.json');
+  const job={schema:1,instanceId:f.options.instanceId,configPath:f.configPath,identity:before.identity,
+    state:'pending',writes:[{path,before,after}]};
+  writeState(journal,job);
+  assert.throws(()=>recoverBindingTransition(f.configPath,{afterWrite(){throw Error('crash');}}),/crash/);
+  recoverBindingTransition(f.configPath);assert.deepEqual(parse(path),after);
+  writeState(journal,job);writeState(path,{...before,avatar:{state:'owner-edited'}});
+  assert.throws(()=>recoverBindingTransition(f.configPath),/edited during recovery/);
+  assert.equal(parse(path).avatar.state,'owner-edited');assert.equal(binding.agent,'bot-user');
+});
+
+test('verified route migration re-registers the exact source candidate without weakening its installation fence',async t=>{
+  const f=await fresh(t);f.open();
+  const root=join(realpathSync(f.root),'candidate');mkdirSync(join(root,'src/assets'),{recursive:true});
+  const files={},sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+  for(const name of ['package.json','src/runtime-extension.mjs','src/runtime-provider.mjs','src/dsh-bridge.mjs',
+    'src/liveware-service.mjs','src/assets/workspace-instructions.json']){
+    const body=name==='package.json'?JSON.stringify({version:'fixture'}):'{}';
+    writeFileSync(join(root,name),body);files[name]=sha(body);
+  }
+  const manifest=JSON.stringify({schema:1,version:'fixture',files});writeFileSync(join(root,'source-manifest.json'),manifest);
+  const selected={status:'active',version:'installed',integrity:'digest',activationGeneration:2,activeArtifact:'/installed/artifacts/entry.mjs'};
+  writeState(join(dirname(f.options.clawchat.delivery.configPath),'plugins.lock.json'),{plugins:{'whalenest.runtime.deepseek-harness':selected}});
+  writeState(join(f.options.dataDir,'source-candidate.json'),{schema:1,mode:'source-test',identity:sourceIdentity(f.options),
+    target:sourceTarget(selected),root,version:'fixture',manifestSha256:sha(manifest)});
+  f.db.exec("UPDATE activations SET conversation_id='new-verified-dm'");
+  f.open();assert.equal(inspectSourceCandidate(f.options).root,root);
+  assert.equal(inspectSourceCandidate(f.options,{...selected,activationGeneration:3}),null);
+  assert.equal(parse(join(f.options.dataDir,'source-candidate.json')).manifestSha256,sha(manifest));
+});
+
 test('lost greeting acknowledgement reconciles one request on restart and a pre-existing avatar stays untouched', async t => {
   const f = await fresh(t);
   const binding = f.open();
-  let count = 0, receipt;
+  const legacy=parse(binding.path);legacy.greeting={state:'sending'};writeState(binding.path,legacy);
+  let count = 0, receipt={state:'running'};
   const ports = {
     ready: () => true,
     async send() { count++; throw Error('lost acknowledgement'); },
@@ -92,19 +166,19 @@ test('lost greeting acknowledgement reconciles one request on restart and a pre-
   const say = () => ({ fallback: '备用开场', render: async () => '一条开场白' });
   const a = createFirstBinding(binding, ports, say);
   await Promise.all([a.tick(), a.tick()]);
-  assert.equal(count, 1);
+  assert.equal(count, 0);
   assert.equal(parse(binding.path).greeting.state, 'sending');
   assert.equal(parse(binding.path).avatar.state, 'preserved');
   await a.close();
   receipt = { state: 'succeeded', result: { messageId: 'msg-confirmed' } };
   const restarted = createFirstBinding(binding, ports, () => assert.fail('Do not regenerate a greeting'));
   await restarted.tick();
-  assert.equal(count, 1);
+  assert.equal(count, 0);
   assert.equal(parse(binding.path).greeting.messageId, 'msg-confirmed');
   assert.equal(createFirstBinding(binding, ports, say), null);
 });
 
-test('greeting survives unavailable avatar upload and an interrupted model uses its persisted fallback', async t => {
+test('an old unsubmitted greeting delegates to the official sender even when avatar upload is unavailable', async t => {
   const f = await fresh(t);
   const binding = f.open();
   let state = parse(binding.path);
@@ -112,10 +186,7 @@ test('greeting survives unavailable avatar upload and an interrupted model uses 
   writeState(binding.path, state);
   const first = createFirstBinding(binding, {
     ready: () => true,
-    send: async (_id, text) => {
-      assert.equal(text, state.greeting.fallback);
-      return { messageId: 'msg-fallback' };
-    },
+    send: async () => assert.fail('Only the official runtime sends the first greeting'),
     readProfile: async () => '',
     upload: async () => { throw Error('upload unavailable'); },
     receipt: () => ({ state: 'failed' }),
@@ -123,11 +194,11 @@ test('greeting survives unavailable avatar upload and an interrupted model uses 
   await first.tick();
   await first.tick();
   state = parse(binding.path);
-  assert.equal(state.greeting.messageId, 'msg-fallback');
+  assert.equal(state.greeting.state, 'delegated');
   assert.equal(state.avatar.state, 'unverified');
 });
 
-test('native DSH sends the first-use fallback and applies the avatar under QQ memory pressure, with no duplicate on restart', { timeout: 50000 }, async t => {
+test('native DSH applies the avatar under QQ memory pressure and leaves all greeting delivery to the official runtime', { timeout: 50000 }, async t => {
   let bridge;
   const f = await fresh(t, () => bridge?.close());
   f.db.exec('UPDATE runtime_statuses SET websocket_connected = 1');
@@ -161,15 +232,12 @@ console.log(JSON.stringify({result}));
   const file = join(f.options.dataDir, 'first-binding.json');
   await bridge.wait(() => {
     const state = parse(file);
-    return state.avatar.state === 'confirmed' && state.greeting.state === 'confirmed';
+    return state.avatar.state === 'confirmed' && state.greeting.state === 'delegated';
   }, 16000);
   const delivered = (await readFile(tools, 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(delivered.filter(x => x.name === 'clawchat_mention_message').length, 1);
-  const greeting = delivered.find(x => x.name === 'clawchat_mention_message').input;
-  assert.equal(greeting.chatId, 'dm-alice');
-  assert.equal(greeting.text, '嗨，我是大肥鱼。你来啦，想先聊点什么？');
-  assert.equal(parse(file).greeting.state, 'confirmed');
-  assert.ok(!(await bridge.request('companionStatus', {})).companion.settings.contactEnabled);
+  assert.equal(delivered.filter(x => x.name === 'clawchat_mention_message').length, 0);
+  assert.equal(parse(file).greeting.state, 'delegated');
+  assert.equal((await bridge.request('companionStatus', {})).companion.settings.contactEnabled,true);
   await bridge.close();
   f.db.exec("UPDATE activations SET access_token = 'rotated-fixture-token'");
   // The fixture writes its preinstalled configuration on each boot, as a cloud

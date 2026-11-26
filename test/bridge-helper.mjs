@@ -67,7 +67,7 @@ export async function bootBridge(directory) {
     const id = 'request-' + ++count;
     child.stdio[4].write(JSON.stringify({ type: 'request', id, method, params }) + '\n');
     const frame = await wait(() => frames.find(f => f.type === 'response' && f.id === id));
-    if (!frame.ok) throw new Error(frame.error.message);
+    if (!frame.ok) throw Object.assign(new Error(frame.error.message),{code:frame.error.code});
     return frame.result;
   }
   return { frames, request, wait, child, hello: frames.find(f => f.type === 'hello'),

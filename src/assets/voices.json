@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "model": "qwen-audio-3.0-tts-flash",
+  "voices": [
+    {"name":"鲸鱼娘","voice":"qwen-audio-3.0-tts-flash-fy1ae4cdd1-95f01c83d3984a62bffbfcaae018a8cf","default":true,"aliases":["大肥鱼","默认","默认音色"]},
+    {"name":"小鲸娘1","voice":"qwen-audio-3.0-tts-flash-longyiqueju","style":"搞怪逗趣","aliases":["龙翼雀菊"]},
+    {"name":"小鲸娘2","voice":"qwen-audio-3.0-tts-flash-longhuiquanqing","style":"娇嗲甜腻","aliases":["龙晖泉晴"]},
+    {"name":"小鲸娘3","voice":"qwen-audio-3.0-tts-flash-longweimeiyi","style":"呆萌软糯","aliases":["龙薇梅翼"]},
+    {"name":"小鲸娘4","voice":"qwen-audio-3.0-tts-flash-longxuantaoshuo","style":"元气活力","aliases":["龙萱桃烁"]},
+    {"name":"大鲸娘1","voice":"qwen-audio-3.0-tts-flash-longhuishanshuo","style":"呆萌软糯","aliases":["龙晖杉朔"]}
+  ]
+}

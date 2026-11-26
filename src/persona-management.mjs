@@ -5,6 +5,7 @@ import { listPersonas, readPersona, savePersona, deletePersona } from '../vendor
 import { defineTool, str } from '../vendor/aurabot/src/tools/tools.js';
 import { readState, writeState } from './state.mjs';
 import { requireManualOwnerTurn } from './native-tool.mjs';
+import {syncGreeting} from './greeting.mjs';
 
 export const originalPersonaId = 'dafeiyu-original';
 
@@ -33,6 +34,7 @@ export function createPersonaManagement(options, reference, selection) {
     read(currentId());
     if (!selection) writeState(file, state);
   } else read(state.currentId);
+  syncGreeting(options,read(currentId()));
 
   function perform(args = {}) {
     const action = args.action ?? 'list';
@@ -48,6 +50,7 @@ export function createPersonaManagement(options, reference, selection) {
       if (selection) selection.set(id);
       writeState(file, next);
       Object.assign(state, next);
+      syncGreeting(options,read(id));
       return { ok: true, currentId: id, effectiveFrom: 'next-turn', message: '已切换，下一轮起生效。' };
     }
     if (action === 'delete') {
@@ -70,6 +73,7 @@ export function createPersonaManagement(options, reference, selection) {
     savePersona(id, { name: name.trim(), tags, body });
     const saved = read(id);
     assert.equal(saved.body, body.trim(), '人格保存后读回不一致');
+    if(id===currentId())syncGreeting(options,saved);
     return { ok: true, persona: saved, currentId: currentId(),
       effectiveFrom: id === currentId() ? 'next-turn' : 'when-selected' };
   }

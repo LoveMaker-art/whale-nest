@@ -37,6 +37,7 @@ import {createBiliAdapter,isBiliTool} from './bili-adapter.mjs';
 import {readBiliReferenceImage} from './bili-media.mjs';
 import {createDiaryAdapter} from './diary-adapter.mjs';
 import { createPersonaManagement } from './persona-management.mjs';
+import {planWorkspaceInstructions,applyWorkspaceInstructions} from './workspace-instructions.mjs';
 import { createMemoryAdapter, memoryCallContext, humanMessageText } from './memory-adapter.mjs';
 import {captureSystemPrompt} from '../vendor/aurabot/src/security/leak-guard.js';
 import {cleanText} from '../vendor/aurabot/src/core/text.js';
@@ -44,6 +45,7 @@ import {createReplyNarrator, replyFactsGuide} from './reply-notice.mjs';
 import {createQQConnection} from './qq-connection.mjs';
 import {createPluginUpdates} from './plugin-updates.mjs';
 import {applyQQTransition, finishQQTransition, recoverQQTransition} from './qq-transition.mjs';
+import {withCompanionDefaults} from './companion-defaults.mjs';
 
 let active = false;
 const enabledModules = new Set(['memory', 'mood', 'bili', 'stickers', 'speakup', 'diary', 'voice', 'companion-management']);
@@ -53,6 +55,7 @@ const enabledModules = new Set(['memory', 'mood', 'bili', 'stickers', 'speakup',
  * cannot create routes or link accounts. QQ remains off until configured.
  */
 export async function createCompanion(ctx, options, ports = {}) {
+  Object.assign(options,withCompanionDefaults(options));
   assert.ok(!active, 'Only one companion instance may own this process');
   if (ports.configPath) {
     try { applyQQTransition(options, ports.configPath); }
@@ -77,7 +80,7 @@ export async function createCompanion(ctx, options, ports = {}) {
   writeFileSync(fd, JSON.stringify({ pid: process.pid, hostname: hostname(), instanceId: options.instanceId, startedAt: new Date().toISOString() }));
   closeSync(fd);
   active = true;
-  let modules, expressions, native, speakup,biliAdapter,diaryAdapter,singing,qqConnection;
+  let modules, expressions, native, speakup,biliAdapter,diaryAdapter,singing,qqConnection,workspaceInstructions;
   const handles = new Map();
   const voiceSessions = new Set();
   const voicePlayback = new Map();
@@ -85,6 +88,12 @@ export async function createCompanion(ctx, options, ports = {}) {
   let tail = Promise.resolve();
   let closed = false;
   try {
+    try{workspaceInstructions=applyWorkspaceInstructions(planWorkspaceInstructions(options));}
+    catch(error){
+      if(error.code!=='WORKSPACE_INSTRUCTIONS_CONFLICT')throw error;
+      workspaceInstructions={state:'conflict',reason:'workspace-content-preserved'};
+      console.error('[whalenest] AGENTS.md synchronization needs inspection; existing instructions retained');
+    }
     const stateFile = join(directory, 'runtime.json');
     const state = readState(stateFile, { schema: 1, instanceId: options.instanceId, sessions: {}, inputs: {}, outbox: {} });
     assert.equal(state.instanceId, options.instanceId, 'Instance data belongs to a different instance');
@@ -126,7 +135,7 @@ export async function createCompanion(ctx, options, ports = {}) {
       modules: Object.fromEntries(BUILTINS.map(m => [m.id, { enabled: enabledModules.has(m.id) }])),
       mood: { enabled: true, judge: false },
       voice: {autoChance:options.expressions?.voiceChance??0.15,autoMaxChars:options.expressions?.voiceMaxChars??80},
-      stickers: {autoChance:options.expressions?.stickerChance??0.35,collect:false,caption:false},
+      stickers: {autoChance:options.expressions.stickerChance,collect:false,caption:false},
       memory: { enabled: true, dailyConsolidate: options.memory?.automatic === true, shortTerm: false,
         extractIdleMinutes: options.memory?.automatic ? options.memory.extractIdleMinutes ?? 30 : 0,
         ...(options.memory?.consolidateTimes ? { consolidateTimes: options.memory.consolidateTimes } : {}),
@@ -335,7 +344,7 @@ export async function createCompanion(ctx, options, ports = {}) {
             scope.tools.register(voice.tool());
             for(const tool of voiceTools(options,input.route,sessionId,{speech:originalSpeech}))scope.tools.register(tool);
             scope.systemPrompt.context({name:'whalenest-speech',order:909,text:()=>
-              '平台语音识别已将收到的语音转为文字交给你。主人要求语音回复或朗读时，调用send_voice生成并发送，text填真正要说的话。普通聊天默认文字；不要用<voice>标签代替调用，不要用bash或外部脚本生成语音。仅confirmed且有messageId才声称已发送，随后只需简短文字确认，不重复发送音频；生成或发送不确定时说明状态，不另起请求重试。后台不发语音。'});
+              '平台语音识别已将收到的语音转为文字交给你。主人要求语音回复或朗读时，调用send_voice生成并发送，text填真正要说的话。普通聊天默认文字；不要用<voice>标签代替调用，不要用bash或外部脚本生成语音。confirmed且有messageId时语音本身就是回复，结束本轮，无需另外文字确认；主人同时要求文字时设textReply=true并提供所需文字。生成失败或发送不确定时用文字说明实际状态，不另起请求重复生成或发送。后台不发语音。'});
           }
         }
         if(owner&&input.route.channel==='clawchat'&&activities) {
@@ -501,7 +510,7 @@ export async function createCompanion(ctx, options, ports = {}) {
     return {
       receive: input => enqueue(() => receive(input)),
       status: () => ({ instanceId: options.instanceId, modules: modules.status().filter(m => m.running).map(m => m.id),
-        sessionCount: Object.keys(state.sessions).length, liveSessions: ports.externalOwner ? ctx.agents.list().filter(a => mounted.has(a)).length : handles.size, maxLiveSessions, persona: personas.status(), memory: memoryAdapter.status(), expressions:expressions.status(), automaticActivitiesEnabled: !!companion&&companion.policy.status().settings.automatic&&companion.policy.status().dailyModelRequestLimit>0&&!companion.policy.status().settings.paused, imageGeneration:image.status(), nativeScheduleEnabled: Boolean(ports.externalOwner), qqConnected: native.onebot.state==='connected', nativeQQHost:true,
+        sessionCount: Object.keys(state.sessions).length, liveSessions: ports.externalOwner ? ctx.agents.list().filter(a => mounted.has(a)).length : handles.size, maxLiveSessions, persona: personas.status(), workspaceInstructions, memory: memoryAdapter.status(), expressions:expressions.status(), automaticActivitiesEnabled: !!companion&&companion.policy.status().settings.automatic&&companion.policy.status().dailyModelRequestLimit>0&&!companion.policy.status().settings.paused, imageGeneration:image.status(), nativeScheduleEnabled: Boolean(ports.externalOwner), qqConnected: native.onebot.state==='connected', nativeQQHost:true,
         automaticContactEnabled:policy.status().settings.contactEnabled&&!policy.status().settings.paused,qqNative:qqNative.status(),qqConnection:qqConnection?.status(),singing:singing.status(),
         companion:policy.status() }),
       async tickBackground(){await speakup.resume();await biliAdapter.resume();await diaryAdapter.resume();return companion.tick(job=>job.kind==='browse'?biliAdapter.run(job):job.kind==='diary'?diaryAdapter.run(job):ports.dispatchBackground?.(job));},

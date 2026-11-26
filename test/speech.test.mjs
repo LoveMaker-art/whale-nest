@@ -43,6 +43,7 @@ test('voice tool is manual-only and uses a stable synthesis/delivery identity',a
  const ctx=kind=>({callId:'call',agent:{session:{seq:1,eventAt:n=>n===1?{type:'assistant/message',data:{message:{id:'message',content:[{type:'tool-call',id:'call'}]}}}:{type:'user/message',data:{source:{kind}}}}}});
  const blocked=await tool.execute({text:'你好'},ctx('schedule'));assert.match(JSON.stringify(blocked),/后台/);assert.equal(syntheses,0);assert.equal(sends,0);
  await tool.execute({text:'你好'},ctx('user'));await tool.execute({text:'你好'},ctx('user'));assert.equal(ids[0],ids[1]);
+ assert.equal((await tool.execute({text:'你好',textReply:true},ctx('user'))).textReply,true);
 });
 test('speech enablement keeps explicit settings and avoids the unverified placeholder voice',()=>{
  const next=enablePlatformSpeech({provider:'clawling',ttsModel:'',voice:'Cherry',providerConfigPath:'/private/provider.json'});assert.equal(next.voice,initialVoice);assert.equal(next.responseFormat,'pcm');assert.equal(next.providerConfigPath,'/private/provider.json');

@@ -11,7 +11,7 @@ const directions = stickerDirections;
 const reserved = new Set([...stickerScenes,...directions,NEVER_RANDOM,'通用']);
 const open = '<whalenest-sticker';
 const close = '</whalenest-sticker>';
-const guidance = '本轮已抽中自动配表情。正文末尾必须另起一行输出一个内部结果。接蹭饭玩笑示例：<whalenest-sticker>熟人玩笑|白饭,蹭饭|大肥鱼自己</whalenest-sticker>。从本轮词表选一个场景和最具体的话题，可加补充词。表达方向为大肥鱼自己、给对方、一起或围观。根据整句对话及正文语义选择，近义口语可映射到词表。认真倾诉、否定、引用转述或语境不明时输出 <whalenest-sticker>跳过</whalenest-sticker>。禁止为配图调用发送工具或在正文解释。';
+const guidance = '本轮已抽中自动配表情。正文末尾必须另起一行输出一个内部结果，格式为 <whalenest-sticker>场景|话题|表达方向</whalenest-sticker>。从本轮词表选一个场景和最具体的话题，可加补充词。表达方向为大肥鱼自己、给对方、一起或围观。根据整句对话及正文语义选择，近义口语可映射到词表。认真倾诉、否定、引用转述或语境不明时输出 <whalenest-sticker>跳过</whalenest-sticker>。禁止为配图调用发送工具或在正文解释。';
 const safeTopic = value => typeof value==='string'&&/^[\p{L}\p{N}]{1,8}$/u.test(value);
 const normalized = value => value.normalize('NFKC').toLowerCase();
 const itemTopics = item => (item.tags??[]).filter(tag=>safeTopic(tag)&&!reserved.has(tag));
@@ -75,10 +75,47 @@ function fallbackDecision(items,incoming,reply) {
 }
 
 const noMedia = /(?:别|不要|不用|禁止|无需).{0,8}(?:发|配|加|贴).{0,6}(?:图|表情)|(?:只|仅)(?:用|发|要)?文字|文字回复|打字回复/;
-const mediaRequest = /(?:发|给|来|配|贴|画|生成|重发|再发)(?!了).{0,12}(?:表情包?|动图|图片|张图|这张|那张|照片|图(?=$|[。！？，、\s]))|(?:收录|收藏|导入|收为|存为|保存).{0,14}(?:图|表情|收藏)|把.{0,16}(?:图|表情).{0,9}(?:发|收|存)|(?:请|帮我|给我|我要).{0,12}(?:修改|更改|开启|关闭|删除|更新|连接|绑定|查询|检查|记住|提醒|设置)|(?:开启|关闭|修改|更改|调整|查看|检查).{0,12}(?:设置|自动|更新|状态|开关)/;
+const mediaRequest = /(?:发|给|来|配|贴|画|生成|重发|再发)(?!了).{0,12}(?:表情包?|动图|图片|张图|这张|那张|照片|图(?=$|[。！？，、\s]))|(?:收录|收藏|导入|收为|存为|保存).{0,14}(?:图|表情|收藏)|把.{0,16}(?:图|表情).{0,9}(?:发|收|存)|(?:请|帮我|给我|我要).{0,12}(?:修改|更改|开启|关闭|删除|更新|连接|绑定|记住|提醒|设置)|(?:开启|关闭|修改|更改|调整).{0,12}(?:设置|自动|更新|状态|开关)/;
 
 export const requestedSticker = text => !noMedia.test(text) && /(?:发|给|来|贴)(?!了).{0,16}(?:表情|动图)|(?:表情|动图).{0,8}(?:发给|发我|发一)/.test(text);
 export const blocksAutomaticSticker = text => noMedia.test(text) || mediaRequest.test(text) || requestedSticker(text);
+
+// Ordinary content reads can keep this turn's draw. Unknown tools and writes
+// retain the existing cancellation behaviour; this is not a permission grant.
+const readers = new Set(['recall_memory','lookup_person','chat_impression','companion_experiences',
+  'bili_search','bili_watch','bili_explore','bili_scan','bili_subtitle','bili_comments','bili_whoami','bili_status','bili_setup',
+  'web_search','web_fetch','read_file','glob','grep','media_status']);
+const readActions = {
+  companion_stickers:['list','status'],companion_memory:['list','get','status'],
+  companion_paintings:['list','read','status'],
+  companion_persona:['list','get'],companion_voice:['status','list'],
+  companion_expression:['status'],companion_settings:['status'],
+  companion_diary:['read','sources','list','publication_preview','publication_permissions','publication_status'],
+  companion_songs:['list','inspect','status','draft'],bili_inbox:['status','list','check'],bili_config:['status'],
+  str_replace_editor:['view'],
+};
+function readOnlyCall(call) {
+  let args=call.arguments??{};
+  try{if(typeof args==='string')args=JSON.parse(args);}catch{return false;}
+  if(!args||typeof args!=='object'||Array.isArray(args))return false;
+  if(readers.has(call.name))return true;
+  if(!Object.hasOwn(readActions,call.name))return false;
+  const allowed=readActions[call.name];
+  if(call.name==='bili_config'&&args.patch!=null)return false;
+  const action=call.name==='str_replace_editor'?args.command:args.action??allowed[0];
+  return allowed.includes(action);
+}
+function failedRead(name,message) {
+  if(message.isError===true)return true;
+  // Our adapters return structured status; generic file/web content may itself
+  // contain {ok:false}, which is data rather than a failed read operation.
+  if(!/^(?:bili_|companion_|recall_memory$|lookup_person$|chat_impression$|media_status$)/.test(name))return false;
+  return (message.content??[]).some(block=>{
+    if(block.type!=='text'||typeof block.text!=='string')return false;
+    const text=block.text.trim();if(/^✗(?:\s|$)/.test(text))return true;
+    try{const value=JSON.parse(text);return value?.ok===false||value?.isError===true;}catch{return false;}
+  });
+}
 
 function suffixLength(text, delimiter) {
   for (let n=Math.min(text.length,delimiter.length-1);n>0;n--) {
@@ -145,7 +182,7 @@ export function createStickerSelection(options,{getConfig,settings,policy,mood,s
       const chance=base&&!texts.some(blocksAutomaticSticker)?Math.min(1,base*Math.max(0,mood().sticker??1)):0;
       const attempt=chance>0&&random()<chance;
       if(active.size>=128)active.delete(active.keys().next().value);
-      active.set(id,{turn,attempt,scene:null,incoming:attempt?texts.join('\n').slice(-1200):''});
+      active.set(id,{turn,attempt,scene:null,calls:new Map(),incoming:attempt?texts.join('\n').slice(-1200):''});
     },
     stop(id) {
       const round=active.get(id);
@@ -177,11 +214,19 @@ export function createStickerSelection(options,{getConfig,settings,policy,mood,s
     async *stream(request,next) {
       const round=active.get(String(request.sessionId));
       if(!round||request.purpose) { yield* next(); return; }
-      const blocks=new Map();
+      for(const message of request.messages??[]){
+        const name=message.role==='tool'&&round.calls.get(String(message.toolCallId));
+        if(name&&failedRead(name,message))round.attempt=false;
+      }
+      const blocks=new Map(),pendingCalls=new Set();
       round.scene=null;
       for await(const chunk of next()) {
-        if (chunk.type==='tool-call-delta'||chunk.type==='block-start'&&chunk.blockType==='tool-call'
-          ||chunk.type==='block-end'&&chunk.block.type==='tool-call') round.attempt=false;
+        if(chunk.type==='tool-call-delta'||chunk.type==='block-start'&&chunk.blockType==='tool-call')pendingCalls.add(chunk.index);
+        if(chunk.type==='block-end'&&chunk.block.type==='tool-call'){
+          pendingCalls.delete(chunk.index);
+          if(readOnlyCall(chunk.block))round.calls.set(String(chunk.block.id),chunk.block.name);
+          else round.attempt=false;
+        }
         if (chunk.type==='text-delta') {
           if(!blocks.has(chunk.index))blocks.set(chunk.index,{filter:frameFilter(),text:''});
           const block=blocks.get(chunk.index),text=block.filter.push(chunk.text);
@@ -193,6 +238,7 @@ export function createStickerSelection(options,{getConfig,settings,policy,mood,s
           blocks.set(chunk.index,{closed:true,filter,text:text.slice(-1500)});
           yield {...chunk,block:{...chunk.block,text}};
         } else if(chunk.type==='finish') {
+          if(pendingCalls.size)round.attempt=false;
           const decisions=[],reply=[];
           for(const [index,block] of blocks) {
             if(!block.closed) {

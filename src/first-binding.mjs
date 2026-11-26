@@ -9,6 +9,8 @@ import { hash, resolveDeliveryTarget, routeKey, senderKey } from './routing.mjs'
 import { readState, writeState } from './state.mjs';
 import { clawchatTextDelivery } from './clawchat-text.mjs';
 import {clawchatBindingState} from './clawchat-state.mjs';
+import {commitBindingTransition,recoverBindingTransition} from './binding-transition.mjs';
+import {inspectSourceCandidate,sourceCandidateFile,sourceIdentity} from './source-candidate.mjs';
 export {readBoundClawChatAgentId} from './clawchat-state.mjs';
 
 const exec = promisify(execFile);
@@ -19,36 +21,59 @@ const uploadTool = 'clawchat_upload_avatar_image';
 // The platform enables this only on an unpaired, clean, preinstalled instance.
 // The Connect database is authoritative for identity. Never read out credentials.
 export function prepareFirstBinding(options, configPath) {
-  const clawchat = options.clawchat;
+  let clawchat = options.clawchat;
   if (clawchat?.firstBinding !== true) return null;
+  Object.assign(options,recoverBindingTransition(configPath));
+  clawchat=options.clawchat;
   const delivery = clawchat.delivery;
   assert.ok(isAbsolute(delivery.configPath) && isAbsolute(delivery.connectBin));
   const platform = clawchatBindingState(delivery.configPath);
   const {account} = platform;
   const path = join(options.dataDir, 'first-binding.json');
   const previous = readState(path, null);
-  // A rollout onto an already running or migrated instance never enrolls it.
-  if (!previous && (existsSync(join(options.dataDir, 'runtime.json')) || clawchat.legacySnapshotPath)) return null;
-
   const current = platform.current();
+  if(!current&&!previous&&existsSync(join(options.dataDir,'runtime.json')))return null;
   assert.ok(current?.agent && current.owner && current.conversation, 'First binding awaits verified Connect activation');
   const { owner, conversation, agent } = current;
   const route = { channel: 'clawchat', kind: 'private', account, sender: owner, conversation };
-  if (clawchat.route) {
-    assert.ok(routeKey(clawchat.route) === routeKey(route) && senderKey(clawchat.route) === senderKey(route),
-      'First binding differs from the provisioned ClawChat route');
-  }
+  const oldRoute=clawchat.route;
   const owners = options.owners ?? [];
-  assert.ok(owners.filter(o => o.channel === 'clawchat').every(o => senderKey(o) === senderKey(route)));
+  assert.ok(owners.filter(o => o.channel === 'clawchat').every(o => senderKey(o) === senderKey(route)),
+    'Owner changed; personal data requires an explicit handover before initialization');
   const id = 'whalenest-first-binding-' + hash([options.instanceId, account, agent, owner, conversation]);
-  assert.ok(!previous || previous.id === id, 'First-binding state belongs to a different ClawChat identity');
-  if (!previous) writeState(path, { id, greeting: { state: 'pending' }, avatar: { state: 'pending' } });
-  if (!clawchat.route || !owners.some(o => senderKey(o) === senderKey(route))) {
-    clawchat.route = route;
-    options.owners = [...owners.filter(o => o.channel !== 'clawchat'), route];
-    writeState(configPath, options);
+  const identity={account,agent,owner,conversation};
+  const sameActor=previous?.identity
+    ?['account','agent','owner'].every(key=>previous.identity[key]===identity[key])
+    :previous?.id===id;
+  const changed=!!oldRoute&&(routeKey(oldRoute)!==routeKey(route)||senderKey(oldRoute)!==senderKey(route));
+  const foreign=!!(previous&&!sameActor)||(changed&&!sameActor);
+  const next={...options,clawchat:{...clawchat,route},owners:[...owners.filter(o=>o.channel!=='clawchat'),route]};
+  const record={...(sameActor?previous:{}),id:sameActor?previous.id:id,identity,
+    greeting:sameActor?previous.greeting:{state:'delegated'},avatar:sameActor?previous.avatar:{state:'pending'}};
+  if(['pending','writing'].includes(record.greeting.state))record.greeting={state:'delegated'};
+  const changes=[[configPath,next],[path,record]];
+  if(changed){
+    const pointer=sourceCandidateFile(options);
+    // Validate the complete selected source before re-registering its route.
+    const candidate=existsSync(pointer)?inspectSourceCandidate(options):null;
+    if(candidate){const selected=readState(pointer,null);changes.push([pointer,{...selected,identity:sourceIdentity(next)}]);}
+    changes.push([join(options.dataDir,'binding-reload.json'),{schema:1,instanceId:options.instanceId,
+      identity,state:'pending',coreEpoch:process.env.WHALENEST_CORE_EPOCH??null}]);
   }
-  return { path, dbPath: platform.dbPath, account, agent, owner, conversation, id };
+  if(foreign){
+    // These are local references, never cloud deletions. Retain their before
+    // values in the recovery journal, and seed fresh actor-scoped operation IDs.
+    const key=hash([options.instanceId,account,agent,owner,'stable-call']);
+    changes.push([join(options.dataDir,'song-liveware.json'),null],[join(options.dataDir,'call-liveware.json'),null],
+      [join(options.dataDir,'managed-liveware.json'),{schema:1,instanceId:options.instanceId,binding:account,owner,
+        phase:'provisioning-stable-call',stableCall:{upstream:'http://127.0.0.1:'+(options.realtime?.port??8897),
+          create:{requestId:'whalenest-stable-call-create-'+key,state:'unissued'},
+          bind:{requestId:'whalenest-stable-call-bind-'+key,state:'unissued'}}}]);
+    if(next.realtime){next.realtime={...next.realtime};delete next.realtime.publicOrigin;}
+  }
+  commitBindingTransition(options,configPath,identity,changes);
+  Object.assign(options,next);
+  return { path, dbPath: platform.dbPath, ...identity, id:record.id };
 }
 
 export function firstBindingPorts(options, binding, signal, run = exec) {
@@ -86,7 +111,7 @@ export function firstBindingPorts(options, binding, signal, run = exec) {
   };
 }
 
-const greetingDone = new Set(['confirmed', 'failed', 'unverified']);
+const greetingDone = new Set(['delegated', 'confirmed', 'failed', 'unverified']);
 const avatarDone = new Set(['confirmed', 'preserved', 'unconfigured', 'failed', 'unverified']);
 const terminal = new Set(['failed', 'expired', 'indeterminate']);
 
@@ -122,21 +147,9 @@ export function createFirstBinding(binding, ports, say, { avatarPath = defaultAv
       else if (!receipt || terminal.has(receipt.state)) commit('greeting', { state: 'unverified' });
       return;
     }
-    if (current.state === 'writing') commit('greeting', { state: 'pending', text: current.fallback });
-    if (!current.text) {
-      const { fallback, render } = say();
-      commit('greeting', { state: 'writing', fallback });
-      const text = await render();
-      check();
-      commit('greeting', { state: 'pending', text: text || fallback });
-    }
-    check();
-    commit('greeting', { state: 'sending' });
-    try {
-      confirmGreeting(await ports.send(greetingId, current.text));
-    } catch {
-      // Wait for the original Core receipt. A timeout cannot start a second send.
-    }
+    // The official runtime owns first greeting generation and delivery. Old
+    // dispatched requests above may only be observed, never sent a second time.
+    commit('greeting',{state:'delegated'});
   }
 
   function saveUpload(result) {

@@ -3,6 +3,29 @@ import {writeFile,readFile,copyFile,rm,mkdir} from 'node:fs/promises';import {jo
 import {bridgeDirectory,bootBridge} from './bridge-helper.mjs';import {buildRuntimeBase} from '../scripts/build-runtime-base.mjs';
 import {extendRuntimeEntry} from '../src/runtime-extension.mjs';import {enablePlatformSpeech} from '../src/runtime-upgrade.mjs';import {parseWav} from '../vendor/aurabot/src/voice/wav.js';import {readBridgeHistory} from '../src/bridge-history.mjs';
 
+test('native read-only queries can append one sticker after body acknowledgement; failed reads and writes cannot',{timeout:90000},async t=>{
+ const dir=await bridgeDirectory();dir.biliFixture=true;dir.options.clawchat.delivery.mediaEnabled=true;
+ dir.options.expressions={enabled:true,stickerChance:1,voiceChance:0};
+ await writeFile(dir.configPath,JSON.stringify(dir.options));const bridge=await bootBridge(dir);
+ t.after(async()=>{await bridge.close();await rm(dir.root,{recursive:true,force:true});});
+ const sessionId='read-query-stickers';await bridge.request('create',{sessionId,whalenestChatId:'dm-alice',cwd:dir.root,model:dir.options.model});
+ const command=(name,args)=>'FOUNDATION_TOOL '+JSON.stringify({name,args});
+ await bridge.turn(sessionId,'tag-library','请给大肥鱼开心加上庆祝标签。\n'+command('companion_stickers',{action:'update',query:'大肥鱼开心',tags:['庆祝']}));
+ await bridge.request('companionExpression',{sessionId,inputId:'tag-library',allowVoice:false});
+ const sent=async()=>{try{return(await readFile(join(dir.root,'delivered.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);}catch{return [];}};
+ const cases=[['recall_memory',{query:'兴趣'},true],['bili_explore',{query:'鲸鱼'},true],['companion_memory',{action:'get',id:'missing'},false],['remember',{text:'TEST_STICKER_WRITE'},false]];
+ for(const [n,[name,args,allowed]]of cases.entries()){
+  const inputId='query-'+n,before=(await sent()).length;
+  await bridge.turn(sessionId,inputId,'运维自测：我拿到offer真开心，请帮我查询相关资料。STICKER_FIXTURE_CELEBRATE\n'+command(name,args));
+  const result=await bridge.request('companionExpression',{sessionId,inputId,allowVoice:false});
+  assert.equal((await sent()).length,before,'No sticker before body acknowledgement');
+  assert.equal(result.stickerPending===true,allowed,name);
+  await bridge.request('companionExpression',{sessionId,inputId,allowVoice:false,afterReply:true});
+  await bridge.request('companionExpression',{sessionId,inputId,allowVoice:false,afterReply:true});
+  assert.equal((await sent()).length,before+Number(allowed),'One sticker per acknowledged read reply');
+ }
+});
+
 test('native reply exit sends mood-driven voice/sticker once, preserves text history and original manual voice',{timeout:120000},async t=>{
  const dir=await bridgeDirectory();let bridge,adapter,session,tts=0,stall=false;const pcm=parseWav(await readFile(new URL('./fixtures/media/audio.wav',import.meta.url))).data;
  const server=createServer(async(req,res)=>{for await(const _ of req){};tts++;if(stall)return;res.writeHead(200,{'content-type':'audio/pcm'});res.end(pcm);});
@@ -24,12 +47,12 @@ test('native reply exit sends mood-driven voice/sticker once, preserves text his
  await prompt('tag-sticker','请给大肥鱼开心加上庆祝标签。'+command('companion_stickers',{action:'update',query:'大肥鱼开心',tags:['庆祝']}));
  await bridge.control('expressionConfigure',{voiceEnabled:true});
  const result=await prompt('auto-first','运维自测：我拿到 offer 了！STICKER_FIXTURE_CELEBRATE');
- assert.equal(tts,1);const final=result.findLast(a=>a.kind==='assistant'&&a.data?.outputKind==='final');assert.equal(final.text,'（语音回复）');
+ assert.equal(tts,1);const final=result.findLast(a=>a.kind==='assistant'&&a.data?.outputKind==='final');assert.equal(final.text,'');
  assert.ok(!result.some(a=>a.kind==='assistant'&&a.text==='fixture complete'),'Original short reply is not duplicated as text');
  const sent=()=>readFile(join(dir.root,'delivered.jsonl'),'utf8').then(s=>s.trim().split('\n').map(JSON.parse));
- assert.deepEqual((await sent()).map(r=>r.input.expectedKind),['audio']);
+ assert.deepEqual((await sent()).map(r=>r.input.expectedKind),['audio','image'],'A confirmed voice is the primary reply for its selected sticker');
  await session.afterClawChatReply('other-input');
- assert.equal((await sent()).length,1);
+ assert.equal((await sent()).length,2);
  await session.afterClawChatReply('auto-first');
  await session.afterClawChatReply('auto-first');
  assert.deepEqual((await sent()).map(r=>r.input.expectedKind),['audio','image']);

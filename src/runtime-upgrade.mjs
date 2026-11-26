@@ -7,7 +7,7 @@ import {defaultPlatformVoice} from './speech.mjs';
 import {configuredConnectExecutable} from './clawchat-core.mjs';
 const read=path=>JSON.parse(readFileSync(path,'utf8'));
 const sha=path=>createHash('sha256').update(readFileSync(path)).digest('hex');
-const reviewedReleases=['1.0.0-beta.3','1.0.0-beta.4.dev.1','1.0.0-beta.4.dev.4','1.0.0-beta.4.dev.5','1.0.0-beta.4.dev.6','1.0.0-beta.4.dev.7','1.0.0-beta.4.dev.8','1.0.0-beta.4.dev.9','1.0.0-beta.4.dev.10','1.0.0-beta.4.dev.11','1.0.0-beta.4.dev.12','1.0.0-beta.4.dev.13','1.0.0-beta.4.dev.14','1.0.0-beta.4.dev.15','1.0.0-beta.4.dev.16','1.0.0-beta.4.dev.17','1.0.0-beta.4.dev.18','1.0.0-beta.4.dev.19'];
+const reviewedReleases=['1.0.0-beta.3','1.0.0-beta.4.dev.1','1.0.0-beta.4.dev.4','1.0.0-beta.4.dev.5','1.0.0-beta.4.dev.6','1.0.0-beta.4.dev.7','1.0.0-beta.4.dev.8','1.0.0-beta.4.dev.9','1.0.0-beta.4.dev.10','1.0.0-beta.4.dev.11','1.0.0-beta.4.dev.12','1.0.0-beta.4.dev.13','1.0.0-beta.4.dev.14','1.0.0-beta.4.dev.15','1.0.0-beta.4.dev.16','1.0.0-beta.4.dev.17','1.0.0-beta.4.dev.18','1.0.0-beta.4.dev.19','1.0.0-beta.4.dev.20','1.0.0-beta.4.dev.21','1.0.0-beta.4.dev.22'];
 function supportsM3Writer(version,minimum){
  if(reviewedReleases.includes(version))return true;
  const m3=/^0\.3\.0-whalenest\.m3\.(\d+)$/.exec(version);

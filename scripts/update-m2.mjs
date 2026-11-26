@@ -17,6 +17,8 @@ import {inspectConnectorStartup,prepareConnectorStartup,restoreConnectorStartup}
 import {voiceSessionPort} from '../src/platform-voice-liveware.mjs';
 import {configuredConnectExecutable} from '../src/clawchat-core.mjs';
 import {verifyStickerCatalog,importStickerCatalog} from './import-sticker-catalog.mjs';
+import {workspaceInstructionsSource,planWorkspaceInstructions,applyWorkspaceInstructions} from '../src/workspace-instructions.mjs';
+import {inspectDefaultStickerCatalog} from '../src/default-stickers.mjs';
 process.umask(0o077);
 const action=process.argv[2];assert.ok(['preflight','install','rollback'].includes(action),'Usage: update-m2.mjs preflight|install|rollback');
 const withMediaCore=process.argv.includes('--media-core');
@@ -121,6 +123,9 @@ async function livewareReady(instance){
 }
 async function rollback(record){
  const restoredLock=read(join(record.backup,record.lockFile.slice(home.length+1)));
+ const restoredInstance=read(join(record.backup,record.instancePath.slice(home.length+1)));
+ const restoredEntry=restoredLock.plugins['whalenest.runtime.deepseek-harness'];
+ const restoredInstructions=planWorkspaceInstructions(restoredInstance,workspaceInstructionsSource({installedRoot:join(dirname(restoredEntry.activeArtifact),'whalenest')}));
  const targetManaged=restoredLock.plugins['whalenest.runtime.deepseek-harness']?.manifest?.capabilities?.some(capability=>
   capability.type==='managed-web-app'&&capability.id==='whalenest-liveware');
  // Preload while the current support files still exist. Restoring an older
@@ -195,13 +200,13 @@ async function rollback(record){
  writeState(record.instancePath,restored);
  writeState(record.lockFile,lock);
  if(existsSync(join(instance.dataDir,'runtime.lock')))recoverLease(instance);
- if(record.connector){
-  for(const file of record.launcherSupport??[])if(file.changed){
+ for(const file of record.launcherSupport??[])if(file.changed){
    const actual=existsSync(file.path)?createHash('sha256').update(readFileSync(file.path)).digest('hex'):null;
    if(actual===file.beforeSha256)continue;
    assert.equal(actual,file.sha256,'Startup support changed after deployment; rollback withheld');
    if(file.existed)copyFileSync(join(record.backup,file.path.slice(home.length+1)),file.path);else rmSync(file.path);
-  }
+ }
+ if(record.connector){
   if(record.launcher){
    if(record.launcher.backup)copyFileSync(record.launcher.backup,record.launcher.path);
    else rmSync(record.launcher.path,{force:true});
@@ -210,6 +215,13 @@ async function rollback(record){
    const previous=join(record.backup,path.slice(home.length+1));
    if(existsSync(previous))copyFileSync(previous,path);else rmSync(path,{force:true});
   }
+ }
+ try{record.workspaceInstructionsRollback=applyWorkspaceInstructions(restoredInstructions);}
+ catch(error){
+  if(error.code!=='WORKSPACE_INSTRUCTIONS_CONFLICT')throw error;
+  record.workspaceInstructionsRollback={state:'conflict',reason:'user-content-preserved'};
+ }
+ if(record.connector){
   if(record.supervisorChanged===false&&!record.livewarePrograms?.length)supervisor('start');else startAfterReload();
  }else if(record.livewarePrograms?.length)startAfterReload();else supervisor('start');
  await ready();
@@ -220,7 +232,7 @@ async function rollback(record){
  }
  record.state='rolled-back';record.rolledBackAt=new Date().toISOString();writeState(recordFile,record);
 }
-if(action==='rollback'){const record=read(recordFile);await rollback(record);console.log(JSON.stringify({state:record.state,newDataPreserved:true}));process.exit(0);}
+if(action==='rollback'){const record=read(recordFile);await rollback(record);console.log(JSON.stringify({state:record.state,newDataPreserved:true,workspaceInstructions:record.workspaceInstructionsRollback}));process.exit(0);}
 const beforeHealth=await ready(),beforeState=platformState();
 const {workspace}=await import(pathToFileURL(join(dirname(connectBin),'runtime/lib.mjs')));
 const platformRoot=join(home,'.clawnest-integrations/deepseek-harness');
@@ -236,7 +248,17 @@ if(runtimeBundle){
  plan.summary.bundle=inspectPreparedRuntimeBundle(runtimeBundle,distributionVersion);
  plan.inputs[runtimeBundle]=plan.summary.bundle.sha256;
 }
+const instructionSource=runtimeBundle?workspaceInstructionsSource({bundle:read(runtimeBundle)}):workspaceInstructionsSource({installedRoot:join(dirname(plan.selected.activeArtifact),'whalenest')});
+plan.workspaceInstructions=planWorkspaceInstructions(plan.instance,instructionSource);
+plan.alreadyActive=plan.alreadyActive&&!plan.workspaceInstructions.changed;
+plan.summary.workspaceInstructions={path:plan.workspaceInstructions.path,version:instructionSource?.version??null,changed:plan.workspaceInstructions.changed};
 const stickerCatalog=stickerCatalogPath?verifyStickerCatalog(stickerCatalogPath):null;
+const defaultStickers=inspectDefaultStickerCatalog(plan.instance);
+if(defaultStickers){
+ plan.inputs[defaultStickers.path]=defaultStickers.manifestSha256;
+ for(const entry of defaultStickers.entries)plan.inputs[entry.file]=entry.sha256;
+ plan.summary.defaultStickers={count:defaultStickers.entries.length,bytes:defaultStickers.bytes};
+}
 if(stickerCatalog){
  assert.ok(!plan.alreadyActive,'Catalog installation requires a version cutover');
  plan.inputs[stickerCatalogPath]=stickerCatalog.manifestSha256;
@@ -272,12 +294,16 @@ if(withMediaCore){
  for(const [name,hash]of Object.entries(connector.fileIntegrity??{}))plan.inputs[join(connector.directory,name)]=hash;
  for(const path of [connector.pointer,connector.supervisorFile])if(existsSync(path))plan.inputs[path]=createHash('sha256').update(readFileSync(path)).digest('hex');
 }
-const launcherSupport=connector?['src/connector-extension.mjs','src/connector-startup.mjs','src/connector-cutover.mjs','src/clawchat-core.mjs','src/clawchat-state.mjs','src/liveware-migration.mjs','src/liveware-command.mjs','src/routing.mjs','src/runtime-upgrade.mjs','src/plugin-release.mjs','src/recovery.mjs','src/state.mjs','src/voice-model.mjs','scripts/update-m2.mjs','scripts/probe-live.mjs','scripts/build-runtime-base.mjs','integration/clawchat/SOURCE.json','integration/clawchat/core-media/SOURCE.json'].map(name=>{
+const launcherNames=connector?['src/connector-extension.mjs','src/connector-startup.mjs','src/connector-cutover.mjs','src/clawchat-core.mjs','src/clawchat-state.mjs','src/liveware-migration.mjs','src/liveware-command.mjs','src/routing.mjs','src/runtime-upgrade.mjs','src/plugin-release.mjs','src/recovery.mjs','src/state.mjs','src/voice-model.mjs','scripts/update-m2.mjs','scripts/probe-live.mjs','scripts/build-runtime-base.mjs','integration/clawchat/SOURCE.json','integration/clawchat/core-media/SOURCE.json']:[];
+const instructionNames=instructionSource?['package.json','package-lock.json','scripts/update-m2.mjs','scripts/prepare-connect.mjs','scripts/import-sticker-catalog.mjs','deploy/serve-media.mjs','scripts/source-preload.mjs','src/binding-transition.mjs','src/clawchat-state.mjs','src/state.mjs','src/source-candidate.mjs','src/liveware-service.mjs','src/companion-defaults.mjs','src/default-stickers.mjs','src/sticker-catalog.mjs','src/runtime-upgrade.mjs','src/workspace-instructions.mjs','src/assets/capabilities.md','src/assets/workspace-instructions.json']:[];
+const launcherSupport=[...new Set([...launcherNames,...instructionNames])].map(name=>{
  const source=fileURLToPath(new URL('../'+name,import.meta.url)),path=join(root,name),existed=existsSync(path);
  const sha256=createHash('sha256').update(readFileSync(source)).digest('hex');
  plan.inputs[source]=sha256;if(existed)plan.inputs[path]=createHash('sha256').update(readFileSync(path)).digest('hex');
  return {source,path,sha256,existed,beforeSha256:existed?plan.inputs[path]:null,changed:source!==path&&(!existed||plan.inputs[path]!==sha256)};
-}):[];
+});
+plan.alreadyActive=plan.alreadyActive&&!launcherSupport.some(file=>file.changed);
+plan.summary.action=plan.alreadyActive?'already-active':'ready-to-prepare';
 const startupPlan=connector?inspectConnectorStartup(plan.instance,{migrateProfile:true}):null;
 if(startupPlan)plan.inputs[startupPlan.profileFile]=startupPlan.beforeSha256;
 if(officialPlan)Object.assign(plan.inputs,officialPlan.inputs);
@@ -326,14 +352,14 @@ if(withSongs||withSongLiveware)candidate.singing=enablePlatformSinging({provider
 if(withSongLiveware)candidate.singing.playback={port:8898,...candidate.singing.playback,enabled:true};
 if(withRealtime)candidate.realtime={port:8897,...candidate.realtime,...(realtimeOrigin?{publicOrigin:realtimeOrigin}:{}),enabled:true};
 if(withQQModules)candidate.qq={...candidate.qq,nativeModules:true};
-if(withActivities)candidate.activities={automatic:false,maxDailyBackgroundModelCalls:0,...candidate.activities,enabled:true};
+if(withActivities)candidate.activities={automatic:true,maxDailyBackgroundModelCalls:5,...candidate.activities,enabled:true};
 if(withExpressions)candidate.expressions={...candidate.expressions,enabled:true};
 if(connector)candidate.clawchat={...candidate.clawchat,delivery:{...candidate.clawchat.delivery,connectBin:join(connector.directory,'clawchat-connect'),mediaEnabled:true}};
 assert.ok(existsSync(candidate.speech.providerConfigPath),'Speech provider configuration missing');
 const staged=join(privateRoot,'candidate.json');writeState(staged,candidate);
 plan.inputs[staged]=createHash('sha256').update(readFileSync(staged)).digest('hex');
 if(probePrompts)plan.inputs[probePrompts]=createHash('sha256').update(readFileSync(probePrompts)).digest('hex');
-const record={state:'prepared',at:new Date().toISOString(),backup,version:distributionVersion,sourceRuntime:plan.selected.version,
+const record={state:'prepared',at:new Date().toISOString(),backup,version:distributionVersion,sourceRuntime:plan.selected.version,workspaceInstructions:plan.workspaceInstructions,launcherSupport,
  configFile:plan.configFile,lockFile:plan.lockFile,instancePath:plan.instancePath,accountBindingChanged:false,qqBound:false,...(officialPlan?{officialCutover:officialPlan}:{}),...(startupPlan?{startupPlan}: {})};
 const enabledPrograms=livewarePrograms.filter(({kind})=>kind==='call'?candidate.realtime?.enabled:candidate.singing?.playback?.enabled);
 const serviceEntry=join(root,'src/liveware-service.mjs');
@@ -367,12 +393,12 @@ try{
  if(officialPlan){record.officialPhase='selecting';writeState(recordFile,record);record.officialSelection=officialCutover.select(officialPlan);record.officialPhase='selected';writeState(recordFile,record);}
  if(startupPlan){record.startupPreparation=prepareConnectorStartup(candidate,{migrateProfile:true,expectedProfileSha256:startupPlan.beforeSha256});writeState(recordFile,record);}
  copyFileSync(staged,plan.instancePath);
- if(connector){
-  for(const file of launcherSupport)if(file.changed){
+ for(const file of launcherSupport)if(file.changed){
    mkdirSync(dirname(file.path),{recursive:true,mode:0o700});const temporary=file.path+'.whalenest-candidate';
    try{copyFileSync(file.source,temporary);assert.equal(createHash('sha256').update(readFileSync(temporary)).digest('hex'),file.sha256);renameSync(temporary,file.path);}
    finally{rmSync(temporary,{force:true});}
-  }
+ }
+ if(connector){
   if(record.launcher){
    mkdirSync(dirname(installedLauncher),{recursive:true,mode:0o700});
    copyFileSync(releaseLauncher,installedLauncher);
@@ -395,6 +421,7 @@ try{
  installed.retainedVersions=[...(previous.retainedVersions??[]),Object.fromEntries(keys.map(k=>[k,previous[k]]))];installed.activationGeneration=previous.activationGeneration+1;
  assert.equal(installed.version,distributionVersion);
  writeState(plan.lockFile,next);
+ record.workspaceInstructionsApplied=applyWorkspaceInstructions(plan.workspaceInstructions);writeState(recordFile,record);
  if(connector)run(process.execPath,[join(connector.directory,'runtime/cli.mjs'),'init'],20000);
  if(existsSync(join(candidate.dataDir,'runtime.lock')))recoverLease(candidate);
  if(stickerCatalog)record.stickerCatalog=await importStickerCatalog(stickerCatalog,candidate.dataDir);

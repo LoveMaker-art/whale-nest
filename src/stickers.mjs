@@ -55,7 +55,7 @@ export function createStickers(options,{getConfig,getNative,store:providedStore,
  async function action(args,exec,route,sessionId){
   authorize(route,exec);const operation=args.action??'list';
   assert.ok(['list','add','update','delete','send','status'].includes(operation),'未知表情操作');
-  if(operation==='list'){const q=String(args.query??'');return {ok:true,items:store().library().items.filter(i=>!q||[i.name,...i.tags??[]].some(t=>t.includes(q))).map(({md5,name,tags,uses})=>({id:md5,name,tags,uses:uses??0}))};}
+  if(operation==='list'){const q=String(args.query??''),library=store().library().items;return {ok:true,count:library.length,items:library.filter(i=>!q||[i.name,...i.tags??[]].some(t=>t.includes(q))).map(({md5,name,tags,uses})=>({id:md5,name,tags,uses:uses??0}))};}
   const scope=hash([options.instanceId,routeKey(route),senderKey(route),sessionId]);
   if(operation==='status'){
    assert.match(args.requestId??'',/^whalenest-sticker-[a-f0-9]{64}$/);const r=readState(join(directory,args.requestId+'.json'),null);assert.equal(r?.scope,scope,'当前会话没有这项表情请求');

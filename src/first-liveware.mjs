@@ -1,57 +1,72 @@
 import assert from 'node:assert/strict';
-import {execFile} from 'node:child_process';
-import {isAbsolute,join} from 'node:path';
-import {setTimeout as delay} from 'node:timers/promises';
-import {promisify} from 'node:util';
+import {join} from 'node:path';
 import {hash,resolveDeliveryTarget} from './routing.mjs';
 import {readState,writeState} from './state.mjs';
+import {clawchatBindingState} from './clawchat-state.mjs';
+import {livewareCommands} from './liveware-command.mjs';
+import {livewarePublication} from './liveware-migration.mjs';
 
-const run=promisify(execFile);
-const features={
-  song:{name:'鲸栖歌曲',file:'song-liveware.json'},
-};
+const verified=new Map();
+const rows=value=>Array.isArray(value)?value:value?.apps;
 
-export async function publishFirstLiveware(options,kind,port,signal) {
-  // The call entry is supplied by our Managed Web App provider. Official
-  // Exposure publishes it and runs the shared account-level relay. Song keeps
-  // its independent App; historical call Apps/tunnels are never deleted here.
-  if (kind === 'call') return;
-  const clawchat=options.clawchat;
-  if(clawchat?.firstBinding!==true||!Number.isInteger(port)||port<1||port>65535)return;
-  const route=clawchat.route;
+export async function publishFirstLiveware(options,kind,port,signal,dependencies={}){
+  if(kind==='call')return; // Official Exposure owns the managed call entry.
+  if(options.clawchat?.firstBinding!==true||!Number.isInteger(port)||port<1||port>65535)return;
+  assert.equal(kind,'song');
+  const route=options.clawchat.route;
   if(!route||!resolveDeliveryTarget(options,{origin:route}).ok)return;
   const binding=readState(join(options.dataDir,'first-binding.json'),null);
-  if(!binding?.id)return;
-  const {name,file}=features[kind];
-  const path=join(options.dataDir,file);
-  if(readState(path,null))return;
-  const {connectBin,configPath}=clawchat.delivery??{};
-  assert.ok(typeof connectBin==='string'&&isAbsolute(connectBin)&&typeof configPath==='string'&&isAbsolute(configPath),
-    'Liveware requires the configured Connect executable and configuration');
-  const request=operation=>'whalenest-liveware-'+hash([binding.id,kind,operation]);
-  async function tool(area,operation,args) {
-    for(let attempt=0;attempt<3;attempt++){
-      signal.throwIfAborted();
-      try {
-        const {stdout}=await run(connectBin,['liveware',area,operation,...args,'--agent',route.account,
-          '--request-id',request(operation),'--config',configPath],{timeout:45000,maxBuffer:128*1024,signal});
-        const receipt=JSON.parse(stdout);
-        assert.equal(receipt.status,'succeeded');
-        return receipt.result;
-      } catch {
-        if(attempt===2)throw Error('Connect Liveware '+operation+' did not return a successful receipt');
-        await delay(2000,undefined,{signal});
-      }
+  if(!binding?.identity)return;
+  const platform=dependencies.platform??clawchatBindingState(options.clawchat.delivery.configPath,route.account);
+  platform.verify(binding.identity);
+  const commands=dependencies.commands??livewareCommands(options);
+  const path=join(options.dataDir,'song-liveware.json'),previous=readState(path,null);
+  const stamp=hash([binding.identity,previous]);
+  if(verified.get(path)===stamp)return;
+  const control={signal};
+  const upstream='http://127.0.0.1:'+port;
+  if(previous?.url){
+    const apps=rows(await commands.listApps(control));
+    assert.ok(Array.isArray(apps),'Invalid account app list');
+    const id=previous.appId??new URL(previous.url).hostname.split('.')[0];
+    const found=apps.find(app=>app.appId===id&&app.name==='鲸栖歌曲');
+    if(found){
+      const publication=livewarePublication(found);
+      assert.equal(publication.url,new URL(previous.url).href,'Song app URL changed');
+      const record={...previous,binding:route.account,owner:route.sender,agent:binding.identity.agent,
+        appId:id,url:publication.url,upstream};
+      writeState(path,record);verified.set(path,hash([binding.identity,record]));return;
     }
+    // Retire a copied local reference without deleting the source cloud app.
   }
-  // Core journals these two operations under stable request IDs. Resume an
-  // unfinished publication with the original app and tunnel receipts.
-  const app=await tool('app','create',['--name',name,'--policy','private']);
-  assert.ok(app?.name===name&&typeof app.appId==='string'&&app.appId.length>0,'Liveware app receipt mismatch');
-  const receipt=await tool('tunnel','bind',['--app-id',app.appId,'--upstream','http://127.0.0.1:'+port]);
-  assert.equal(receipt?.appId,app.appId,'Liveware tunnel receipt mismatch');
-  assert.equal(receipt.registeredInClawChat,true,'Liveware registration was not confirmed');
-  const url=new URL(receipt.publicUrl);
-  assert.match(url.href,/^https:\/\/app-[a-z0-9-]+\.apps\.clawling\.io\/$/,'Unexpected Liveware URL');
-  writeState(path,{binding:route.account,owner:route.sender,appId:app.appId,url:url.href});
+  const key=hash([binding.id,'song']);
+  let progress=previous?.identity?.agent===binding.identity.agent&&previous?.operations?previous:
+    {identity:binding.identity,operations:{
+      create:{requestId:'whalenest-song-create-'+key,state:'unissued'},
+      bind:{requestId:'whalenest-song-bind-'+key,state:'unissued'}}};
+  const save=()=>writeState(path,progress);
+  save();
+  async function operation(kind,perform){
+    const entry=progress.operations[kind];
+    if(entry.state==='succeeded')return entry.result;
+    if(entry.state==='pending'){
+      const receipt=platform.receipt(binding.identity,kind==='create'?'liveware_app_create':'liveware_tunnel_bind',entry.requestId);
+      if(receipt?.state==='succeeded'){
+        Object.assign(entry,{state:'succeeded',result:receipt.result});save();return entry.result;
+      }
+      throw Error('Song '+kind+' is awaiting its original Core receipt');
+    }
+    assert.equal(entry.state,'unissued');
+    entry.state='pending';save(); // Unknown delivery is observed, never replayed.
+    entry.result=await perform({...control,requestId:entry.requestId});entry.state='succeeded';save();
+    return entry.result;
+  }
+  const app=livewarePublication(await operation('create',c=>commands.createApp('鲸栖歌曲',c)));
+  const result=await operation('bind',c=>commands.bindTunnel(app.appId,upstream,c));
+  assert.equal(result.appId,app.appId);assert.equal(result.registeredInClawChat,true);
+  const publication=livewarePublication({...app,publicUrl:result.publicUrl});
+  assert.equal(publication.url,app.url);
+  progress={...progress,binding:route.account,owner:route.sender,agent:binding.identity.agent,
+    appId:app.appId,url:publication.url,upstream};
+  save();verified.set(path,hash([binding.identity,progress]));
 }

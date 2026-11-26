@@ -5,6 +5,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {publishFirstLiveware} from './first-liveware.mjs';
 import {resolveDeliveryTarget,routeKey,senderKey} from './routing.mjs';
+import {inspectSourceCandidate} from './source-candidate.mjs';
 
 export async function serveLiveware(kind, configPath, signal, interval = 2000, isCurrent = () => true) {
   assert.ok(kind === 'call' || kind === 'song', 'Expected call or song');
@@ -54,11 +55,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const installed = () => JSON.parse(readFileSync(lockPath, 'utf8')).plugins['whalenest.runtime.deepseek-harness'];
     const entry = installed();
     assert.ok(entry?.status === 'active' && isAbsolute(entry.activeArtifact));
-    const source = join(dirname(entry.activeArtifact), 'whalenest/src/liveware-service.mjs');
+    const candidate=inspectSourceCandidate(options,entry);
+    const source = candidate?join(candidate.root,'src/liveware-service.mjs'):join(dirname(entry.activeArtifact), 'whalenest/src/liveware-service.mjs');
     const {serveLiveware:run} = await import(pathToFileURL(source));
     await run(kind, configPath, controller.signal, 2000, () => {
       const current = installed();
-      return current?.status === 'active' && current.activeArtifact === entry.activeArtifact;
+      return current?.status === 'active' && current.activeArtifact === entry.activeArtifact
+        && inspectSourceCandidate(options,current,{verify:false})?.manifestSha256===candidate?.manifestSha256;
     });
   }
   catch (error) {

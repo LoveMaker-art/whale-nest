@@ -13,9 +13,23 @@ import {humanMessageText} from './memory-adapter.mjs';
 import {createExpressionSettings} from './expression-settings.mjs';
 import {selectReplyItems} from './aurabot-expression.generated.mjs';
 import {createStickers} from './stickers.mjs';
+import {initializeDefaultStickers} from './default-stickers.mjs';
 
 const messageOf=e=>e.data.message??e.data;
 const textOf=m=>(m.content??[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();
+const confirmedVoice=value=>value?.state==='confirmed'&&typeof value.messageId==='string'&&!!value.messageId.trim();
+
+function manualVoiceResult(events) {
+  const calls=events.filter(e=>e.type==='assistant/message').flatMap(e=>(messageOf(e).content??[]).filter(b=>b.type==='tool-call'));
+  if(!calls.length||calls.some(call=>call.name!=='send_voice'||typeof call.id!=='string'))return null;
+  const results=new Map();
+  for(const event of events)if(event.type==='tool/result') {
+    const message=messageOf(event),id=message.toolCallId??message.source?.callId;
+    try{results.set(id,JSON.parse(textOf(message)));}catch{ /* An invalid result cannot authorize hiding text. */ }
+  }
+  const voices=calls.map(call=>results.get(call.id));
+  return voices.every(value=>confirmedVoice(value)&&value.textReply!==true)?voices.at(-1):null;
+}
 
 /** Reuses the original library and mood. Native completed turns authorize media;
  * the Runtime Adapter only replaces its displayed final text after confirmation. */
@@ -27,7 +41,8 @@ export async function createExpressions(ctx,options,{getConfig,mood,policy,setti
   const store=sharedStore??createStickerStore({dsh:ctx,getConfig,onebot:{call:()=>{throw Error('QQ actions are not connected');}},log:{debug(){},info(){},warn(){}}});
   const stickers=sharedStickers??createStickers(options,{getConfig,store,senderFor});
   const seedFile=join(directory,'seed.json');
-  if(configured&&!existsSync(seedFile)) {
+  if(configured&&options.expressions?.stickerCatalog)await initializeDefaultStickers(options,store);
+  else if(configured&&!existsSync(seedFile)) {
     if(!store.library().items.length) {
       const r=await store.addFromBuffer(readFileSync(new URL('../vendor/aurabot/assets/dafeiyu.jpg',import.meta.url)),
         {name:'大肥鱼开心',tags:['开心','卖萌','早晚安'],from:'manual',toQQ:false});
@@ -69,6 +84,11 @@ export async function createExpressions(ctx,options,{getConfig,mood,policy,setti
     if(!end||end.data.reason.kind!=='completed'||!user||messageOf(user).source.kind!=='user')return {state:'skipped'};
     assert.equal(messageOf(user).source.connectInputId,inputId,'Expression request is for a different native input');
     const route=options.clawchat?.route;authorize(route);
+    const manualVoice=manualVoiceResult(events);
+    if(manualVoice) {
+      if(ctx.sessions?.flush)assert.ok(await ctx.sessions.flush(session),'Voice source must be durable');
+      return {state:'completed',voice:manualVoice,sticker:null,replacementText:''};
+    }
     const final=events.findLast(e=>e.type==='assistant/message'&&!messageOf(e).content.some(b=>b.type==='tool-call'));
     const text=final?textOf(messageOf(final)):'';
     const manualMedia=events.some(e=>e.type==='assistant/message'&&messageOf(e).content.some(b=>{
@@ -83,8 +103,15 @@ export async function createExpressions(ctx,options,{getConfig,mood,policy,setti
     const file=join(directory,'receipts',key+'.json');
     let record=readState(file,null);
     if(record)assert.equal(record.textHash,hash(text),'Expression text changed');
-    if(afterReply&&(!record?.finished||!record.stickerScene||!record.stickerId||record.stickerResult))return record?.result??{state:'skipped'};
-    if(record?.finished&&!afterReply)return record.result;
+    const completedResult=()=>{
+      if(!record?.result)return {state:'skipped'};
+      const result={...record.result};delete result.replacementText;
+      if(confirmedVoice(record.voiceResult))result.replacementText='';
+      if(JSON.stringify(result)!==JSON.stringify(record.result)){record.result=result;writeState(file,record);}
+      return result;
+    };
+    if(afterReply&&(!record?.finished||!record.stickerScene||!record.stickerId||record.stickerResult))return completedResult();
+    if(record?.finished&&!afterReply)return completedResult();
     const controller=new AbortController();controllers.set(String(agent.id),{inputId,controller});
     const deadline=setTimeout(()=>controller.abort(),45000);
     try{
@@ -108,7 +135,8 @@ export async function createExpressions(ctx,options,{getConfig,mood,policy,setti
         }catch{record.voiceResult={state:'unconfirmed',message:'自动语音未获确认，保留文字回复，不自动重试。'};}
         writeState(file,record);
       }
-      if(afterReply){
+      const voiceConfirmed=confirmedVoice(record.voiceResult);
+      if((afterReply||voiceConfirmed)&&record.stickerId&&!record.stickerResult){
         const item=store.library().items.find(i=>i.md5===record.stickerId);
         record.stickerResult={state:'unconfirmed'};
         writeState(file,record); // Reserve this input before touching the media channel.
@@ -118,10 +146,9 @@ export async function createExpressions(ctx,options,{getConfig,mood,policy,setti
             :{state:'skipped'};
         } catch { record.stickerResult={state:'unconfirmed'}; }
       }
-      const voiceConfirmed=record.voiceResult?.state==='confirmed';
       record.finished=true;record.result={state:'completed',voice:record.voiceResult??null,sticker:record.stickerResult??null,
-        ...(record.stickerId&&!afterReply?{stickerPending:true}:{}),
-        ...(voiceConfirmed?{replacementText:'（语音回复）'}:{})};writeState(file,record);
+        ...(record.stickerId&&!afterReply&&!voiceConfirmed?{stickerPending:true}:{}),
+        ...(voiceConfirmed?{replacementText:''}:{})};writeState(file,record);
       return record.result;
     }finally{clearTimeout(deadline);controllers.delete(String(agent.id));cancelled.delete(String(agent.id)+':'+inputId);}
   }

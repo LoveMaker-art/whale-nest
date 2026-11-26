@@ -9,6 +9,9 @@ import {startMockOneBot} from '../vendor/aurabot/test/helpers/mock-onebot.js';
 
 test('ClawChat native tools link, unlink and relink QQ while preserving the owner memory and CC Session',{timeout:90000},async t=>{
   const directory=await bridgeDirectory(),onebot=await startMockOneBot();t.after(()=>onebot.close());
+  // This routing test asserts literal fallback notices. Give it an explicit
+  // zero budget; the fresh default and model-written notices have separate tests.
+  directory.options.activities={automatic:false,maxDailyBackgroundModelCalls:0};
   const gateway=createServer((_req,res)=>res.end(JSON.stringify({success:true,data:{selfInfo:{online:true,uin:'20000002'}}})));
   await new Promise(r=>gateway.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>{gateway.close(r);gateway.closeAllConnections();}));
   directory.options.owners=directory.options.owners.filter(owner=>owner.channel==='clawchat');

@@ -12,7 +12,7 @@ async function fixture(t,limit=5){
  let at=Date.parse('2026-11-16T01:00:00Z'),connected=true;
  const cc={channel:'clawchat',account:'agent',sender:'alice',kind:'private',conversation:'dm'};
  const qq={channel:'qq',account:'20000002',sender:'10000001',kind:'private',conversation:'10000001'};
- const options={instanceId:'test',dataDir,owners:[cc,qq],clawchat:{route:cc},qq:{enabled:true},activities:{automatic:false,maxDailyBackgroundModelCalls:limit}};
+ const options={instanceId:'test',dataDir,owners:[cc,qq],clawchat:{route:cc},qq:{enabled:true},activities:{automatic:false,contactEnabled:false,maxDailyBackgroundModelCalls:limit}};
  const now=()=>at,available=r=>r.channel!=='qq'||connected;
  const policy=createCompanionPolicy(options,cc,{now,available});
  return {options,cc,qq,now,policy,available,setTime:v=>at=Date.parse(v),disconnect:()=>connected=false,reconnect:()=>connected=true};

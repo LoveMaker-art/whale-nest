@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash,randomUUID} from 'node:crypto';
-import {existsSync,readFileSync,writeFileSync,renameSync,rmSync,statSync} from 'node:fs';
-import {join} from 'node:path';
+import {existsSync,readFileSync,writeFileSync,renameSync,rmSync,statSync,mkdirSync} from 'node:fs';
+import {dirname,join} from 'node:path';
 import {readState,writeState} from './state.mjs';
 import {parsePersona} from '../vendor/aurabot/src/persona/personas.js';
 
@@ -26,7 +26,7 @@ export function currentGreetingPersona(options){
  * before it starts, preserving independently authored greeting files. */
 export function syncGreeting(options,persona=currentGreetingPersona(options)){
   assert.ok(persona?.body?.trim(),'Greeting requires the complete current persona');
-  const path=join(options.cwd??options.dataDir,'greeting.md'),recordFile=join(options.dataDir,'greeting-input.json');
+  const path=join(options.cwd??options.dataDir,'clawchat/greeting.md'),recordFile=join(options.dataDir,'greeting-input.json');
   const before=existsSync(path)?readFileSync(path,'utf8'):null,record=readState(recordFile,null);
   const contents='<!-- whalenest: current persona for the official first greeting -->\n'
     +'以下是我当前的人格，首次见面时也沿用同一个身份、关系和说话方式。\n\n'
@@ -44,6 +44,7 @@ export function syncGreeting(options,persona=currentGreetingPersona(options)){
   writeState(recordFile,{schema:1,instanceId:options.instanceId,sha256:before===null?null:sha(before),pendingSha256:digest});
   const temporary=path+'.'+randomUUID()+'.tmp';
   try{
+    mkdirSync(dirname(path),{recursive:true,mode:0o700});
     writeFileSync(temporary,contents,{flag:'wx',mode:before===null?0o600:statSync(path).mode&0o777});
     assert.equal(existsSync(path)?readFileSync(path,'utf8'):null,before,'Greeting changed during preparation');
     renameSync(temporary,path);

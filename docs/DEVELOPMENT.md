@@ -145,6 +145,8 @@ node scripts/update-m2.mjs rollback
 
 官方0.2.23托管Liveware的`plugin_durable_state`绑定记录及鲸栖`managed-liveware.json`属于入口接线，不能作为用户业务状态一并清空。按实际plugin/capability/lifetime核对后保留，其他持久状态逐项分类。源码模式保留活动候选及指针；清理旧候选中的实机副本时，仍须保留插件锁登记的安装包与校验文件，不以目录名推断可整删。新一轮从头测试默认保留用户最后确认的产品人格，清除其他自定义卡及个人偏好，音色、记忆整理时段和表达策略恢复当前产品默认。工作目录清空后重建产品问候与受控AGENTS，不恢复用户扩展区。清空后的最终验收只读，不新建模型会话、发送运维消息或生成媒体；同代码的真实模型证据在清理前完成并注明边界。
 
+初始化修复后的完整重置还保留当前身份的`first-binding.json`（delegated开场／已有头像状态）及`greeting-input.json`，并在官方确切读取的`clawchat/greeting.md`重建完整人格输入。已提交且完成的`binding-transition.json`可清理；未完成绑定、未知投递或运行中的任务先核对，不能直接当作垃圾删除。QQ停稳后再清空用户资料及Crashpad转储，避免停止过程中刚生成的诊断残留。只清理未引用的运行临时目录，当前Core所用bridge patch保留。
+
 QQ的`managed-desktop.json`仅登记受管桌面资料目录，是启动所需运行文件，和QQ账号资料、cookies分开保留。检查清空后的`session_intents`时，允许官方重新建立一条仅指向当前默认工作目录、名称/模式/模型/推理均为空、选项为`{}`的初始路由；实际会话、正文、用户模型选择和消息仍须为空，不能把保留个人选择的记录当作初始路由。
 
 ## 离线恢复与迁移操作
@@ -169,7 +171,7 @@ Core桥从原生已完成调度日志恢复投递意图及检查点，不重新�
 
 模板采用普通Markdown，围绕鲸鱼娘自身能力分节，简短说明各自的使用入口，语气沿用当前人格；QQ接入、两端聊天与共用档案属于伙伴能力，保留在总览。ClawChat通用平台管理及更新操作沿用各自工具和Skill入口。修改模板时同步更新`src/assets/workspace-instructions.json`的SHA-256，运行`node scripts/test.mjs test/workspace-instructions.test.mjs test/workspace-instructions-native.test.mjs test/distribution.test.mjs`，验证摘要、实际原生加载和随包分发。格式依据与本轮内容审阅见[连续任务记录](tasks/connector-convergence-023.md#agents内容与格式优化)。
 
-官方首次问候读取实际工作目录的`clawchat/greeting.md`，已确认模板位于[deploy/clawchat/greeting.md](../deploy/clawchat/greeting.md)。当前源机已显式同步该文件，尚无自动安装接线。同步文案保留既有`greeting-receipt.json`，不会让已完成问候的用户重新收到消息；仅改文案不代表鲸栖重复问候入口已经移除，当前实施边界见[STATUS](STATUS.md#首次问候文案已同步入口收敛待实施)。
+官方首次问候读取实际工作目录的`clawchat/greeting.md`。鲸栖以[运行模板](../src/assets/greeting.md)加当前完整人格，在准备、官方Core启动前和人格变更时同步这一确切文件；根目录的`greeting.md`不是官方输入。同步保留既有`greeting-receipt.json`，不重发已完成问候，鲸栖也不再另发欢迎语。历史文案保存在[deploy/clawchat/greeting.md](../deploy/clawchat/greeting.md)。
 
 平台准备全新用户实例时，在实际 `DSH_HOME/companion/aurabot-v1/instance.json` 的 `clawchat` 段设置 `"firstBinding": true`，沿用实例内 Connect 程序和配置的绝对路径。新实例的 `owners` 为空，由 Connect 在配对后提供身份。准备未绑定的桥时可将同一实例配置传给 `prepare:connect`。已有绑定实例沿正常更新流程保留其身份和资料。
 

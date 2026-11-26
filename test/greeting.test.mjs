@@ -11,9 +11,13 @@ test('official first greeting receives the entire selected persona and preserves
   t.after(()=>rmSync(root,{recursive:true,force:true}));
   const options={instanceId:'greeting-test',dataDir:root,cwd:root};
   const persona={id:'current',body:'我是鲸鱼娘。主人与我的关系保持原样。\nPERSONA_LAST_PARAGRAPH'};
-  const path=join(root,'greeting.md');
+  const path=join(root,'clawchat/greeting.md');
+  mkdirSync(join(root,'clawchat'),{recursive:true});
+  writeFileSync(join(root,'greeting.md'),'用户自己保存在根目录的同名文件');
   writeFileSync(path,readFileSync(new URL('../deploy/clawchat/greeting.md',import.meta.url)));
   assert.equal(syncGreeting(options,persona).state,'updated');
+  assert.equal(readFileSync(join(root,'greeting.md'),'utf8'),'用户自己保存在根目录的同名文件',
+    'Only the official workspace/clawchat/greeting.md input is managed');
   assert.ok(readFileSync(path,'utf8').includes(persona.body));
   assert.match(readFileSync(path,'utf8'),/只输出问候和这个问题/);
   assert.equal(syncGreeting(options,persona).state,'current');

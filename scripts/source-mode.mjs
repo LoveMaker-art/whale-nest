@@ -112,7 +112,7 @@ if(action==='rollback'){
       mkdirSync(dirname(backup),{recursive:true,mode:0o700});mkdirSync(backup,{recursive:false,mode:0o700});
       const record={instanceId:options.instanceId,projectRoot:resolve(projectPath),candidate,summary,
         previousSource:existsSync(pointer)?readFileSync(pointer,'utf8'):null,files:[]};
-      for(const path of [instancePath,join(options.cwd,'AGENTS.md'),join(options.cwd,'greeting.md'),
+      for(const path of [instancePath,join(options.cwd,'AGENTS.md'),join(options.cwd,'clawchat/greeting.md'),
         ...['workspace-instructions.json','greeting-input.json','first-binding.json','managed-liveware.json',
           'song-liveware.json','call-liveware.json'].map(name=>join(options.dataDir,name))])
         if(existsSync(path))copyFileSync(path,join(backup,path.split('/').at(-1)));

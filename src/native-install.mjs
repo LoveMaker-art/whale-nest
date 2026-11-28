@@ -14,6 +14,15 @@ import {inspectPreparedRuntimeBundle} from './live-update.mjs';
 import {workspaceInstructionsSource,planWorkspaceInstructions,applyWorkspaceInstructions} from './workspace-instructions.mjs';
 const id='whalenest.runtime.deepseek-harness',read=p=>JSON.parse(readFileSync(p)),sha=p=>createHash('sha256').update(readFileSync(p)).digest('hex');
 export const launcherFiles=programFiles();
+function rollbackBundle(selected){
+ const path=selected.source?.type==='local'&&selected.source.path;
+ assert.ok(isAbsolute(path||'')&&existsSync(path),'A verified local previous bundle is required for offline recovery');
+ const bytes=readFileSync(path),bundle=JSON.parse(bytes),artifact=bundle.manifest?.artifacts?.find(a=>a.target===selected.target&&a.integrity===selected.integrity);
+ assert.ok(bundle.format==='clawchat-connect-plugin-bundle-v1'&&bundle.manifest.pluginId===id&&bundle.manifest.version===selected.version&&artifact,'Previous bundle does not match the selected runtime');
+ const file=bundle.files?.[artifact.entry];assert.ok(file,'Previous runtime artifact is missing');
+ assert.equal('sha256-'+createHash('sha256').update(Buffer.from(file.content,file.encoding==='base64'?'base64':'utf8')).digest('base64'),selected.integrity,'Previous runtime integrity mismatch');
+ return {path,sha256:createHash('sha256').update(bytes).digest('hex')};
+}
 export function inspectNativeInstall(options,bundlePath,projectRoot,{run=execFileSync}={}){
  assert.ok(isAbsolute(bundlePath)&&isAbsolute(projectRoot));
  const bundle=read(bundlePath);inspectPreparedRuntimeBundle(bundlePath,bundle.manifest.version);
@@ -23,7 +32,7 @@ export function inspectNativeInstall(options,bundlePath,projectRoot,{run=execFil
  assert.ok(selected?.status==='active','Whale plugin is not active');
  for(const name of launcherFiles)assert.ok(bundle.files['artifacts/whalenest/'+name],'Bundle lacks launcher: '+name);
  const instructions=planWorkspaceInstructions(options,workspaceInstructionsSource({bundle}));
- return {instanceId:options.instanceId,version:bundle.manifest.version,bundlePath,sha256:sha(bundlePath),projectRoot,selected,config,instructions,
+ return {instanceId:options.instanceId,version:bundle.manifest.version,bundlePath,sha256:sha(bundlePath),projectRoot,selected,config,instructions,rollback:rollbackBundle(selected),
   selectionFingerprint:createHash('sha256').update(JSON.stringify([selected.version,selected.integrity,selected.source,config.agents])).digest('hex')};
 }
 function put(path,bytes,mode=0o600){mkdirSync(dirname(path),{recursive:true,mode:0o700});writeFileSync(path+'.install.tmp',bytes,{flag:'wx',mode});renameSync(path+'.install.tmp',path);}
@@ -45,10 +54,10 @@ export async function installNativePlugin(instancePath,bundlePath,projectRoot,{r
  const backup=join(options.dataDir,'source-backups',new Date().toISOString().replaceAll(':','').replaceAll('.','')+'-native-install');mkdirSync(dirname(backup),{recursive:true,mode:0o700});
  let stopped=false,changed=false,record;
  try{
-  const again=inspectNativeInstall(options,bundlePath,projectRoot,{run});assert.equal(again.selectionFingerprint,plan.selectionFingerprint);assert.equal(again.sha256,plan.sha256);
+  const again=inspectNativeInstall(options,bundlePath,projectRoot,{run});assert.equal(again.selectionFingerprint,plan.selectionFingerprint);assert.equal(again.sha256,plan.sha256);assert.equal(again.rollback.sha256,plan.rollback.sha256);
   stopped=true;for(const service of ['whalenest-qq','whalenest-call','whalenest-song','dsh-agent'])ctl('stop',service);
   await waitForSdkExit(options);
-  record=snapshot(options,projectRoot,backup);record.previous=plan.selected;put(join(backup,'install.json'),JSON.stringify(record));
+  record=snapshot(options,projectRoot,backup);record.previous=plan.selected;const rollbackPath=join(backup,'previous.connect-plugin');assert.equal(sha(plan.rollback.path),plan.rollback.sha256);copyFileSync(plan.rollback.path,rollbackPath);record.rollback={path:rollbackPath,sha256:plan.rollback.sha256};put(join(backup,'install.json'),JSON.stringify(record));
   const bundle=read(bundlePath),root=join(options.dataDir,'deployments',plan.version+'-'+plan.sha256.slice(0,16));assert.ok(!existsSync(root),'Use an already selected installation or a fresh deployment root');mkdirSync(root,{recursive:true,mode:0o700});
   for(const [name,f]of Object.entries(bundle.files)){
    if(!name.startsWith('artifacts/whalenest/'))continue;
@@ -65,16 +74,25 @@ export async function installNativePlugin(instancePath,bundlePath,projectRoot,{r
   put(installationFile(options),JSON.stringify({schema:1,pluginId:id,root,entryPath:join(root,'src/runtime-extension.mjs'),version:plan.version,activationGeneration:0,projectRoot}));
   options.clawchat.officialHost=true;put(instancePath,JSON.stringify(options));applyWorkspaceInstructions(plan.instructions);
   ctl('start','dsh-agent');for(const name of ['whalenest-call','whalenest-song'])ctl('start',name);
-  for(let i=0;i<60;i++){try{const state=await core.state();if(await probeRuntimeReady(options)&&state.connected){assert.equal(state.userId,before.userId);assert.equal(state.ownerId,before.ownerId);assert.equal(state.conversationId,before.conversationId);break;}}catch{}if(i===59)throw Error('Updated native runtime did not become ready');await delay(1000);}
-  const selected=installedPlugin(options,id,{run}),target=bundle.manifest.artifacts.find(a=>a.target==='linux-x64');
-  assert.ok(selected?.version===plan.version&&selected.integrity===target.integrity,'Official replacement did not select the exact target');
+  const target=bundle.manifest.artifacts.find(a=>a.target==='linux-x64');let ready=false,lastError;
+  for(let i=0;i<60;i++){
+   let state,selected;
+   try{state=await core.state();if(await probeRuntimeReady(options)&&state.connected&&state.available)selected=installedPlugin(options,id,{run});}catch(error){lastError=error;}
+   if(selected){
+    assert.equal(state.userId,before.userId);assert.equal(state.ownerId,before.ownerId);assert.equal(state.conversationId,before.conversationId);
+    assert.ok(selected.status==='active'&&selected.version===plan.version&&selected.integrity===target.integrity,'Official replacement did not select the exact target');ready=true;break;
+   }
+   if(i<59)await delay(1000);
+  }
+  assert.ok(ready,'Updated native runtime did not become ready'+(lastError?': '+lastError.message:''));
   ctl('start','whalenest-qq');record.state='active';put(join(backup,'install.json'),JSON.stringify(record));return {state:'active',version:plan.version,backup};
  }catch(error){
-  if(stopped){for(const name of ['whalenest-qq','whalenest-call','whalenest-song','dsh-agent'])try{ctl('stop',name);}catch{}await waitForSdkExit(options);
-   if(changed)command(options.clawchat.delivery.connectBin,['plugin','select',id,plan.selected.version,'--integrity',plan.selected.integrity,'--config',options.clawchat.delivery.configPath],120000);
+  if(record){record.state='failed';record.error={message:error.message,stack:error.stack};put(join(backup,'install.json'),JSON.stringify(record));}
+  try{if(stopped){for(const name of ['whalenest-qq','whalenest-call','whalenest-song','dsh-agent'])try{ctl('stop',name);}catch{}await waitForSdkExit(options);
+   if(changed){assert.equal(sha(record.rollback.path),record.rollback.sha256);command(options.clawchat.delivery.connectBin,['plugin','replace',id,record.rollback.path,'--offline','--config',options.clawchat.delivery.configPath],120000);}
    if(record){restoreOwnFiles(backup,record);applyWorkspaceInstructions(planWorkspaceInstructions(options,workspaceInstructionsSource({installedRoot:plan.selected.ownedRoot})));}
    ctl('start','dsh-agent');for(const name of ['whalenest-call','whalenest-song','whalenest-qq'])ctl('start',name);
-  }
+  }}catch(recoveryError){if(record){record.recoveryError={message:recoveryError.message,stack:recoveryError.stack};put(join(backup,'install.json'),JSON.stringify(record));}throw new AggregateError([error,recoveryError],'Native update failed and recovery is incomplete; see '+backup,{cause:error});}
   throw error;
  }
 }

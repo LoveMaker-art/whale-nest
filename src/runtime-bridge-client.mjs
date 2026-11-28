@@ -37,9 +37,11 @@ export async function startRuntimeBridge(options) {
       {insert:[{id:'clawchat-connect-bridge',name:options.bridgePath,config:{home:options.home,
         profile:options.profile??null,build:options.bridgeBuild,maxFrameBytes:limit}}]},
     ]),{mode:0o600});
+    const nativeEnv={...process.env,...options.env};
+    for(const key of ['AGENT_MANAGER_TOKEN','CLAWCLOUD_TOKEN','CLAWCHAT_INTERNAL_API_TOKEN','INTERNAL_AUTH_TOKEN'])delete nativeEnv[key];
     child=spawn(options.executable,[...(options.executableArguments??[]),
       ...(options.profile?['--profile',options.profile]:[]),'--patch',overlay],{
-      cwd:options.cwd,env:{...process.env,...options.env,DSH_HOME:options.home,
+      cwd:options.cwd,env:{...nativeEnv,DSH_HOME:options.home,
         CONNECT_DSH_BRIDGE_FD_OUT:'3',CONNECT_DSH_BRIDGE_FD_IN:'4'},
       stdio:['pipe','ignore','pipe','pipe','pipe'],windowsHide:true,
     });
@@ -70,6 +72,10 @@ export async function startRuntimeBridge(options) {
           frame=JSON.parse(line);
           assert.ok(frame&&typeof frame==='object'&&!Array.isArray(frame));
           if(!helloFrame) {
+            if(frame.type==='startupError'){
+              assert.ok(['FIRST_BINDING_PENDING','BUSINESS_INITIALIZATION_FAILED'].includes(frame.code));
+              abort(Object.assign(Error('Whale DSH initialization: '+frame.code),{code:frame.code}));return;
+            }
             assert.equal(frame.type,'hello');assert.equal(frame.protocol?.name,'clawchat-connect-dsh-bridge');
             assert.equal(frame.protocol.major,2);assert.equal(typeof frame.protocol.build,'string');
             assert.equal(frame.home,options.home);assert.equal(frame.profile,options.profile??null);

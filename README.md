@@ -2,7 +2,7 @@
 
 鲸栖是基于 DSH 的云端陪伴插件。通过 ClawChat 配对后，可以和「鲸鱼娘」聊天。按需关联 QQ 后，两边都能找到同一个伙伴。她也叫「大肥鱼」。
 
-**当前版本 `1.0.0-beta.4.dev.20`** · [测试版说明](docs/releases/1.0.0-beta.4.dev.20.md) · [安装与接入](docs/DEVELOPMENT.md#首次开通)
+**源码版本 `1.0.0`** · [版本说明](docs/releases/1.0.0.md) · [安装与接入](docs/DEVELOPMENT.md#首次开通)
 
 ## 功能
 
@@ -26,13 +26,14 @@ npm ci
 npm run check
 npm run check:vendor
 npm test
-npm run build:distribution
 ```
+
+`npm test`仅运行源码回归。发行包构建及`npm run test:distribution`在测试机源码验收、获准打包后执行，见[开发说明](docs/DEVELOPMENT.md#构建测试版)。
 
 | 路径 | 内容 |
 | --- | --- |
 | `src/` | 陪伴能力、渠道适配、数据归属和更新 |
-| `integration/clawchat/` | ClawChat Connect 桥、媒体与会话扩展 |
+| `integration/clawchat/` | 官方 Runtime 固定依赖与来源记录 |
 | `deploy/`、`scripts/` | 宿主接线、构建和验证 |
 | `test/` | 原生 DSH、媒体、网关和持久化回归 |
 | `vendor/`、`licenses/` | 固定源码、素材及第三方许可 |

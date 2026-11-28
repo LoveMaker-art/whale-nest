@@ -34,6 +34,22 @@ test('optional companion settings cannot fail official preparation or model disc
   assert.equal(closed,true);
 });
 
+test('a temporary unknown manager keeps the page healthy and pauses publication until selection is known',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'whalenest-manager-restart-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const reservation=createServer();await new Promise(r=>reservation.listen(0,'127.0.0.1',r));const port=reservation.address().port;await new Promise(r=>reservation.close(r));
+ const route={channel:'clawchat',kind:'private',account:'agent',sender:'owner',conversation:'dm'},file=join(root,'instance.json');
+ await writeFile(file,JSON.stringify({dataDir:root,cwd:root,owners:[route],clawchat:{route},realtime:{enabled:true,sessionEnabled:false,port}}));
+ const stop=new AbortController();let selection=null,failure;
+ const running=serveLiveware('call',file,stop.signal,20,async()=>selection);running.catch(e=>{failure=e;});
+ t.after(async()=>{stop.abort();await running.catch(()=>{});});
+ let healthy=false;
+ for(let i=0;i<50&&!healthy;i++){if(failure)throw failure;try{healthy=(await fetch('http://127.0.0.1:'+port+'/healthz')).ok;}catch{}if(!healthy)await delay(20);}
+ assert.ok(healthy);assert.equal((await fetch('http://127.0.0.1:'+port+'/healthz')).status,200);
+ assert.deepEqual((await readdir(root)).sort(),['instance.json'],'Unknown selection must not submit or persist publication');
+ selection=false;await running;assert.equal(failure,undefined);
+});
+
 for (const [kind,unavailable] of [['call','song-playback.mjs'],['song','platform-voice-liveware.mjs']]) {
   test(kind+' Liveware remains healthy when the other backend cannot load',{timeout:20000},async t=>{
     const root = await mkdtemp(join(tmpdir(),'whalenest-isolated-liveware-'));
@@ -150,7 +166,7 @@ test('official page and gateway use the verified DSH lane, shared voice, playbac
   service=await startPlatformVoiceLiveware(options,{readProfile:()=>{profileReads++;return profile;},listModels:async()=>[
     {isDefault:true,selection:{provider:'clawling',model:'deepseek-v4.1-flash'}},
     {selection:{provider:'clawling-voice',model:'deepseek-v4.1-flash'},supportedReasoningEfforts:['off','low']},
-  ],async withPrivateVoiceSession(request,signal,run){
+  ],async withCallSession(request,signal,run){
     assert.equal(request.chatId,route.conversation);
     assert.equal(request.ownerId,route.sender);
     if(request.sessionRef)assert.equal(request.sessionRef,'text-session');
@@ -360,30 +376,32 @@ test('independent call gateway and song publication start on first binding and s
   await writeFile(connectBin,'#!'+process.execPath+'\n'+
     `const fs=require('node:fs');const [channel,type,action,...args]=process.argv.slice(2);
       const get=flag=>args[args.indexOf(flag)+1];
+      if(channel==='__clawnest-state'){console.log(JSON.stringify({userId:'agent-id',ownerId:'owner',conversationId:'private',connected:true,available:true}));process.exit(0);}
+      if(channel==='config'){console.log(JSON.stringify({defaultAgent:'verified',agents:{verified:{}}}));process.exit(0);}
       if(channel!=='liveware')process.exit(1);
       fs.appendFileSync(${JSON.stringify(commands)},JSON.stringify({type,action,args})+'\\n');
-      const key=action==='create'?(get('--name')==='鲸栖通话'?'call':'songs'):get('--app-id');
-      const result=action==='create'?{appId:key,name:get('--name')}:
-        {appId:key,publicUrl:'https://app-'+key+'.apps.clawling.io/',registeredInClawChat:true};
+      const key=action==='create'?(get('--name')==='鲸栖通话'?'app-call':'app-songs'):get('--app-id');
+      const result=action==='create'?{appId:key,name:get('--name'),publicUrl:'https://'+key+'.apps.clawling.io/'}:
+        {appId:key,publicUrl:'https://'+key+'.apps.clawling.io/',registeredInClawChat:true};
       console.log(JSON.stringify({status:'succeeded',result}));`,{mode:0o700});
   let provider;
   const base={activate(context){context.hostCapabilities.get('runtime-provider').register({create:()=>({
     async prepare(){
-      await writeFile(join(directory,'first-binding.json'),JSON.stringify({id:'verified-first-binding'}));
+      await writeFile(join(directory,'first-binding.json'),JSON.stringify({id:'verified-first-binding',identity:{account:'verified',agent:'agent-id',owner:'owner',conversation:'private'}}));
       await writeFile(instancePath,JSON.stringify({...options,owners:[route],clawchat:{...options.clawchat,route}}));
     },
   })});}};
   await extendRuntimeEntry(base).activate({hostCapabilities:{get:()=>({register:value=>{provider=value;}})}});
-  adapter=provider.create({homePath:root},{withPrivateVoiceSession:async()=>{}});
+  adapter=provider.create({homePath:root},{withCallSession:async()=>{}});
   for (const kind of ['call', 'song']) services.push(serveLiveware(kind, instancePath, stop.signal, 50));
   await assert.rejects(readFile(commands),{code:'ENOENT'});
   await adapter.prepare();
   const load=async name=>JSON.parse(await readFile(join(directory,name),'utf8'));
   let gateway,song;
-  for(let i=0;i<50&&!(gateway&&song);i++){
+  for(let i=0;i<100&&!(gateway?.port&&song?.url);i++){
     gateway=await load('realtime/server.json').catch(()=>null);
     song=await load('song-liveware.json').catch(()=>null);
-    if(!(gateway&&song))await delay(50);
+    if(!(gateway?.port&&song?.url))await delay(50);
   }
   assert.ok(gateway?.port>0);
   assert.equal(song?.url,'https://app-songs.apps.clawling.io/');

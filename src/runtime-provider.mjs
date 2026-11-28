@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import {realpath} from 'node:fs/promises';
+import {readFileSync,existsSync} from 'node:fs';
+import {join,dirname,isAbsolute} from 'node:path';
+import {homedir} from 'node:os';
+import {runtimeSerial} from './runtime-serial.mjs';
+import {independentCall} from './independent-call.mjs';
 import {randomUUID} from 'node:crypto';
 import {startRuntimeBridge,scopedRuntimeBridge} from './runtime-bridge-client.mjs';
 
@@ -10,10 +15,21 @@ export function createWhaleRuntimeEntry(officialFactory,options={}) {
   return {activate(context){
     const runtime=context.hostCapabilities.get('runtime-provider');
     runtime.register({capabilityId:'deepseek-harness',family:'deepseek-harness',create(configuration,instance){
-      let official,bridge;
+      let official,bridge,call;const serial=runtimeSerial();
       const entry=officialFactory({...options,runtimeAdapter:{...options.runtimeAdapter,
         createBridge:async configuration=>{
-          const client=await (options.runtimeAdapter?.createBridge??startRuntimeBridge)(configuration);
+          // Older own packages did not pin the business bridge explicitly.
+          // Its location belongs to our registry, independent of where the
+          // unchanged official factory is loaded from during source testing.
+          const file=join(configuration.home,'companion/aurabot-v1/installation.json');
+          let bridgePath=options.runtimeAdapter?.bridgePath;
+          if(!bridgePath&&existsSync(file)){
+            const own=JSON.parse(readFileSync(file,'utf8'));
+            assert.equal(own.pluginId,'whalenest.runtime.deepseek-harness');
+            assert.ok(isAbsolute(own.entryPath??''));
+            bridgePath=join(dirname(own.entryPath),'deepseek-harness-bridge.mjs');
+          }
+          const client=await (options.runtimeAdapter?.createBridge??startRuntimeBridge)({...configuration,...(bridgePath?{bridgePath}:{})});
           return bridge=scopedRuntimeBridge(client);
         },
       }});
@@ -23,9 +39,15 @@ export function createWhaleRuntimeEntry(officialFactory,options={}) {
         return context.hostCapabilities.get(id);
       }}});
       assert.ok(official,'Official runtime factory did not register its public provider');
-      return new Proxy(official,{get(target,key){
+      const adapter=new Proxy(official,{get(target,key){
+        if(key==='withCallSession')return async(request,signal,run)=>{
+          await target.prepare?.();const home=configuration.homePath||process.env.DSH_HOME||join(homedir(),'.dsh');
+          const instance=JSON.parse(readFileSync(join(home,'companion/aurabot-v1/instance.json'),'utf8'));
+          call??=independentCall(adapter,instance,serial);return call.run(request,signal,run);
+        };
+        if(key==='close')return async()=>{await call?.close();return target.close?.();};
         if(key==='start')return async start=>{
-          let thread=start.runtimeThreadId,session,creating,closingSession,closed=false,generation=0,pendingOperations=0;
+          let thread=start.runtimeThreadId,session,creating,closingSession,closed=false,generation=0,pendingOperations=0,operation,running=false;
           const assertActive=(version,admitted=false)=>{
             assert.ok(!closed,'Runtime session is closed');
             if(version!==generation&&!admitted)throw Object.assign(Error('Runtime operation was cancelled'),{name:'AbortError'});
@@ -75,23 +97,28 @@ export function createWhaleRuntimeEntry(officialFactory,options={}) {
           return {
             async *prompt(input){
               const version=generation;assertActive(version);pendingOperations++;
+              const controller=new AbortController();operation=controller;
+              const signal=input.voiceSignal?AbortSignal.any([input.voiceSignal,controller.signal]):controller.signal;
+              let lease;
               try {
-                const active=await ensure();assertActive(version);
+                lease=await serial.acquire(signal);
+                signal.throwIfAborted();await lease.run(()=>prepare(input));
+                const active=await lease.run(ensure);assertActive(version);running=true;
                 // Once native admission is confirmed, preserve the official
                 // cancellation acknowledgement and terminal activity stream.
                 let admitted=false;
                 const forwarded={...input,onAccepted:async()=>{admitted=true;await input.onAccepted?.();}};
                 const context=scope(forwarded,version,()=>admitted);
-                const iterator=active.prompt(forwarded);
+                const iterator=lease.run(()=>active.prompt(forwarded));
                 try {
                   while(true){
                     context.assertActive();
-                    const item=await bridge.run(context,()=>iterator.next());
+                    const item=await lease.run(()=>bridge.run(context,()=>iterator.next()));
                     if(item.done)return item.value;
                     yield item.value;
                   }
-                } finally {if(iterator.return)await bridge.run(context,()=>iterator.return());}
-              } finally {pendingOperations--;}
+                } finally {if(iterator.return)await lease.run(()=>bridge.run(context,()=>iterator.return()));}
+              } finally {running=false;if(operation===controller)operation=undefined;pendingOperations--;lease?.release();}
             },
             prepareVoice:prepare,
             voiceMode:enabled=>rpc('companionVoiceMode',{enabled}),
@@ -102,10 +129,10 @@ export function createWhaleRuntimeEntry(officialFactory,options={}) {
             cancelExpression:params=>rpc('cancelCompanionExpression',params),
             async cancel(){
               if(closed)return false;
-              const pending=pendingOperations>0;generation++;
-              return Boolean(await session?.cancel?.())||pending;
+              const pending=pendingOperations>0;generation++;operation?.abort();
+              return (running?Boolean(await session?.cancel?.()):false)||pending;
             },
-            async close(){if(closed)return;closed=true;generation++;await creating?.catch(()=>{});await closeNative();},
+            async close(){if(closed)return;closed=true;generation++;operation?.abort();if(running)await session?.cancel?.();await creating?.catch(()=>{});await closeNative();},
           };
         };
         if(key==='readActivity')return async thread=>{
@@ -121,7 +148,7 @@ export function createWhaleRuntimeEntry(officialFactory,options={}) {
           }
         };
         const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
-      }});
+      }});return adapter;
     }});
   }};
 }

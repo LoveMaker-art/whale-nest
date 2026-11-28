@@ -17,7 +17,7 @@ export const plannedUpdateStepId=(parentId,index,release)=>hash([parentId,'step'
 export function isInstalledUpdateWorker(entry,workerPath) {
   try {
     if(!isAbsolute(entry?.activeArtifact??'')||!isAbsolute(workerPath))return false;
-    const root=dirname(realpathSync(entry.activeArtifact)),file=realpathSync(workerPath);
+    const root=realpathSync(entry.ownedSourceRoot??entry.ownedRoot??dirname(entry.activeArtifact)),file=realpathSync(workerPath);
     const inside=relative(root,file);
     return Boolean(inside)&&!inside.startsWith('..')&&!isAbsolute(inside);
   }catch{return false;}
@@ -90,7 +90,9 @@ export async function runPluginUpdatePlan(options,request,{
         return save({reason:'waiting-for-current-updater'});
     }
     const stepOwner=owner??{...selection(installedBefore),
-      ...(installedBefore?.activeArtifact?{activeArtifact:installedBefore.activeArtifact}:{})};
+      ...(installedBefore?.activeArtifact?{activeArtifact:installedBefore.activeArtifact}:{}),
+      ...(installedBefore?.ownedRoot?{ownedRoot:installedBefore.ownedRoot}:{}),
+      ...(installedBefore?.ownedSourceRoot?{ownedSourceRoot:installedBefore.ownedSourceRoot}:{})};
     save({phase:'step-running',activeStep:active,stepOwner,reason:undefined});
     const childRequest={id:childId,instanceId:request.instanceId,release,
       route:request.route,confirmedAt:request.confirmedAt,parentId:request.id};
@@ -106,7 +108,7 @@ export async function runPluginUpdatePlan(options,request,{
       const completed=[...(progress.completedSteps??[])];
       completed[index]={...active,...selection(installed),completedAt:Date.now()};
       if(index===plan.steps.length-1)return save({phase:'completed',version:release.version,completedSteps:completed,
-        connectorVersion:child.connectorVersion,connectorDone:child.connectorDone,reason:undefined});
+        reason:undefined});
       // Deliberately return. A later invocation from the newly installed source
       // directory must acquire the lease and perform the next step.
       return save({phase:'handoff-pending',handoff:selection(installed),completedSteps:completed,reason:undefined});

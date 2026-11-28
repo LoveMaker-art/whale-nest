@@ -32,13 +32,22 @@ function canonicalPathBestEffort(path) {
     return resolve(path);
   }
 }
+function dshModelEnvironment(env) {
+  const native = { ...env };
+  for (const key of ["AGENT_MANAGER_TOKEN", "CLAWCLOUD_TOKEN", "CLAWCHAT_INTERNAL_API_TOKEN", "INTERNAL_AUTH_TOKEN"]) {
+    delete native[key];
+  }
+  return native;
+}
 
 // src/runtime/deepseek-harness-process.ts
-import { spawn } from "child_process";
+import { write } from "fs";
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join as join2 } from "path";
 import { createInterface } from "readline";
+import { Readable } from "stream";
+import { finished } from "stream/promises";
 
 // src/runtime/deepseek-harness-protocol.ts
 var DSH_BRIDGE_PROTOCOL_NAME = "clawchat-connect-dsh-bridge";
@@ -152,6 +161,7 @@ var IGNORED_REASONS = [
   "command",
   "interaction_response",
   "pending_interaction",
+  "recalled",
   "no_turn"
 ];
 var QUEUED_REASONS = ["busy"];
@@ -434,22 +444,22 @@ async function startDshBridge(options) {
 `));
   let child;
   try {
-    child = spawn(options.executable, [
+    child = Bun.spawn([
+      options.executable,
       ...options.executableArguments ?? [],
       ...options.profile ? ["--profile", options.profile] : [],
       "--patch",
       overlayPath
     ], {
       cwd: options.cwd,
-      env: {
+      env: dshModelEnvironment({
         ...process.env,
         ...options.env,
         DSH_HOME: options.home,
         CONNECT_DSH_BRIDGE_FD_OUT: "3",
         CONNECT_DSH_BRIDGE_FD_IN: "4"
-      },
-      stdio: ["pipe", "ignore", "pipe", "pipe", "pipe"],
-      windowsHide: true
+      }),
+      stdio: ["pipe", "ignore", "pipe", "pipe", "pipe"]
     });
     return await SpawnedDshBridge.create(child, temporaryDirectory, options);
   } catch (error) {
@@ -472,11 +482,13 @@ class SpawnedDshBridge {
   failureListeners = new Set;
   pending = new Map;
   output;
+  writeTail = Promise.resolve();
+  writeAbort = new AbortController;
   exited;
   requestSequence = 0;
   closing = false;
   failure = null;
-  constructor(child, temporaryDirectory, hello, requestTimeoutMs, stopTimeoutMs, stderr) {
+  constructor(child, temporaryDirectory, hello, requestTimeoutMs, stopTimeoutMs, stderr, processClosed) {
     this.child = child;
     this.temporaryDirectory = temporaryDirectory;
     this.requestTimeoutMs = requestTimeoutMs;
@@ -484,19 +496,16 @@ class SpawnedDshBridge {
     this.stderr = stderr;
     this.hello = hello;
     this.output = child.stdio[4];
-    this.exited = new Promise((resolve2) => {
-      child.once("close", (code, signal) => {
-        if (!this.closing) {
-          const detail = this.stderr.text.trim();
-          this.fail(new BridgeExitError(`DeepSeek Harness process exited unexpectedly (${signal ? `signal ${signal}` : `code ${code ?? "unknown"}`})${detail ? `: ${detail}` : ""}`));
-        }
-        resolve2();
-      });
+    this.exited = processClosed.then((code) => {
+      if (!this.closing) {
+        const detail = this.stderr.text.trim();
+        this.fail(new BridgeExitError(`DeepSeek Harness process exited unexpectedly (${child.signalCode ? `signal ${child.signalCode}` : `code ${code}`})${detail ? `: ${detail}` : ""}`));
+      }
     });
   }
   static async create(child, temporaryDirectory, options) {
-    const input = child.stdio[3];
-    const stderrStream = child.stderr;
+    const input = Readable.from(Bun.file(child.stdio[3]).stream());
+    const stderrStream = Readable.from(child.stderr);
     if (!input || !stderrStream || !child.stdio[4])
       throw new Error("DeepSeek Harness inherited pipes were not created");
     const stderr = { text: "" };
@@ -542,16 +551,21 @@ class SpawnedDshBridge {
       }
       bridge.receive(frame);
     });
-    child.once("error", (cause) => {
-      const error = new BridgeExitError("DeepSeek Harness process could not be started", { cause });
-      bridge?.fail(error);
-      rejectHello(error);
+    const processClosed = child.exited.then(async (code) => {
+      await Promise.allSettled([finished(input), finished(stderrStream)]);
+      return code;
     });
-    child.once("close", (code, signal) => {
+    processClosed.then((code) => {
       if (bridge)
         return;
       const detail = stderr.text.trim();
-      rejectHello(new Error(`DeepSeek Harness Profile boot failed (${signal ? `signal ${signal}` : `code ${code ?? "unknown"}`})${detail ? `: ${detail}` : ""}`));
+      rejectHello(new Error(`DeepSeek Harness Profile boot failed (code ${code})${detail ? `: ${detail}` : ""}`));
+    });
+    input.on("error", (cause) => {
+      const error = new BridgeExitError("DeepSeek Harness Bridge pipe could not be read", { cause });
+      bridge?.fail(error);
+      rejectHello(error);
+      child.kill("SIGTERM");
     });
     let hello;
     try {
@@ -564,7 +578,7 @@ class SpawnedDshBridge {
     if (hello.protocol.major !== DSH_BRIDGE_PROTOCOL_MAJOR) {
       throw new Error(`DeepSeek Harness Bridge protocol major ${hello.protocol.major} is incompatible with ${DSH_BRIDGE_PROTOCOL_MAJOR}; the Runtime Plugin's Adapter and Bridge must come from the same release`);
     }
-    bridge = new SpawnedDshBridge(child, temporaryDirectory, hello, options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS, options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS, stderr);
+    bridge = new SpawnedDshBridge(child, temporaryDirectory, hello, options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS, options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS, stderr, processClosed);
     return bridge;
   }
   async request(method, params, timeoutMs = this.requestTimeoutMs) {
@@ -588,17 +602,15 @@ class SpawnedDshBridge {
       }, timeoutMs);
       this.pending.set(id, { resolve: resolve2, reject, timeout });
     });
-    try {
-      if (!this.output.write(encoded))
-        await new Promise((resolve2) => this.output.once("drain", resolve2));
-    } catch (cause) {
-      const pending = this.pending.get(id);
-      if (pending) {
-        clearTimeout(pending.timeout);
-        this.pending.delete(id);
-      }
-      throw new Error(`DeepSeek Harness Bridge request could not be written: ${method}`, { cause });
-    }
+    reply.catch(() => {
+      return;
+    });
+    const signal = AbortSignal.any([this.writeAbort.signal, AbortSignal.timeout(timeoutMs)]);
+    const writeRequest = this.writeTail.then(() => writePipe(this.child, this.output, Buffer.from(encoded), signal));
+    this.writeTail = writeRequest.catch((cause) => {
+      this.fail(new BridgeExitError(`DeepSeek Harness Bridge request could not be written: ${method}`, { cause }));
+    });
+    await this.writeTail;
     return await reply;
   }
   onEvent(listener) {
@@ -628,8 +640,7 @@ class SpawnedDshBridge {
         await this.request("shutdown", {}, this.stopTimeoutMs).catch(() => {
           return;
         });
-        this.output.end();
-        this.child.stdin?.end();
+        this.child.stdin.end();
       }
       if (this.child.exitCode === null && this.child.signalCode === null) {
         try {
@@ -673,6 +684,7 @@ class SpawnedDshBridge {
   fail(error) {
     const first = !this.failure;
     this.failure ??= error;
+    this.writeAbort.abort(this.failure);
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timeout);
       pending.reject(this.failure);
@@ -685,18 +697,32 @@ class SpawnedDshBridge {
   }
 }
 async function terminateDshProcess(child, timeoutMs) {
-  if (child.pid && child.exitCode === null && child.signalCode === null) {
-    const exited = new Promise((resolve2) => child.once("exit", () => resolve2()));
+  if (child.exitCode === null && child.signalCode === null) {
     child.kill("SIGTERM");
     try {
-      await withTimeout(exited, timeoutMs, "DSH termination timed out");
+      await withTimeout(child.exited, timeoutMs, "DSH termination timed out");
     } catch {
       child.kill("SIGKILL");
-      await withTimeout(exited, timeoutMs, "DSH process could not be reaped");
+      await withTimeout(child.exited, timeoutMs, "DSH process could not be reaped");
     }
   }
-  for (const stream of child.stdio)
-    stream?.destroy();
+}
+async function writePipe(child, fd, buffer, signal) {
+  for (let offset = 0;offset < buffer.length; ) {
+    signal.throwIfAborted();
+    if (child.exitCode !== null || child.signalCode !== null)
+      throw new BridgeExitError("DeepSeek Harness Bridge pipe closed");
+    offset += await new Promise((resolve2, reject) => {
+      write(fd, buffer, offset, buffer.length - offset, null, (error, written) => {
+        if (error?.code === "EAGAIN")
+          setTimeout(() => resolve2(0), 2);
+        else if (error)
+          reject(error);
+        else
+          resolve2(written);
+      });
+    });
+  }
 }
 async function withTimeout(operation, timeoutMs, message) {
   let timeout;
@@ -773,8 +799,19 @@ function extensionForMime(mime) {
   };
   return table[mime.split(";")[0]?.trim().toLowerCase() ?? ""] ?? "";
 }
+function validateExactInboxSegment(value) {
+  if (!value || value.length > 80)
+    return null;
+  if (value.startsWith(".") || value.includes(".."))
+    return null;
+  if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/u.test(value))
+    return null;
+  return value;
+}
 function safeSegment(value) {
-  const cleaned = (value ?? "").replace(/[^A-Za-z0-9._-]/gu, "_").replace(/^\.+/u, "");
+  if (value && validateExactInboxSegment(value))
+    return value;
+  const cleaned = (value ?? "").replace(/[^A-Za-z0-9._-]/gu, "_").replace(/^\.+/u, "").replace(/\.{2,}/gu, "_");
   return cleaned.slice(0, 80) || `turn-${randomUUID()}`;
 }
 async function stageIntoWorkspaceInbox(workspace, messageId, items) {
@@ -783,18 +820,35 @@ async function stageIntoWorkspaceInbox(workspace, messageId, items) {
     return result;
   const root = await realpath(workspace);
   const inbox = join3(root, DSH_INBOX_DIRECTORY);
-  const directory = join3(inbox, safeSegment(messageId));
   await ensureRealDirectory(root, inbox);
-  await ensureRealDirectory(root, directory);
-  const real = await realpath(directory);
-  if (!isPathWithin(root, real, { allowEqual: false }))
-    throw new Error("DeepSeek Harness inbox escaped the Workspace");
-  await pruneExpiredInbox(real, inbox);
-  const used = new Set;
+  const fallbackSegment = safeSegment(messageId);
+  const targetDirectories = new Map;
+  const itemSegments = [];
+  for (const [index, { media }] of items.entries()) {
+    if (index >= DSH_MAX_INBOUND_FILES)
+      break;
+    const segment = media.sourceMessageId ? safeSegment(media.sourceMessageId) : fallbackSegment;
+    itemSegments.push(segment);
+    if (targetDirectories.has(segment))
+      continue;
+    const directory = join3(inbox, segment);
+    await ensureRealDirectory(root, directory);
+    const real = await realpath(directory);
+    if (!isPathWithin(root, real, { allowEqual: false })) {
+      throw new Error("DeepSeek Harness inbox escaped the Workspace");
+    }
+    targetDirectories.set(segment, { real, used: new Set });
+  }
+  await pruneExpiredInbox(new Set([...targetDirectories.values()].map((entry) => entry.real)), inbox);
   for (const [index, { media, sourcePath }] of items.entries()) {
     const label = sanitizeInboxName(media.name, media.kind, media.mime);
     if (index >= DSH_MAX_INBOUND_FILES) {
       result.dropped.push({ name: label, reason: `more than ${DSH_MAX_INBOUND_FILES} attachments in one turn` });
+      continue;
+    }
+    const target = targetDirectories.get(itemSegments[index] ?? fallbackSegment);
+    if (!target) {
+      result.dropped.push({ name: label, reason: "could not be saved" });
       continue;
     }
     try {
@@ -803,7 +857,7 @@ async function stageIntoWorkspaceInbox(workspace, messageId, items) {
         throw new DropError("not a regular file");
       if (details.size > DSH_MAX_INBOUND_FILE_BYTES)
         throw new DropError("larger than 100 MiB");
-      const path = await copyIntoInbox(real, sourcePath, label, details.size, used);
+      const path = await copyIntoInbox(target.real, sourcePath, label, details.size, target.used);
       result.staged.push({
         path,
         name: basename(path),
@@ -817,10 +871,10 @@ async function stageIntoWorkspaceInbox(workspace, messageId, items) {
   }
   return result;
 }
-async function pruneExpiredInbox(currentDirectory, inbox, now = Date.now()) {
+async function pruneExpiredInbox(currentDirectories, inbox, now = Date.now()) {
   try {
     const realInbox = await realpath(inbox);
-    const entries = (await readdir(realInbox)).filter((name) => join3(realInbox, name) !== currentDirectory).slice(0, DSH_INBOX_PRUNE_BATCH);
+    const entries = (await readdir(realInbox)).filter((name) => !currentDirectories.has(join3(realInbox, name))).slice(0, DSH_INBOX_PRUNE_BATCH);
     for (const name of entries) {
       const directory = join3(realInbox, name);
       try {
@@ -1791,7 +1845,7 @@ function dshModelSelection(selection, reasoningEffort) {
 }
 var DSH_RASTER_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 async function stageDshAttachments(input, context, imageModel) {
-  const media = input.media ?? [];
+  const media = resolveDshMediaSourceMessageIds(input.prompt, input.media ?? [], input.turnId);
   if (media.length === 0)
     return { images: [], note: "" };
   const dropped = [];
@@ -1827,6 +1881,62 @@ async function stageDshAttachments(input, context, imageModel) {
   }
   const result = await stageIntoWorkspaceInbox(canonicalWorkspace(input.workspace), input.turnId, staged);
   return { images, note: inboxPathNote(result.staged, [...dropped, ...result.dropped]) };
+}
+function resolveDshMediaSourceMessageIds(prompt, media, fallbackTurnId) {
+  if (media.length === 0)
+    return [];
+  const batchSlots = extractGroupBatchMediaSlots(prompt);
+  const consumed = new Set;
+  return media.map((item) => {
+    if (item.sourceMessageId) {
+      const idx = batchSlots.findIndex((slot, index) => !consumed.has(index) && slot.messageId === item.sourceMessageId && slot.kind === item.kind && slot.url === item.url);
+      if (idx >= 0)
+        consumed.add(idx);
+      return item;
+    }
+    if (batchSlots.length > 0) {
+      let idx = batchSlots.findIndex((slot, index) => !consumed.has(index) && slot.kind === item.kind && slot.url === item.url);
+      if (idx < 0) {
+        idx = batchSlots.findIndex((slot, index) => !consumed.has(index) && slot.url === item.url);
+      }
+      if (idx >= 0) {
+        consumed.add(idx);
+        const slot = batchSlots[idx];
+        if (slot)
+          return { ...item, sourceMessageId: slot.messageId };
+      }
+    }
+    return fallbackTurnId ? { ...item, sourceMessageId: fallbackTurnId } : item;
+  });
+}
+function extractGroupBatchMediaSlots(prompt) {
+  const match = /^<clawchat_turn_context>\n([^\n]+)\n<\/clawchat_turn_context>/u.exec(prompt);
+  if (!match?.[1])
+    return [];
+  try {
+    const context = objectValue(JSON.parse(match[1]));
+    const messages = objectValue(context.group_batch).messages;
+    if (!Array.isArray(messages))
+      return [];
+    const slots = [];
+    for (const rawEntry of messages) {
+      const entry = objectValue(rawEntry);
+      const messageId = typeof entry.message_id === "string" ? entry.message_id : "";
+      if (!messageId || !Array.isArray(entry.fragments))
+        continue;
+      for (const rawFragment of entry.fragments) {
+        const fragment = objectValue(rawFragment);
+        const kind = typeof fragment.kind === "string" ? fragment.kind : "";
+        const url = typeof fragment.url === "string" ? fragment.url : "";
+        if ((kind === "image" || kind === "file" || kind === "audio" || kind === "video") && url) {
+          slots.push({ messageId, kind, url });
+        }
+      }
+    }
+    return slots;
+  } catch {
+    return [];
+  }
 }
 function requireSelectionName(id, name, prefix) {
   if (id !== `${prefix}${name}`)
@@ -2032,7 +2142,7 @@ class DshActivityQueue {
 }
 
 // src/runtime/loopback-web-process.ts
-import { spawn as spawn2 } from "child_process";
+import { spawn } from "child_process";
 var MAX_OUTPUT_BYTES = 65536;
 async function startSupervisedLoopbackWebApp(options) {
   const child = (options.spawnProcess ?? spawnLoopbackWebProcess)(options.executable, options.args, {
@@ -2184,7 +2294,7 @@ class SpawnedLoopbackWebApp {
   }
 }
 function spawnLoopbackWebProcess(executable, args, options) {
-  return spawn2(executable, [...args], options);
+  return spawn(executable, [...args], options);
 }
 async function settlesWithin(promise, timeoutMs) {
   let timer;
@@ -2229,10 +2339,10 @@ async function startDshWebApp(options) {
     label: "DSH Web",
     executable: options.executable,
     args: [...options.executableArguments ?? [], ...DSH_WEB_ARGUMENTS],
-    env: {
+    env: dshModelEnvironment({
       ...process.env,
       ...canonicalDshWebEnvironmentOverrides(options.home, options.env)
-    },
+    }),
     readinessTimeoutMs: options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS,
     shutdownTimeoutMs: options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS,
     ...options.spawnProcess ? { spawnProcess: options.spawnProcess } : {}

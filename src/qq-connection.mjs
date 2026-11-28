@@ -1,3 +1,5 @@
+import {setTimeout as delay} from 'node:timers/promises';
+import {startupStatus} from './startup-state.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync, mkdirSync, writeFileSync, existsSync, unlinkSync} from 'node:fs';
 import {join, resolve} from 'node:path';
@@ -201,6 +203,18 @@ export function createQQConnection(options, {
     const state = read(), id = 'whalenest-qq-login-' + hash(actor.operationId);
     if (state.login?.id === id) return view(state);
     if(!options.qq?.gateway)return {...view(state),ok:false,errorCode:'gateway-not-configured',detail:'当前实例还未开通QQ网关，ClawChat可以照常使用。'};
+    // A real owner login request prioritizes the managed desktop's preparation.
+    // It does not authorize a QQ account login or bypass verified chat identity.
+    if(startupStatus(options).coordinated&&startupStatus(options).baseReady&&options.qq.gateway.loginRequestFile){
+      writeState(resolve(options.qq.gateway.loginRequestFile),{id,requestedAt:now(),refresh:false});
+      if(!observed){
+        for(let attempt=0;attempt<60;attempt++){
+          observed=await gateway().status().catch(()=>null);
+          if(observed)break;
+          await delay(1000);
+        }
+      }
+    }
     const status = observed??await gateway().status().catch(()=>null);
     if(!status)return {...view(state),ok:false,errorCode:'gateway-unavailable',detail:'暂时无法核实QQ登录状态，请稍后重试。'};
     const linked=binding(), expected=String(args.botQQ??linked?.account??'');

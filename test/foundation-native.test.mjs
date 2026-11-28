@@ -91,6 +91,7 @@ test('native memory consolidation reads admitted user text, budgets direct retri
 test('native memory with zero budget makes no direct model call and remains usable for normal chat', { timeout: 30000 }, async t => {
   const directory = await fixtureDirectory();
   directory.options.memory = { automatic: true };
+  directory.options.activities = {maxDailyBackgroundModelCalls:0};
   await writeFile(directory.configPath, JSON.stringify(directory.options));
   const host = await boot(directory); t.after(() => host.close());
   await host.request('background.configure', { patch: { awakeFrom: 0, awakeTo: 24 } });

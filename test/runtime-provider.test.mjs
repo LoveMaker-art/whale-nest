@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,realpath,rm} from 'node:fs/promises';
+import {mkdtemp,realpath,rm,mkdir,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createWhaleRuntimeEntry} from '../src/runtime-provider.mjs';
@@ -61,6 +61,21 @@ async function fixture(t){
  const input={workspace:{workingDirectory:root},prompt:'运维自测：公开运行接口',turnId:'fixture-input',model:{provider:'fixture',model:'model'}};
  return {root,state,adapter,context,input};
 }
+
+test('an older own package pins its registered business bridge when the official factory moves',async t=>{
+ const root=await realpath(await mkdtemp(join(tmpdir(),'whalenest-bridge-location-')));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(join(root,'companion/aurabot-v1'),{recursive:true});
+ const entryPath=join(root,'own-package/linux-x64.mjs');
+ await writeFile(join(root,'companion/aurabot-v1/installation.json'),JSON.stringify({pluginId:'whalenest.runtime.deepseek-harness',entryPath}));
+ let provider,observed;
+ const factory=options=>({activate(context){context.hostCapabilities.get('runtime-provider').register({create(){return {
+  prepare:()=>options.runtimeAdapter.createBridge({home:root,bridgePath:join(root,'vendor-026/deepseek-harness-bridge.mjs')})};}});}});
+ const entry=createWhaleRuntimeEntry(factory,{runtimeAdapter:{createBridge:async config=>{observed=config;return {hello:{}};}}});
+ entry.activate({hostCapabilities:{get:()=>({register:value=>{provider=value;}})}});
+ await provider.create({homePath:root},{}).prepare();
+ assert.equal(observed.bridgePath,join(root,'own-package/deepseek-harness-bridge.mjs'));
+});
 
 test('voice preparation creates one native thread and lazily starts the public Session on that same thread',async t=>{
  const f=await fixture(t),session=await f.adapter.start(f.context());

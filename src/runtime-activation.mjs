@@ -1,3 +1,4 @@
+import {activeCall} from './call-state.mjs';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {readFileSync,lstatSync,mkdirSync} from 'node:fs';
@@ -21,8 +22,8 @@ export function runtimeActivationHost(options,{core=createClawChatCore(options)}
  return {installed:()=>core.installed(pluginId),async identity(){
   const state=await core.state(),route=options.clawchat.route;
   if(!state.available||!state.connected||state.ownerId!==route.sender||state.conversationId!==route.conversation)return null;
-  const {configuration,stateDbPath}=core.binding(pluginId);
-  return {key:hash({route,binding:configuration,stateDbPath}),idle:state.running===0&&state.queued===0,accountId:state.userId};
+  const {configuration}=core.binding(pluginId);
+  return {key:hash({route,binding:configuration}),idle:state.running===0&&state.queued===0&&!activeCall(options),accountId:state.userId};
  }};
 }
 
@@ -54,7 +55,7 @@ export function probeRuntimeLease(options){
 
 export async function probeRuntimeReady(options,dependencies){
  if(!probeRuntimeLease(options))return false;
- return options.realtime?.enabled===true?await probeRuntimeVoice(options,dependencies):true;
+ return options.realtime?.enabled===true&&options.realtime?.sessionEnabled!==false?await probeRuntimeVoice(options,dependencies):true;
 }
 
 async function restartRuntime(options){

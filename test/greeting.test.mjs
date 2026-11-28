@@ -43,3 +43,32 @@ test('startup reads native persona selection and adopts an interrupted exact man
   assert.equal(syncGreeting(options,persona).state,'current');
   assert.equal(syncGreeting(options,{...persona,body:'新内容'}).state,'updated');
 });
+
+test('a held official input stays empty across restarts and restores complete persona or custom input',t=>{
+ const root=mkdtempSync(join(tmpdir(),'whalenest-greeting-gate-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const o={instanceId:'gate',cwd:root,dataDir:root},persona={body:'完整人格尾句'};
+ const path=join(root,'clawchat/greeting.md');
+ syncGreeting(o,persona,{hold:true});assert.equal(readFileSync(path,'utf8'),'');
+ syncGreeting(o,persona,{hold:true});assert.equal(readFileSync(path,'utf8'),'');
+ syncGreeting(o,persona,{hold:false});assert.match(readFileSync(path,'utf8'),/完整人格尾句/);
+ writeFileSync(path,'主人自定开场');syncGreeting(o,persona,{hold:true});assert.equal(readFileSync(path,'utf8'),'');
+ syncGreeting(o,persona,{hold:true});syncGreeting(o,persona,{hold:false});assert.equal(readFileSync(path,'utf8'),'主人自定开场');
+ syncGreeting(o,persona,{hold:true});writeFileSync(path,'暂停期间用户编辑');
+ assert.equal(syncGreeting(o,persona,{hold:false}).state,'conflict');assert.equal(readFileSync(path,'utf8'),'暂停期间用户编辑');
+});
+
+test('Core becoming ready just after holding the greeting does not cancel the required release tick',async t=>{
+ const {refreshFirstGreeting}=await import('../src/greeting.mjs');
+ const root=mkdtempSync(join(tmpdir(),'whalenest-greeting-race-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const options={instanceId:'race',dataDir:root,cwd:root},persona={body:'完整的人格仍在这里'};
+ let ready=false;
+ const first=await refreshFirstGreeting(options,null,{sync:o=>{
+  const result=syncGreeting(o,persona,{hold:!ready});
+  ready=true; // Core preparation completed between writing and scheduling.
+  return result;
+ }});
+ assert.equal(ready,true);assert.equal(readFileSync(join(root,'clawchat/greeting.md'),'utf8'),'');
+ assert.equal(first.pending,true,'The actual held input still needs a release tick');
+ const second=await refreshFirstGreeting(options,null,{sync:o=>syncGreeting(o,persona,{hold:!ready})});
+ assert.equal(second.pending,false);assert.match(readFileSync(join(root,'clawchat/greeting.md'),'utf8'),/完整的人格仍在这里/);
+});

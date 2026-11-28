@@ -66,7 +66,7 @@ test('distribution moves to another folder, loads without source paths, retains 
   const status=await bridge.request('companionStatus',{});
   const {verifyLiveModules}=await import('../scripts/lib/live-tools.mjs');verifyLiveModules(status);
   assert.equal(status.persona.currentId,'dafeiyu-original');
-  assert.equal(status.companion.settings.contactEnabled,false,'Installing the original module does not enable automatic contact');
+  assert.equal(status.companion.settings.contactEnabled,true,'A fresh installation enables the approved companion features by default');
   await assert.rejects(readFile(join(fixture.options.dataDir,'management.json')),{code:'ENOENT'},'legacy page configuration must not start an HTTP server');
  }finally{await bridge.close();await rm(fixture.root,{recursive:true,force:true});}
  const data=join(dir,'private-data.json');await writeFile(data,'private memories');

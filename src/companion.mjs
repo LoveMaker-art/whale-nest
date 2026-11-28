@@ -119,7 +119,7 @@ export async function createCompanion(ctx, options, ports = {}) {
         options.qq?.enabled===true&&native?.getConfig().enabled===true&&!native?.getConfig().dryRun&&native?.onebot.state==='connected'});
     const pluginUpdates=createPluginUpdates(options,ports.configPath,{
       now:ports.now,target:policy.target,
-      busy:()=>policy.backgroundPressure()||ctx.agents.list().some(agent=>agent.status!=='idle'),
+      busy:()=>policy.startupPending()||policy.backgroundPressure()||ctx.agents.list().some(agent=>agent.status!=='idle'),
       notify(intent){
         if(state.outbox[intent.id])return;
         state.outbox[intent.id]={...intent,state:'pending'};
@@ -195,7 +195,7 @@ export async function createCompanion(ctx, options, ports = {}) {
     if(cfg.bili.cookie){biliAccount.adoptCookie(cfg.bili.cookie);cfg=saveConfig({...cfg,bili:{...cfg.bili,cookie:''}});}
     const biliHttp=createBiliHttp({getCookie:biliAccount.getCookie,getDeviceId:biliAccount.getDeviceId});
     const activities=createActivities(biliOptions,policyRoute,{getCookie:biliAccount.getCookie,searcher:biliHttp.search,getFilters:biliRules.settings,now:ports.now,reader:(link,context)=>biliAdapter.read(link,context)});
-    const companion=createCompanionService(options,policyRoute,{activities,policy,now:ports.now,composeDiary:input=>diaryAdapter.compose(input),getQzone:()=>diaryAdapter.qzone()});
+    const companion=createCompanionService(options,policyRoute,{activities,policy,now:ports.now,composeDiary:input=>diaryAdapter.compose(input),getQzone:()=>diaryAdapter.qzone(),publicationNotice:notice=>{if(state.outbox[notice.id])return;state.outbox[notice.id]={...notice,route:policyRoute,source:'publication-result',state:'pending'};save();ports.notificationQueued?.();}});
     const queueGenerated=job=>enqueue(()=>{const isDiary=job.kind==='diary',id=(isDiary?'whalenest-diary-notice-':'whalenest-bili-share-')+hash(job.id);
       state.outbox[id]??={id,route:structuredClone(job.route),text:job.reply,source:isDiary?'diary-notice':'bili-browse',companionJobId:job.id,state:'pending'};save();});
     diaryAdapter=createDiaryAdapter(options,{service:companion,policy,getConfig,getNative:()=>native,queueDelivery:queueGenerated});
@@ -304,7 +304,7 @@ export async function createCompanion(ctx, options, ports = {}) {
             ].join('\n')});
         }
         if(owner)scope.tools.guard(exec=>voiceSessions.has(String(exec.agent.session.id))&&exec.name==='send_voice'?'当前为实时通话，直接回复文字，由通话层朗读，不另发语音消息。':undefined);
-        scope.systemPrompt.context({name:'whalenest-realtime',order:912,text:()=>voiceSessions.has(sessionId)?'当前正在与主人实时语音通话。用适合朗读的简短自然句子回答，通常不超过80字。语音由通话层播放，不调用send_voice或用命令行合成。只陈述实际完成的事情。':''});
+        scope.systemPrompt.context({name:'whalenest-realtime',order:912,text:()=>voiceSessions.has(sessionId)?'当前正在与主人实时语音通话。这是独立的电话对话，不假定已经读取原私聊近期内容。用适合朗读的简短自然句子回答，通常不超过80字。语音由通话层播放，不调用send_voice或用命令行合成。只陈述实际完成的事情。':''});
         if(owner&&input.route.channel==='clawchat'&&options.realtime?.enabled) {
           scope.systemPrompt.context({name:'whalenest-playback',order:913,text:()=>{
             const previous=voicePlayback.get(sessionId);
@@ -330,7 +330,7 @@ export async function createCompanion(ctx, options, ports = {}) {
         }
         if(owner&&input.route.channel==='clawchat'&&options.realtime?.enabled) {
           scope.tools.register(realtimeCallTool(options,input.route,sessionId));
-          scope.systemPrompt.context({name:'whalenest-call-entry',order:908,text:()=>
+          scope.systemPrompt.context({name:'whalenest-call-entry',order:908,text:()=>options.realtime?.sessionEnabled===false?'实时通话暂时维护中。主人要求打电话时说明实际状态；普通语音消息仍使用 send_voice。':
             '主人说“语音通话”“我们打个电话”或想要通话入口时，用 open_realtime_call 取得原私有入口。把成功返回的完整 URL 单独放一行，由 ClawChat 显示可点击卡片。通话由主人点开后开始。主人只要语音回复时仍使用 send_voice。'});
         }
         if(owner&&input.route.channel==='clawchat'&&options.clawchat?.delivery?.mediaEnabled) {
@@ -355,7 +355,7 @@ export async function createCompanion(ctx, options, ports = {}) {
         }
         scope.systemPrompt.section({ name: 'whalenest-persona', order: 900, text: () => personas.forTurn(agent.session), interpolate: false });
         scope.systemPrompt.context({ name: 'whalenest-platform', order: 901, text: () =>
-          `当前平台：${input.route.channel}。当前对象：${owner ? '已验证主人私聊' : '其他参与者'}。运行于云端 DSH；只有实际挂载的工具可用。图片可在最终回复中用 Markdown 图片引用返回，路径须指向工作区内真实存在的图片，由 Core 上传。其他附件可以接收和交给工具处理；音频理解仅在已启用转写时可用。${owner&&input.route.channel==='clawchat'&&options.clawchat?.delivery?.mediaEnabled?'用户要求或同意发送附件时，使用 send_media 发送工作区现成的音频、文件和视频；结果为confirmed且有messageId才表示平台确认，uncertain时用media_status查询，禁止另起请求重发。现成音频发送不代表TTS已可用，不虚构朗读或生成结果。':'原生音频、文件、视频发送尚未接通，不能把本地路径或生成文件说成已发送。'}QQ账号动作以实际连接与权限为准；${options.realtime?.enabled?'Liveware私有通话入口已启用':'实时通话尚未启用'}。不将人格中的能力描述当作已执行的动作。` });
+          `当前平台：${input.route.channel}。当前对象：${owner ? '已验证主人私聊' : '其他参与者'}。运行于云端 DSH；只有实际挂载的工具可用。图片可在最终回复中用 Markdown 图片引用返回，路径须指向工作区内真实存在的图片，由 Core 上传。其他附件可以接收和交给工具处理；音频理解仅在已启用转写时可用。${owner&&input.route.channel==='clawchat'&&options.clawchat?.delivery?.mediaEnabled?'用户要求或同意发送附件时，使用 send_media 发送工作区现成的音频、文件和视频；结果为confirmed且有messageId才表示平台确认，uncertain时用media_status查询，禁止另起请求重发。现成音频发送不代表TTS已可用，不虚构朗读或生成结果。':'原生音频、文件、视频发送尚未接通，不能把本地路径或生成文件说成已发送。'}QQ账号动作以实际连接与权限为准；${options.realtime?.sessionEnabled===false?'实时通话暂时维护中':options.realtime?.enabled?'Liveware私有通话入口已启用':'实时通话尚未启用'}。不将人格中的能力描述当作已执行的动作。` });
         scope.systemPrompt.context({ name: 'aurabot-context', order: 905,
           // Mood is shared, but its explanation may quote a private message.
           text: () => owner ? modules.contextFor({ chat, sessionId })
@@ -523,7 +523,7 @@ export async function createCompanion(ctx, options, ports = {}) {
       expressions,
       policy,
       bili:biliFeatures,
-      async tickBiliInbox(settings={}){if(policy.backgroundPressure())return {state:'memory-pressure'};return biliFeatures?biliFeatures.inbox.tick(notice=>enqueue(()=>{
+      async tickBiliInbox(settings={}){if(policy.startupPending())return {state:'startup-initializing'};if(policy.backgroundPressure())return {state:'memory-pressure'};return biliFeatures?biliFeatures.inbox.tick(notice=>enqueue(()=>{
         const old=state.outbox[notice.id];if(old)return old.state!=='suppressed';
         const target=policy.target();if(!target.ok)return false;
         state.outbox[notice.id]={id:notice.id,route:target.route,targetBasis:target.basis,targetGeneration:policy.proactiveGeneration(),text:notice.text,replyNotice:notice.replyNotice,source:'bili-inbox',biliNoticeId:notice.id,state:'pending'};save();return true;

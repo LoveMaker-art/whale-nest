@@ -285,7 +285,7 @@ dev.17/自有 Core `.0.2.23.1` 完成工具回执查询与模型配置的首阶�
 
 本地使用固定源码中两个真实工具执行函数、真实文件及官方 `sendMediaMessage` 组包实现，对平台上传/发送使用替身，禁止网络。9 项对照通过：共同前台发送/ACK、无活跃回合、当前其他主人回合的来源推断、状态快照目录、状态目录排除、强制文件、显式时长、摘要校验、一般断链错误分类。该结果证明本地接口行为，不冒充真实平台投递或客户端听感验收。
 
-原始脚本与结果保存于 `.whale-nest/verification/connector-convergence-full-20261125/media-comparison/compare.mjs` 和 `result.json`。官方源码核对位置：`src/agent/tool-catalog.ts`、`tool-executor.ts`、`send-file-policy.ts`、`src/clawchat/ws-client.ts`、`protocol.ts`、`src/service/connect-surface-modules.ts` 与 `src/persistence/state.ts`；定制增量见 [Core 补丁](../../integration/clawchat/core-media/core-extension.patch)，鲸栖调用与回执归属见 [media-delivery.mjs](../../src/media-delivery.mjs)、后台歌曲完成回传见 [song-adapter.mjs](../../src/song-adapter.mjs)。
+原始脚本与结果保存于 `.whale-nest/verification/connector-convergence-full-20261125/media-comparison/compare.mjs` 和 `result.json`。官方源码核对位置：`src/agent/tool-catalog.ts`、`tool-executor.ts`、`send-file-policy.ts`、`src/clawchat/ws-client.ts`、`protocol.ts`、`src/service/connect-surface-modules.ts` 与 `src/persistence/state.ts`；定制增量见 Core 补丁（历史文件已退役，原文保存在Git记录），鲸栖调用与回执归属见 [media-delivery.mjs](../../src/media-delivery.mjs)、后台歌曲完成回传见 [song-adapter.mjs](../../src/song-adapter.mjs)。
 
 ### 新判断标准：不改官方插件，最大程度保留功能
 
@@ -354,7 +354,7 @@ Core 当前剩余媒体部分为实际读取字节校验、认证上传、上传
 
 执行 `node scripts/test.mjs --reuse test/diary-publisher.test.mjs`，7/7 通过，覆盖默认私人归档与正文确认、受众/权限变化阻断写入、撤回 ask、去重、未知结果及重启恢复、ClawChat 与 QQ 发布分离。模型、动态和账号均为本地替身，没有发布真实动态；字段缺省、临时窗口和完整平台端原子行为不因这 7 项被宣称已实网重验。
 
-原始报告及结论保存于 `.whale-nest/verification/connector-convergence-full-20261125/permissions-review/`。与已验收 dev.19 对照的 538 个非 Markdown 文件全部摘要一致。调用位置见 [diary-publisher.mjs](../../src/diary-publisher.mjs)；固定工具登记见 [Core 补丁](../../integration/clawchat/core-media/core-extension.patch)。
+原始报告及结论保存于 `.whale-nest/verification/connector-convergence-full-20261125/permissions-review/`。与已验收 dev.19 对照的 538 个非 Markdown 文件全部摘要一致。调用位置见 [diary-publisher.mjs](../../src/diary-publisher.mjs)；固定工具登记见 Core 补丁（历史文件已退役，原文保存在Git记录）。
 
 ## 第三项：实时通话共享原私聊核查
 
@@ -400,7 +400,7 @@ Core 没有实现通话 UI、录音、ASR/TTS、音频播放、HTTPS 每次 16 �
 
 本轮共 9 项通过，均使用独立本地状态、MemoryTransport 或替身 Runtime，未声称本轮重新测过 ASR/TTS、麦克风、听感或真实通道；已验收 dev.19 的自有 Runtime/原生通话证据按原覆盖范围保留。命令与原始日志位于 `.whale-nest/verification/connector-convergence-full-20261125/shared-session-review/`。
 
-关键源码为固定官方树的 `src/runtime/connect-runtime.ts`、`src/runtime/session-turn-executor.ts`、`src/service/binding-runtime.ts`、`src/plugin/{host,sdk,store}.ts`、`src/plugin/official/connect-client-manifest.ts`、`src/client-contract/index.ts`、`src/workspaces/session-continuity.ts` 及 `platform/deepseek-harness/browser-chat.mjs`；鲸栖侧见 [platform-voice-bridge.mjs](../../src/platform-voice-bridge.mjs)、[runtime-provider.mjs](../../src/runtime-provider.mjs)，增量见 [Core 补丁](../../integration/clawchat/core-media/core-extension.patch)。
+关键源码为固定官方树的 `src/runtime/connect-runtime.ts`、`src/runtime/session-turn-executor.ts`、`src/service/binding-runtime.ts`、`src/plugin/{host,sdk,store}.ts`、`src/plugin/official/connect-client-manifest.ts`、`src/client-contract/index.ts`、`src/workspaces/session-continuity.ts` 及 `platform/deepseek-harness/browser-chat.mjs`；鲸栖侧见 [platform-voice-bridge.mjs](../../src/platform-voice-bridge.mjs)、[runtime-provider.mjs](../../src/runtime-provider.mjs)，增量见 Core 补丁（历史文件已退役，原文保存在Git记录）。
 
 ## 第四项：正文确认后自动补发表情核查
 

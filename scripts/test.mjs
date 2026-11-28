@@ -6,22 +6,28 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const args = process.argv.slice(2);
-const upstream = args.includes('--upstream'), reuse = args.includes('--reuse');
-if (args.some(a => a.startsWith('--') && !['--upstream', '--reuse'].includes(a))) throw new Error('Unknown test option');
+const upstream = args.includes('--upstream'), distribution = args.includes('--distribution'), reuse = args.includes('--reuse');
+if (args.some(a => a.startsWith('--') && !['--upstream', '--distribution', '--reuse'].includes(a))) throw new Error('Unknown test option');
 const requested = args.filter(a => !a.startsWith('--'));
 const root = fileURLToPath(new URL('../', import.meta.url));
 process.chdir(root);
 const available = upstream
   ? readdirSync('vendor/aurabot/test', { recursive: true }).filter(f => f.endsWith('.test.js')).map(f => join('vendor/aurabot/test', f))
   : readdirSync('test').filter(f => f.endsWith('.test.mjs')).map(f => join('test', f));
-if (upstream && requested.length) throw new Error('Select either upstream or project test files');
-const files = requested.length ? [...new Set(requested)].sort() : available.sort();
+if (upstream && (requested.length || distribution)) throw new Error('Select either upstream or project test files');
+const packaging = new Set(['test/distribution.test.mjs']);
+const files = requested.length ? [...new Set(requested)].sort()
+  : available.filter(file => upstream || packaging.has(file) === distribution).sort();
+if (!distribution && files.some(file => packaging.has(file)))
+  throw new Error('Distribution tests require --distribution after packaging approval');
+if (distribution && files.some(file => !packaging.has(file)))
+  throw new Error('Distribution and source tests run separately');
 for (const file of files) if (!available.includes(file)) throw new Error('Unknown test file: ' + file);
 const selected = requested.length > 0;
 const reportDir = '.whale-nest/verification';
 mkdirSync(reportDir, { recursive: true, mode: 0o700 });
 const options = { ...process.env, TMPDIR: realpathSync(tmpdir()), NODE_OPTIONS: ((process.env.NODE_OPTIONS ?? '') + ' --max-old-space-size=384').trim() };
-const report = { schema: 2, selectedFiles: files, platform: process.platform, node: process.version, concurrency: 1, upstream, files: files.length,
+const report = { schema: 2, selectedFiles: files, platform: process.platform, node: process.version, concurrency: 1, upstream, suite: upstream?'upstream':distribution?'distribution':'source', files: files.length,
   startedAt: new Date().toISOString(), modelTransport: upstream ? 'upstream fixtures' : 'fixture; native DSH and real storage',
   maxCgroupBytes: 0, maxEffectiveBytes: 0, resourceStopped: false };
 const livewareTests = ['realtime-call.test.mjs', 'realtime-native.test.mjs', 'voice-chat-native.test.mjs', 'liveware-managed.test.mjs'].map(file => join('test', file));
@@ -56,14 +62,14 @@ for (const file of [...new Set(sources)].sort()) {
   digest.update(file + '\0'); digest.update(readFileSync(file)); digest.update('\0');
 }
 report.sourceSha256 = digest.digest('hex');
-const reportName = upstream ? 'upstream-latest.json' : !selected ? 'core-latest.json'
+const reportName = upstream ? 'upstream-latest.json' : distribution ? 'distribution-latest.json' : !selected ? 'core-latest.json'
   : files.length === 1 && files[0] === 'test/live-update.test.mjs' ? 'deployment-latest.json'
   : 'selected-' + createHash('sha256').update(JSON.stringify(files)).digest('hex').slice(0, 12) + '.json';
 const reportFile = join(reportDir, reportName);
 if (reuse) {
   let previous; try { previous = JSON.parse(readFileSync(reportFile, 'utf8')); } catch {}
   if (previous?.schema === 2 && previous.code === 0 && !previous.resourceStopped
-    && previous.platform === report.platform && previous.node === report.node
+    && previous.suite === report.suite && previous.platform === report.platform && previous.node === report.node
     && previous.python?.executable === report.python?.executable && previous.python?.version === report.python?.version
     && previous.sourceSha256 === report.sourceSha256
     && JSON.stringify(previous.selectedFiles) === JSON.stringify(files)) {

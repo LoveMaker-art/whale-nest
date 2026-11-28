@@ -3,7 +3,7 @@ import test from 'node:test';
 import {mkdir,mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {DatabaseSync} from 'node:sqlite';
+import {preparePlatformFixture} from './platform-fixture.mjs';
 import {ownerScope} from '../src/routing.mjs';
 import {createSongClient} from '../src/song-client.mjs';
 import {songPlaybackUrl,startSongPlayback} from '../src/song-playback.mjs';
@@ -41,17 +41,9 @@ test('private song playback reuses stored audio, reads the original score once, 
   t.after(()=>rm(root,{recursive:true,force:true}));
   const route = {channel:'clawchat',account:'test-binding',sender:'owner',kind:'private',conversation:'direct'};
   const configPath = join(root,'connect.json');
-  const stateDbPath = join(root,'connect.db');
   const options = {instanceId:'song-liveware-test',dataDir:root,owners:[route],clawchat:{route,delivery:{configPath}},
     singing:{enabled:true,providerConfigPath:join(root,'provider.json'),playback:{enabled:true,port:0}}};
-  const connect = new DatabaseSync(stateDbPath);
-  t.after(()=>connect.close());
-  connect.exec(`CREATE TABLE installation_owner (id INTEGER, owner_user_id TEXT);
-    CREATE TABLE activations (user_id TEXT, owner_user_id TEXT, conversation_id TEXT,
-      activated_at TEXT, platform TEXT, local_agent_id TEXT, access_token TEXT);
-    INSERT INTO installation_owner VALUES(1, 'owner');
-    INSERT INTO activations VALUES('usr_agent', 'owner', 'different-chat', 'now', 'clawchat-connect', 'test-binding', 'fixture');`);
-  await writeFile(configPath,JSON.stringify({stateDbPath}));
+  const platform=await preparePlatformFixture({root,options},{userId:'usr_agent',conversationId:'different-chat'});
   await writeFile(options.singing.providerConfigPath,JSON.stringify({models:{providers:{clawling:{apiKey:'fixture',baseUrl:'https://music.invalid/v1'}}}}));
   const id = 'whalenest-song-' + 'b'.repeat(64);
   const dir = join(root,'media/outgoing/songs'), path = join(dir,id+'.wav');
@@ -76,7 +68,7 @@ test('private song playback reuses stored audio, reads the original score once, 
   assert.match(emptyHtml,/<title>鲸栖歌曲<\/title>/);
   assert.match(emptyHtml,/"projects":\[\]/);
   assert.match(emptyHtml,/"route":"#\/"/);
-  assert.match(emptyHtml,/"agentId":null/,'A different private conversation cannot determine the chat link');
+  assert.equal(emptyHtml.includes('"agentId":null'),true,'A different private conversation cannot determine the chat link');
   assert.equal((await fetch(origin)).status,404);
   const record = {scope:ownerScope(options),requestId:id,jobId:'old-job',origin:'https://music.invalid',state:'saved',
     parameters:{title:'一首 <旧歌>',style:'夜曲 & 民谣',lyrics:'一行\n<script>alert(1)</script>'},
@@ -88,12 +80,12 @@ test('private song playback reuses stored audio, reads the original score once, 
   assert.equal(songPlaybackUrl(options,record),null);
   await writeFile(publication,JSON.stringify({binding:route.account,owner:route.sender,url:'https://app-test.apps.clawling.io/'}));
   assert.equal(songPlaybackUrl(options,record),'https://app-test.apps.clawling.io/song/'+id);
-  connect.exec("UPDATE activations SET conversation_id = 'direct'");
+  platform.setPlatformState({conversationId:'direct'});
   const home = await fetch(origin,{headers:owner,redirect:'manual'});
   assert.equal(home.status,200,'The app opens its home even when a recording exists');
   const homeHtml = await home.text();
   assert.match(homeHtml,/"route":"#\/"/);
-  assert.match(homeHtml,/"agentId":"usr_agent"/);
+  assert.equal(homeHtml.includes('"agentId":"usr_agent"'),true,'Verified public identity supplies the owner chat link');
   const base = origin + '/song/' + id;
   assert.equal((await fetch(base)).status,404);
   assert.equal((await fetch(base+'/stream',{headers:{'x-clawchat-user-id':'unlinked'}})).status,404);

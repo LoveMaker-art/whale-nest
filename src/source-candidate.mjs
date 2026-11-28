@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {registeredRuntime} from './platform-client.mjs';
 import {createHash} from 'node:crypto';
 import {existsSync,lstatSync,readFileSync,realpathSync} from 'node:fs';
 import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
@@ -7,12 +8,11 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 export const sourceCandidateFile=options=>join(options.dataDir,'source-candidate.json');
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const read=path=>JSON.parse(readFileSync(path,'utf8'));
-const pluginId='whalenest.runtime.deepseek-harness';
 export const sourceTarget=selected=>({version:selected.version,integrity:selected.integrity,
   activeArtifact:selected.activeArtifact,activationGeneration:selected.activationGeneration});
 export const sourceIdentity=options=>sha(JSON.stringify([options.instanceId,options.home,options.dataDir,options.cwd,options.clawchat.route]));
 export function selectedSourceRuntime(options){
-  return read(join(dirname(options.clawchat.delivery.configPath),'plugins.lock.json')).plugins[pluginId];
+  return registeredRuntime(options);
 }
 
 /** Only a matching, operator-selected development source can replace our own
@@ -43,7 +43,8 @@ export function inspectSourceCandidate(options,selected=selectedSourceRuntime(op
       'src/liveware-service.mjs','src/assets/workspace-instructions.json'])assert.ok(manifest.files[name]);
     assert.equal(read(join(record.root,'package.json')).version,record.version);
   }
-  return {...record,installedRoot:join(dirname(selected.activeArtifact),'whalenest')};
+  const runtimeFactory=join(record.root,'integration/clawchat/base/linux-x64.mjs');
+  return {...record,...(existsSync(runtimeFactory)?{runtimeFactory}:{}),installedRoot:selected.ownedRoot??join(dirname(selected.activeArtifact),'whalenest')};
 }
 
 /** A resolver for our installed source paths; official artifacts and all
@@ -59,6 +60,7 @@ export function sourceResolver(candidate){
     }
     if(url?.protocol==='file:'){
       const file=fileURLToPath(url);
+      if(candidate.runtimeFactory&&file===join(dirname(candidate.installedRoot),'official-runtime-provider.mjs'))return next(pathToFileURL(candidate.runtimeFactory).href,context);
       if(file.startsWith(prefix)){
         const name=relative(candidate.installedRoot,file);
         if(name.startsWith('src'+sep))return next(pathToFileURL(join(candidate.root,name)).href,context);
@@ -71,4 +73,38 @@ export function sourceResolver(candidate){
 export function sourceNodeOptions(current,preload){
   assert.ok(isAbsolute(preload));
   return [current,'--import='+JSON.stringify(pathToFileURL(preload).href)].filter(Boolean).join(' ');
+}
+
+export function sourceBunOptions(current,preload){
+  assert.ok(isAbsolute(preload)&&!/[\s"'\\]/.test(preload),'Bun source preload needs a plain absolute path');
+  return [current,'--preload='+preload].filter(Boolean).join(' ');
+}
+
+export function bunSourcePath(candidate,specifier,importer){
+  let file;
+  if(specifier.startsWith('file:'))file=fileURLToPath(specifier);
+  else if(isAbsolute(specifier))file=specifier;
+  else if(specifier.startsWith('./')||specifier.startsWith('../')){
+    if(importer?.startsWith('file:'))file=fileURLToPath(new URL(specifier,importer));
+    else if(isAbsolute(importer??''))file=resolve(dirname(importer),specifier);
+  }
+  if(!file)return;
+  if(candidate.runtimeFactory&&resolve(file)===join(dirname(candidate.installedRoot),'official-runtime-provider.mjs'))return candidate.runtimeFactory;
+  const name=relative(candidate.installedRoot,resolve(file));
+  if(name.startsWith('src'+sep))return join(candidate.root,name);
+}
+
+/** Check the launcher overlay before stopping anything: dependencies are either
+ * part of this same source switch or already exist in the actual project. */
+export function preflightSourceLaunchers(sourceRoot,projectRoot,files){
+  const overlay=new Set(files);
+  for(const name of files.filter(f=>f.endsWith('.mjs'))){
+    const code=readFileSync(join(sourceRoot,name),'utf8');
+    for(const match of code.matchAll(/(?:from\s*|import\s*)['"]([.][.]?\/[^'"]+)['"]/g)){
+      const dependency=relative(projectRoot,resolve(dirname(join(projectRoot,name)),match[1]));
+      assert.ok(!dependency.startsWith('..'),'Launcher import leaves project: '+dependency);
+      assert.ok(existsSync(join(overlay.has(dependency)?sourceRoot:projectRoot,dependency)),
+        'Launcher dependency missing from planned overlay: '+dependency);
+    }
+  }
 }

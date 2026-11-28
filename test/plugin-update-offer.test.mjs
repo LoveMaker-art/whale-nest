@@ -26,17 +26,16 @@ test('one exact owner confirmation pins the final target and every stage without
     fetched.push(tag??'latest');
     return structuredClone(tag===bridge.tag?bridge:final);
   };
-  const connector={async inspect(){return {status:'running',selected:{id:'023',version:'0.2.23'},
-    running:{id:'023',version:'0.2.23',health:{version:'0.2.23',identity:'same-agent',ready:true,connected:true,draining:false}},
-    effective:{version:'0.2.23',custom:true}};}};
+  const connector={check:async()=>({state:'available',current:'0.2.23',latest:'0.2.26',automaticUpdate:false,managedBy:'user'})};
   const service=createPluginUpdates(options,join(dir,'instance.json'),{
     host,connector,discover,launch:id=>{launches.push(id);},
   });
   const offer=await service.perform(route,{action:'check'},'检查更新');
   assert.equal(offer.target,finalVersion);
-  assert.equal(offer.connector.state,'bootstrap-required');
+  assert.equal(offer.connector.state,'available');
+  assert.equal(offer.connector.automaticUpdate,false);
   assert.deepEqual(offer.steps,[bridgeVersion,finalVersion]);
-  assert.equal(offer.stages[1].connector.officialOnly,true);
+  assert.deepEqual(offer.stages,[{version:bridgeVersion},{version:finalVersion}]);
   assert.deepEqual(fetched,['latest',bridge.tag]);
   const confirmed=await service.perform(route,{action:'confirm',version:finalVersion},'确认更新 '+finalVersion);
   const request=readState(updateFiles(options).request);
@@ -57,7 +56,7 @@ test('a missing or checksum-changed declared bridge never produces an actionable
   const bridge={repository,version:'1.0.0-beta.5',tag:'v1.0.0-beta.5',sha256:hash('bridge'),compatibility:{dataSchema:1},notes:'',updateProtocol:1};
   const final={...bridge,version:'1.0.0-beta.6',tag:'v1.0.0-beta.6',sha256:hash('final'),
     updatePath:{schema:1,steps:[{version:bridge.version,sha256:hash('different asset')}]}};
-  const service=createPluginUpdates(options,'fixture',{host:{installed:()=>({version:'1.0.0-beta.4'})},
+  const service=createPluginUpdates(options,'fixture',{connector:{check:async()=>({state:'unavailable',automaticUpdate:false,managedBy:'user'})},host:{installed:()=>({version:'1.0.0-beta.4'})},
     discover:async(_options,_version,{tag}={})=>tag?bridge:final});
   assert.equal((await service.perform(route,{action:'check'},'检查更新')).state,'check-failed');
   await assert.rejects(service.perform(route,{action:'confirm',version:final.version},'确认更新 '+final.version),/重新检查/);

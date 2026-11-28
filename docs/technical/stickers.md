@@ -36,7 +36,7 @@
 
 图库用原标签保存[场景、话题与表达方向](../requirements/stickers.md#2-入库用途与本轮配图)，用「不随机」保留只手动使用的约定。两端共用这套标签和精确匹配。实际获确认的用图时间按通道、账号和会话保存，重启后继续用于排序。手动编辑标签仍保留只手动权限，通过明确操作可重新开启自动使用。
 
-QQ 原 Hub 在正文收到回执后补发，ClawChat 在最终正文确认后发送已准备的表情。两端依据同一图库和实际发送状态复查，自动图片每轮使用稳定请求标识。同一请求结果不确定时保留原回执和素材选择。手动操作可用 companion_stickers 的 status 和 ClawChat 的 media_status 核实。[ClawChat Core 扩展](../../integration/clawchat/core-media/core-extension.patch)
+QQ 原 Hub 在正文收到回执后补发，ClawChat 在最终正文确认后发送已准备的表情。两端依据同一图库和实际发送状态复查，自动图片每轮使用稳定请求标识。同一请求结果不确定时保留原回执和素材选择。手动操作可用 companion_stickers 的 status 和 ClawChat 的 media_status 核实。ClawChat Core 扩展（历史文件已退役，原文保存在Git记录）
 
 ## 4 回归与交付
 

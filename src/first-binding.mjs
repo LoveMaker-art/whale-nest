@@ -9,6 +9,8 @@ import { hash, resolveDeliveryTarget, routeKey, senderKey } from './routing.mjs'
 import { readState, writeState } from './state.mjs';
 import { clawchatTextDelivery } from './clawchat-text.mjs';
 import {clawchatBindingState} from './clawchat-state.mjs';
+import {platformOperations,readPlatformOperation} from './platform-operations.mjs';
+import {startupStatus} from './startup-state.mjs';
 import {commitBindingTransition,recoverBindingTransition} from './binding-transition.mjs';
 import {inspectSourceCandidate,sourceCandidateFile,sourceIdentity} from './source-candidate.mjs';
 export {readBoundClawChatAgentId} from './clawchat-state.mjs';
@@ -19,21 +21,29 @@ const textTool = 'clawchat_mention_message';
 const uploadTool = 'clawchat_upload_avatar_image';
 
 // The platform enables this only on an unpaired, clean, preinstalled instance.
-// The Connect database is authoritative for identity. Never read out credentials.
-export function prepareFirstBinding(options, configPath) {
+// Public Connect identity is authoritative. Credentials stay inside Connect.
+export function prepareFirstBinding(options, configPath, {platformInstanceId=process.env.CLAWNEST_INSTANCE_ID}={}) {
   let clawchat = options.clawchat;
   if (clawchat?.firstBinding !== true) return null;
   Object.assign(options,recoverBindingTransition(configPath));
   clawchat=options.clawchat;
   const delivery = clawchat.delivery;
   assert.ok(isAbsolute(delivery.configPath) && isAbsolute(delivery.connectBin));
-  const platform = clawchatBindingState(delivery.configPath);
+  if(!existsSync(delivery.configPath))throw Object.assign(
+    Error('First binding awaits Connect configuration'),{code:'FIRST_BINDING_PENDING'});
+  const platform = clawchatBindingState(delivery.configPath,clawchat.route?.account,{options});
   const {account} = platform;
   const path = join(options.dataDir, 'first-binding.json');
   const previous = readState(path, null);
   const current = platform.current();
-  if(!current&&!previous&&existsSync(join(options.dataDir,'runtime.json')))return null;
-  assert.ok(current?.agent && current.owner && current.conversation, 'First binding awaits verified Connect activation');
+  if(!current&&!previous&&!platformInstanceId&&existsSync(join(options.dataDir,'runtime.json')))return null;
+  if(!current?.agent||!current.owner||!current.conversation)throw Object.assign(
+    Error('First binding awaits verified Connect activation'),{code:'FIRST_BINDING_PENDING'});
+  if(previous?.platformInstanceId){
+    assert.ok(platformInstanceId,'Platform instance identity disappeared; initialization withheld');
+    if(previous.platformInstanceId!==platformInstanceId&&previous.identity?.agent===current.agent)
+      throw Object.assign(Error('New instance awaits its own Connect activation'),{code:'FIRST_BINDING_PENDING'});
+  }
   const { owner, conversation, agent } = current;
   const route = { channel: 'clawchat', kind: 'private', account, sender: owner, conversation };
   const oldRoute=clawchat.route;
@@ -49,6 +59,7 @@ export function prepareFirstBinding(options, configPath) {
   const foreign=!!(previous&&!sameActor)||(changed&&!sameActor);
   const next={...options,clawchat:{...clawchat,route},owners:[...owners.filter(o=>o.channel!=='clawchat'),route]};
   const record={...(sameActor?previous:{}),id:sameActor?previous.id:id,identity,
+    ...(platformInstanceId?{platformInstanceId}:{}),
     greeting:sameActor?previous.greeting:{state:'delegated'},avatar:sameActor?previous.avatar:{state:'pending'}};
   if(['pending','writing'].includes(record.greeting.state))record.greeting={state:'delegated'};
   const changes=[[configPath,next],[path,record]];
@@ -73,7 +84,7 @@ export function prepareFirstBinding(options, configPath) {
   }
   commitBindingTransition(options,configPath,identity,changes);
   Object.assign(options,next);
-  return { path, dbPath: platform.dbPath, ...identity, id:record.id };
+  return { path, ...identity, id:record.id };
 }
 
 export function firstBindingPorts(options, binding, signal, run = exec) {
@@ -81,15 +92,15 @@ export function firstBindingPorts(options, binding, signal, run = exec) {
   const route = resolveDeliveryTarget(options, {origin: options.clawchat.route});
   assert.ok(route.ok && route.route.account === binding.account && route.route.sender === binding.owner
     && route.route.conversation === binding.conversation);
-  const platform = clawchatBindingState(delivery.configPath, binding.account);
-  assert.equal(platform.dbPath, binding.dbPath, 'Connect state database changed during first binding');
+  const platform = clawchatBindingState(delivery.configPath,binding.account,{options});
+  const operations=platformOperations(options,{run:run===exec?undefined:run});
   const tool = async (name, id, input) => {
     signal?.throwIfAborted();
     platform.verify(binding);
-    const response = await run(delivery.connectBin, ['tool', 'call', name, '--agent', binding.account,
-      '--request-id', id, '--input-json', JSON.stringify(input), '--config', delivery.configPath],
-    { timeout: 15000, maxBuffer: 1024 * 1024, signal });
-    return JSON.parse(response.stdout).result;
+    if(name==='clawchat_get_account_profile')return JSON.parse((await run(delivery.connectBin,['tool','call',name,'--agent',binding.account,'--request-id',id,'--input-json',JSON.stringify(input),'--config',delivery.configPath],{timeout:35000,maxBuffer:1024*1024,signal,env:{...process.env,WHALENEST_SOURCE_INSTANCE:'',CLAWCHAT_CONNECT_CONFIG:delivery.configPath}})).stdout).result;
+    const response=await operations.submit(name,id,input,{signal});
+    if(response.status!=='succeeded')throw Object.assign(Error('初始化操作未成功'),{receipt:response});
+    return response.result;
   };
   const sender = clawchatTextDelivery(options, route.route, (command, args, opts) => {
     signal?.throwIfAborted();
@@ -97,8 +108,8 @@ export function firstBindingPorts(options, binding, signal, run = exec) {
     return run(command, args, { ...opts, signal });
   });
   return {
-    ready:() => platform.ready(binding),
-    receipt:(name, id) => platform.receipt(binding, name, id),
+    ready:() => startupStatus(options).baseReady&&platform.ready(binding),
+    receipt:(name,id)=>{const r=readPlatformOperation(options,name,id);return {...r,state:r.status};},
     send: (id, text) => sender.sendText({ id, text }),
     async readProfile() {
       const profile = await tool('clawchat_get_account_profile', binding.id + '-read-' + randomUUID(), {});
@@ -119,7 +130,7 @@ export function createFirstBinding(binding, ports, say, { avatarPath = defaultAv
   const state = readState(binding.path, null);
   assert.equal(state?.id, binding.id, 'First-binding record changed');
   const save = () => writeState(binding.path, state);
-  const done = () => greetingDone.has(state.greeting.state) && avatarDone.has(state.avatar.state);
+  const done = () => greetingDone.has(state.greeting.state) && ['confirmed','preserved'].includes(state.avatar.state);
   if (done()) return null;
   const halt = Object.assign(new Error('First binding cancelled'), { code: 'FIRST_BINDING_CANCELLED' });
   const check = () => { if (closed) throw halt; };
@@ -163,11 +174,16 @@ export function createFirstBinding(binding, ports, say, { avatarPath = defaultAv
 
   async function setAvatar() {
     const current = state.avatar;
-    if (avatarDone.has(current.state)) return;
+    if (['confirmed','preserved'].includes(current.state)) return;
     if (!existsSync(avatarPath)) return commit('avatar', { state: 'unconfigured' });
     const existing = await ports.readProfile();
     check();
     if (existing) return commit('avatar', { state: existing === current.url ? 'confirmed' : 'preserved' });
+    if(['failed','unverified','unconfigured'].includes(current.state)){
+      // Observe delayed profile/upload results only; never repeat an unknown write.
+      if(!current.url){const receipt=ports.receipt(uploadTool,uploadId);if(receipt?.state==='succeeded')saveUpload(receipt.result);}
+      return;
+    }
     if (current.state === 'uploading') {
       const receipt = ports.receipt(uploadTool, uploadId);
       if (receipt?.state === 'succeeded') saveUpload(receipt.result);

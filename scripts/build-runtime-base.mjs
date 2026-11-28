@@ -12,9 +12,11 @@ export async function buildRuntimeBase(destination,{portable=false}={}) {
   assert.equal(createHash('sha256').update(await readFile(source)).digest('hex'),manifest.files['base/linux-x64.mjs']);
   await copyFile(source,join(destination,'official-runtime-provider.mjs'));
   const adapter=portable?'./whalenest/src/runtime-provider.mjs':pathToFileURL(join(root,'src/runtime-provider.mjs')).href;
-  const entry=`import {createDeepSeekHarnessOfficialPluginEntry as officialFactory} from './official-runtime-provider.mjs';
+  const entry=`import {fileURLToPath} from 'node:url';
+import {createDeepSeekHarnessOfficialPluginEntry as officialFactory} from './official-runtime-provider.mjs';
 import {createWhaleRuntimeEntry} from ${JSON.stringify(adapter)};
-export const createDeepSeekHarnessOfficialPluginEntry=options=>createWhaleRuntimeEntry(officialFactory,options);
+export const createDeepSeekHarnessOfficialPluginEntry=(options={})=>createWhaleRuntimeEntry(officialFactory,{...options,runtimeAdapter:{...options.runtimeAdapter,
+ bridgePath:options.runtimeAdapter?.bridgePath??fileURLToPath(new URL('./deepseek-harness-bridge.mjs',import.meta.url))}});
 export default createDeepSeekHarnessOfficialPluginEntry();
 `;
   const file=join(destination,'linux-x64-base.mjs');await writeFile(file,entry,{mode:0o600});return file;

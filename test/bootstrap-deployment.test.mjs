@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync,accessSync} from 'node:fs';
+import {constants} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {bootstrapFiles,syncBootstrap} from '../src/bootstrap-deployment.mjs';
+test('bootstrap deployment includes startup dependencies, preserves foreign files and is restart-idempotent',t=>{
+ const root=fileURLToPath(new URL('../',import.meta.url));
+ const files=bootstrapFiles(root);for(const name of ['src/connector-startup.mjs','src/recovery.mjs','src/platform-operation-worker.mjs','src/first-liveware.mjs'])assert.ok(files.includes(name),name);
+ const fixture=mkdtempSync(join(tmpdir(),'whalenest-bootstrap-'));t.after(()=>rmSync(fixture,{recursive:true,force:true}));
+ const project=join(fixture,'project'),dataDir=join(fixture,'data');mkdirSync(project);mkdirSync(dataDir);
+ writeFileSync(join(project,'foreign.json'),'preserve');
+ const entry={ownedRoot:root,bootstrapRoot:project};assert.equal(syncBootstrap({dataDir},entry).changed,true);
+ assert.equal(syncBootstrap({dataDir},entry).changed,false);
+ accessSync(join(project,'deploy/native-dsh-bridge.sh'),constants.X_OK);
+ assert.equal(readFileSync(join(project,'foreign.json'),'utf8'),'preserve');
+ for(const name of files)assert.deepEqual(readFileSync(join(project,name)),readFileSync(join(root,name)));
+});

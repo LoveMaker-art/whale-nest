@@ -1,3 +1,4 @@
+import {activeCall} from './call-state.mjs';
 import assert from 'node:assert/strict';
 import {resolve,join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -30,21 +31,27 @@ export async function reloadQQConnection(configPath, jobId, {fetchImpl = fetch,c
     core??=createClawChatCore(options, {fetchImpl});
     const installed = core.installed(pluginId);
     assert.equal(installed?.status, 'active', '鲸栖Runtime未在当前Core启用');
-    const {configuration,stateDbPath} = core.binding(pluginId);
+    const {configuration} = core.binding(pluginId);
     // QQ changes already reside in our durable transition. Core configuration
     // is unchanged; a normal host restart loads that transition once without
     // replacing a Managed Web App generation or touching its active leases.
     if(!job.reloadState){
       update({reloadState:'activation-pending',reloadMethod:'supervisor',reloadSelection:{version:installed.version,integrity:installed.integrity,
         activationGeneration:installed.activationGeneration,
-        identity:hash({route:options.clawchat.route,binding:configuration,stateDbPath})}},true);
+        identity:hash({route:options.clawchat.route,binding:configuration}),identityVersion:2}},true);
     }
-    const current=readState(file,null)?.transition,before=current?.reloadSelection;
+    let current=readState(file,null)?.transition,before=current?.reloadSelection;
+    if(before?.identityVersion!==2&&before?.version===installed.version&&before.integrity===installed.integrity){
+      const identity=hash({route:options.clawchat.route,binding:configuration}),runtimeActivation=current.runtimeActivation;
+      const patch={reloadSelection:{...before,identity,identityVersion:2,legacyIdentity:before.identity}};
+      if(runtimeActivation?.target?.identity===before.identity)patch.runtimeActivation={...runtimeActivation,target:{...runtimeActivation.target,identity},legacyIdentity:before.identity};
+      update(patch);current=readState(file,null).transition;before=current.reloadSelection;
+    }
     if(!before?.version||!before.integrity)return {state:'unavailable',reason:'legacy-configure-unconfirmed'};
     const host=runtimeActivationHost(options,{core});
     const probe=async()=>{
       if(readState(file,null)?.transition?.state!=='confirmed')return false;
-      return options.realtime?.enabled===true?await probeRuntimeVoice(options,{fetchImpl}):probeRuntimeLease(options);
+      return options.realtime?.enabled===true&&options.realtime?.sessionEnabled!==false?await probeRuntimeVoice(options,{fetchImpl}):probeRuntimeLease(options);
     };
     let activation;
     for(let attempt=0;attempt<60;attempt++){

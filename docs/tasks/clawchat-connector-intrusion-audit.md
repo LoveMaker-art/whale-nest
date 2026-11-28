@@ -136,7 +136,7 @@
 
 当前启动链路是：系统服务启动鲸栖的 `serve-media.mjs`，该脚本读取扩展登记，把官方宿主的 agent 启动目标改成复制出来的运行目录，再由该目录启动定制 Core。
 
-这不是简单地加载一个普通业务插件。[启动脚本](../../deploy/serve-media.mjs) 和 [extensionHostConfig](../../src/connector-extension.mjs) 都在现役路径中，实机常驻进程也已核对。
+这不是简单地加载一个普通业务插件。[启动脚本](../../deploy/serve-media.mjs) 和 extensionHostConfig（历史文件已退役，原文保存在Git记录） 都在现役路径中，实机常驻进程也已核对。
 
 官方原始二进制保留且摘要正常，不等于消息实际由它处理。**删除仓库里的补丁文件也不会改变已编译的运行程序。** 反过来，直接删定制目录或启动登记会使现有启动目标缺失。
 
@@ -144,7 +144,7 @@
 
 ### 4.2 复制官方宿主文件并修改模型转换
 
-[connector-extension.mjs](../../src/connector-extension.mjs) 会复制官方 `runtime`、官方插件包、更新技能和 Liveware 程序，并在 `runtime/lib.mjs` 中增加 `clawling-voice` 模型别名，供特定模型选择关闭思考的语音路径使用。
+connector-extension.mjs（历史文件已退役，原文保存在Git记录） 会复制官方 `runtime`、官方插件包、更新技能和 Liveware 程序，并在 `runtime/lib.mjs` 中增加 `clawling-voice` 模型别名，供特定模型选择关闭思考的语音路径使用。
 
 当前命令启动器还做分流：状态与主人查询交给固定官方包里的程序，其余命令交给定制 Core。它们共享原配置，不代表建立了两条常驻消息连接，但保留了对旧官方目录的文件依赖。
 
@@ -287,7 +287,7 @@
 
 ## 附录：直接改动的非测试文件清单
 
-当前补丁涉及 14 份非测试文件，另有 12 份测试或样本文件。清单来源为 [core-extension.patch](../../integration/clawchat/core-media/core-extension.patch)，不是对二进制修改范围的猜测。
+当前补丁涉及 14 份非测试文件，另有 12 份测试或样本文件。清单来源为 core-extension.patch（历史文件已退役，原文保存在Git记录），不是对二进制修改范围的猜测。
 
 | 官方路径 | 当前改动 |
 | --- | --- |

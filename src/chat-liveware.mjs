@@ -37,6 +37,7 @@ export function realtimeCallTool(options, route, sessionId) {
         && !/(?:不要|不用|别|先不)[^，。！？\n]{0,10}(?:通话|打电话|打个电话|呼叫)|\b(?:don't|do not) (?:call|start)\b/i.test(text)
         && /(?:^|[。！？：\n])\s*(?:语音通话|实时通话|通话|打电话)\s*(?:$|[。！？!?])|打个电话|通话入口|(?:开始|打开|发起|想|来|能|可以).{0,6}(?:通话|打电话)|\b(?:voice call|call me)\b/i.test(text),
         '仅主人当前要求时提供通话入口');
+      if(options.realtime?.sessionEnabled===false)return {ok:false,message:'实时通话暂时维护中，聊天和普通语音消息仍可使用。'};
       const url = realtimeCallUrl(options,route);
       return url ? {ok:true,url,message:'点开鲸栖通话卡片后，按页面里的通话按钮。'}
         : {ok:false,message:'私有通话入口暂未就绪。'};

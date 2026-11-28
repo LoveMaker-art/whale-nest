@@ -9,6 +9,8 @@ import { createUserMessage } from './native-dsh.mjs';
 import {clawchatTextDelivery} from './clawchat-text.mjs';
 import {createFirstBinding, firstBindingPorts, prepareFirstBinding} from './first-binding.mjs';
 import {isVoiceInput} from './voice-history.mjs';
+import {refreshFirstGreeting} from './greeting.mjs';
+import {startupStatus} from './startup-state.mjs';
 import {observeBindingRuntime,requestBindingReload} from './binding-reload.mjs';
 
 export async function installAurabotBridge(ctx, { handles, activate, ready, configPath, transport, qqRequestReload }) {
@@ -146,16 +148,17 @@ export async function installAurabotBridge(ctx, { handles, activate, ready, conf
     () => core.firstGreeting(() => !welcomeAbort.signal.aborted));
   let welcomeTimer;
   async function tickWelcome() {
-    if (closed || !welcome || welcome.done()) return;
-    let delay = 3000;
+    if (closed) return;
+    let delay = 3000, pending=true;
     try {
-      await welcome.tick();
+      pending=(await refreshFirstGreeting(options,welcome)).pending;
+      if(startupStatus(options).avatarSettled&&!startupStatus(options).avatarReady)delay=30000;
     } catch {
       delay = 15000;
     }
-    if (!closed && !welcome.done()) { welcomeTimer = setTimeout(tickWelcome, delay); welcomeTimer.unref(); }
+    if (!closed && pending) { welcomeTimer = setTimeout(tickWelcome, delay); welcomeTimer.unref(); }
   }
-  if (welcome) void ready.then(tickWelcome).catch(() => {});
+  if (firstBinding) void ready.then(tickWelcome).catch(() => {});
   if(firstBinding)void ready.then(()=>requestBindingReload(options,configPath)).catch(()=>{});
   const dispose = async () => {
     if (closed) return;

@@ -1,3 +1,4 @@
+import {startupStatus} from './startup-state.mjs';
 import assert from 'node:assert/strict';
 import {dirname,join,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -50,6 +51,7 @@ export function createCompanionPolicy(options,route,{now=Date.now,available=()=>
  const target=()=>resolveDeliveryTarget(options,{automatic:true,preferred:state.settings.proactivePlatform,available});
  function reason({message=false,externalNotice=false,kind,continuing=false}={}) {
   const s=state.settings,c=clock();
+  if(!startupStatus(options).backgroundAllowed)return 'startup-initializing';
   if(s.paused)return 'paused';
   if(kind==='contact'?!s.contactEnabled:!s.automatic&&!externalNotice)return kind==='contact'?'contact-disabled':'automatic-disabled';
   if(c.minutes<s.awakeFrom*60||c.minutes>=s.awakeTo*60)return 'quiet-hours';
@@ -106,6 +108,7 @@ export function createCompanionPolicy(options,route,{now=Date.now,available=()=>
  }
  function maintenanceReason(){
   const s=state.settings,c=clock();
+  if(!startupStatus(options).backgroundAllowed)return 'startup-initializing';
   if(backgroundPressure())return 'memory-pressure';
   if(s.paused)return 'paused';
   if(c.minutes<s.awakeFrom*60||c.minutes>=s.awakeTo*60)return 'quiet-hours';
@@ -221,7 +224,7 @@ export function createCompanionPolicy(options,route,{now=Date.now,available=()=>
   }
   save();return structuredClone(job);
  }
- return {proactiveGeneration:()=>state.proactiveGeneration??0,status,configure,input,backgroundPressure,requestJob,nativeJob,reserve,maintenanceReason,reserveMaintenance,reserveSocial,reserveNotice,settle,accept,finish,delivery,noticeDelivery,tick,jobForInput,cancelJob,target,assignTarget,bindSystemInput,contactReason,contactState,saveContact,queueContact,dispatchJob,qqOnboarding,nativeReceipt,pendingDiaries:()=>structuredClone(Object.values(state.jobs).filter(j=>j.kind==='diary'&&!terminal.has(j.state))),pendingBrowses:()=>structuredClone(Object.values(state.jobs).filter(j=>j.kind==='browse'&&!terminal.has(j.state))),pendingContacts:()=>structuredClone(Object.values(state.jobs).filter(j=>j.kind==='contact'&&!terminal.has(j.state))),getJob:id=>state.jobs[id]?structuredClone(state.jobs[id]):null};
+ return {startupPending:()=>!startupStatus(options).backgroundAllowed,proactiveGeneration:()=>state.proactiveGeneration??0,status,configure,input,backgroundPressure,requestJob,nativeJob,reserve,maintenanceReason,reserveMaintenance,reserveSocial,reserveNotice,settle,accept,finish,delivery,noticeDelivery,tick,jobForInput,cancelJob,target,assignTarget,bindSystemInput,contactReason,contactState,saveContact,queueContact,dispatchJob,qqOnboarding,nativeReceipt,pendingDiaries:()=>structuredClone(Object.values(state.jobs).filter(j=>j.kind==='diary'&&!terminal.has(j.state))),pendingBrowses:()=>structuredClone(Object.values(state.jobs).filter(j=>j.kind==='browse'&&!terminal.has(j.state))),pendingContacts:()=>structuredClone(Object.values(state.jobs).filter(j=>j.kind==='contact'&&!terminal.has(j.state))),getJob:id=>state.jobs[id]?structuredClone(state.jobs[id]):null};
 }
 
 export async function* budgetedStream(policy,request,next,maintenance,background){

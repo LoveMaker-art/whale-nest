@@ -1,0 +1,15 @@
+import {ownRoot as installedOwnRoot} from '../src/platform-client.mjs';
+import {readFileSync,existsSync} from 'node:fs';
+import {join,dirname} from 'node:path';
+import {homedir} from 'node:os';
+import {pathToFileURL} from 'node:url';
+import {inspectSourceCandidate,selectedSourceRuntime} from '../src/source-candidate.mjs';
+const read=p=>JSON.parse(readFileSync(p,'utf8'));
+const options=read(join(homedir(),'.dsh/companion/aurabot-v1/instance.json'));
+const candidate=inspectSourceCandidate(options,undefined,{verify:false});
+const root=candidate?.root??installedOwnRoot(options);
+const {startupStatus}=await import(pathToFileURL(join(root,'src/startup-state.mjs')));
+const status=startupStatus(options),requestFile=options.qq?.gateway?.loginRequestFile;
+const request=requestFile&&existsSync(requestFile)?read(requestFile):null;
+const priority=status.baseReady&&status.avatarSettled&&request&&Date.now()-request.requestedAt>=0&&Date.now()-request.requestedAt<60000;
+console.log(JSON.stringify({...status,qqAllowed:status.qqAllowed||Boolean(priority)}));

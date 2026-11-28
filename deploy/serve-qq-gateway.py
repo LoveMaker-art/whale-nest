@@ -9,15 +9,21 @@ import json
 import os
 from pathlib import Path
 import signal
+import socket
+import resource
 import subprocess
 import sys
 import time
 import traceback
 import urllib.request
+from qq_gateway_lifecycle import stop_desktop
 from qq_login_window import QQLoginWindow
 from qq_gateway_memory import GatewayMemory, process_memory
 
 os.umask(0o077)
+# Keep private child crashes from filling the product disk with kernel cores.
+# QQ's own bounded Crashpad diagnostics remain available.
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 base = Path.home() / '.local/share/whale-nest/qq-gateways'
 snow = base / 'snowluma-v2.4.2'
 deps = base / 'desktop-deps'
@@ -25,7 +31,14 @@ root = deps / 'root'
 login = snow / 'login'
 login.mkdir(mode=0o700, exist_ok=True)
 children = []
+named_children = {}
 stopping = False
+closing = False
+stop_signal = None
+
+
+class StopRequested(BaseException):
+    pass
 
 
 class ResourceStop(Exception):
@@ -46,41 +59,55 @@ def start(name, args, env, cwd=None):
     path = snow / (name + '-managed.log')
     if path.exists() and path.stat().st_size > 2 * 1024 * 1024:
         path.replace(path.with_suffix('.previous.log'))
-    with path.open('ab') as log:
-        proc = subprocess.Popen(args, env=env, cwd=cwd, stdout=log,
-                                stderr=subprocess.STDOUT, start_new_session=True)
-    children.append(proc)
-    save(snow / (name + '-process.json'), {'pid': proc.pid, 'args': args,
-                                          'managedBy': os.getpid()})
+    if stopping:
+        raise StopRequested()
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
+    try:
+        with path.open('ab') as log:
+            proc = subprocess.Popen(args, env=env, cwd=cwd, stdout=log,
+                stderr=subprocess.STDOUT, start_new_session=True,
+                preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask))
+        children.append(proc)
+        named_children[name] = proc
+        save(snow / (name + '-process.json'), {'pid': proc.pid, 'args': args,
+                                              'managedBy': os.getpid()})
+    finally:
+        # Deliver a pending stop only after the new child has been registered.
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
     return proc
 
 
-def stop(signum=None, _frame=None):
-    global stopping
-    if signum is not None:
-        save(snow / 'lifecycle.json', {'reason': signal.Signals(signum).name,
-                                      'at': int(time.time() * 1000)})
-    if stopping:
-        return
+def request_stop(signum, _frame=None):
+    global stopping, stop_signal
     stopping = True
-    for proc in reversed(children):
-        if proc.poll() is None:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-    for proc in children:
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+    stop_signal = signum
+    if not closing:
+        # Unwind Popen/HTTP locks before teardown; never wait in a signal handler.
+        raise StopRequested()
 
 
-signal.signal(signal.SIGTERM, stop)
-signal.signal(signal.SIGINT, stop)
+def stop():
+    global stopping, closing
+    if closing:
+        return
+    closing = True
+    stopping = True
+    save(snow / 'managed-status.json', {'ready': False, 'reason': 'resource-stop' if (snow / 'resource-stop.json').exists() else 'stopping',
+                                       'at': int(time.time() * 1000)})
+    if stop_signal is not None:
+        save(snow / 'lifecycle.json', {'reason': signal.Signals(stop_signal).name,
+                                      'at': int(time.time() * 1000)})
+    try:
+        stop_desktop(named_children)
+    except Exception as error:
+        save(snow / 'teardown-error.json', {'type': type(error).__name__, 'at': int(time.time() * 1000)})
+        (snow / 'teardown-error-private.log').write_text(traceback.format_exc())
+        raise
+
+
+signal.signal(signal.SIGTERM, request_stop)
+signal.signal(signal.SIGINT, request_stop)
+
 env = dict(os.environ, PATH=str(root / 'usr/bin') + ':' + os.environ['PATH'],
            LD_LIBRARY_PATH=(deps / 'runtime-library-path.txt').read_text().strip(),
            DISPLAY=':99', XKB_CONFIG_ROOT=str(root / 'usr/share/X11/xkb'),
@@ -108,9 +135,32 @@ def api(route, data=None, token=None):
     return value
 
 
+startup = {}
 try:
     if (snow / 'resource-stop.json').exists():
         raise ResourceStop()
+    # The lightweight guardian may start with the supervisor. The desktop waits
+    # for verified chat, avatar and the first app pass; owner login can prioritize it.
+    startup_probe = Path(__file__).with_name('startup-status.mjs')
+    waiting_since = time.monotonic()
+    while not stopping and startup_probe.exists():
+        try:
+            check = subprocess.run(['/usr/local/bin/node', str(startup_probe)],
+                                   capture_output=True, timeout=8, check=True)
+            startup = json.loads(check.stdout)
+            if startup.get('qqAllowed'):
+                break
+            reason = 'startup-deferred' if startup.get('appsAllowed') and time.monotonic() - waiting_since > 90 else 'startup-waiting'
+        except (subprocess.SubprocessError, ValueError):
+            reason = 'startup-waiting'
+        save(snow / 'managed-status.json', {'ready': False, 'reason': reason,
+                                           'at': int(time.time() * 1000)})
+        time.sleep(1)
+    if stopping:
+        raise SystemExit(0)
+    with socket.socket() as port_probe:
+        port_probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        port_probe.bind(('127.0.0.1', 5099))
     # QQ can render its QR without CJK fonts while hiding every Chinese login
     # error. Require actual Chinese coverage before exposing that login UI.
     languages = command([str(root / 'usr/bin/fc-match'), '-f', '%{lang}', 'sans:lang=zh-cn']).decode()
@@ -132,7 +182,15 @@ try:
                          '-nolisten', 'tcp', '-ac', '-xkbdir', env['XKB_CONFIG_ROOT']], env)
     for _ in range(30):
         try:
+            if xvfb.poll() is not None:
+                raise RuntimeError('Virtual display failed before readiness')
+            display_lock = Path('/tmp/.X99-lock')
+            if not display_lock.exists() or int(display_lock.read_text().strip()) != xvfb.pid:
+                time.sleep(.1)
+                continue
             command([str(root / 'usr/bin/xdpyinfo')])
+            if xvfb.poll() is not None:
+                raise RuntimeError('Virtual display exited during readiness')
             break
         except subprocess.SubprocessError:
             if xvfb.poll() is not None:
@@ -144,6 +202,9 @@ try:
     dbus = start('dbus', [str(root / 'usr/bin/dbus-daemon'), '--nofork',
                           '--config-file=' + str(root / 'usr/share/dbus-1/session.conf'),
                           '--address=unix:path=' + str(snow / 'session-bus')], env)
+    time.sleep(.1)
+    if dbus.poll() is not None:
+        raise RuntimeError('Session bus failed before QQ startup')
     env['DBUS_SESSION_BUS_ADDRESS'] = 'unix:path=' + str(snow / 'session-bus')
     assert read(snow / 'managed-desktop.json')['profile'] == str(Path.home() / '.config/QQ')
     qq = start('qq', [str(base / 'linux-qq-3.2.34/opt/QQ/qq'), '--no-sandbox',
@@ -309,7 +370,8 @@ try:
                 save(login / 'qr.json', response)
             save(login / 'status.json', status)
         save(snow / 'managed-status.json', {'ready': True, 'qqProcessConnected': True,
-                   'loggedIn': online, 'memoryCurrent': sample.get('current'),
+                   'loggedIn': online, 'coreEpoch': startup.get('coreEpoch'),
+                   'identity': startup.get('identity'), 'platformInstanceId': startup.get('platformInstanceId'), 'memoryCurrent': sample.get('current'),
                    'memoryEffective': sample.get('effective'),
                    'deferBackground': memory.deferred, 'at': int(time.time() * 1000)})
         for logfile in snow.glob('*-managed.log'):
@@ -320,6 +382,8 @@ try:
             if stopping:
                 break
             time.sleep(.25)
+except StopRequested:
+    pass
 except ResourceStop:
     # The supervisor also restarts clean exits. Keep a small, inactive guardian
     # here so memory pressure cannot create a QQ restart loop. An operator must
@@ -337,11 +401,13 @@ except ResourceStop:
 except Exception as error:
     # Do not emit exception payloads from third-party APIs or credentials.
     print('QQ service stopped: ' + type(error).__name__ + '. Inspect private diagnostics.', file=sys.stderr, flush=True)
-    save(snow / 'managed-error.json', {'type': type(error).__name__, 'at': int(time.time() * 1000)})
+    save(snow / 'managed-error.json', {'type': type(error).__name__, 'dependencies': {name: proc.poll() for name, proc in named_children.items()}, 'at': int(time.time() * 1000)})
     (snow / 'managed-error-private.log').write_text(traceback.format_exc())
     sys.exit(1)
 finally:
     (login / 'qr.json').unlink(missing_ok=True)
     save(login / 'status.json', {'state': 'reconnecting', 'updatedAt': int(time.time() * 1000)})
-    save(snow / 'managed-status.json', {'ready': False, 'at': int(time.time() * 1000)})
+    reason = 'resource-stop' if (snow / 'resource-stop.json').exists() else 'stopped' if stop_signal is not None else 'startup-deferred'
     stop()
+    save(snow / 'managed-status.json', {'ready': False, 'reason': reason,
+                                       'coreEpoch': startup.get('coreEpoch'), 'at': int(time.time() * 1000)})

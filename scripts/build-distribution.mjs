@@ -7,6 +7,7 @@ import {buildConnectBridge,bridgeAssets} from './build-connect.mjs';
 import {buildRuntimeBase} from './build-runtime-base.mjs';
 import {buildAurabotHost} from './build-aurabot-host.mjs';
 import {updateCompatibility,updatePrerequisites,validateUpdatePrerequisites,updateProtocol,validateUpdatePath} from '../src/plugin-release.mjs';
+import {distributionInputs} from '../src/distribution-inputs.mjs';
 import {workspaceInstructionsSource} from '../src/workspace-instructions.mjs';
 import '../src/voice-catalog.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
@@ -42,20 +43,9 @@ export async function buildDistribution(destination,{target='linux-x64',version=
  await add('artifacts/official-runtime-provider.mjs',join(destination,'base/official-runtime-provider.mjs'));
  for(const name of bridgeAssets)await add('artifacts/'+name,join(destination,'bridge',name));
  await add('artifacts/deepseek-harness-bridge.mjs',bridge);
- const entry="import base from './"+target+"-base.mjs';\nimport {extendRuntimeEntry} from './whalenest/src/runtime-extension.mjs';\nimport {registerManagedLiveware} from './whalenest/src/liveware-managed.mjs';\nconst runtime=extendRuntimeEntry(base);\nexport default {async activate(context){registerManagedLiveware(context);return await runtime.activate(context);}};\n";
+ const entry="import {fileURLToPath} from 'node:url';\nimport base from './"+target+"-base.mjs';\nimport {extendRuntimeEntry} from './whalenest/src/runtime-extension.mjs';\nimport {registerManagedLiveware} from './whalenest/src/liveware-managed.mjs';\nconst runtime=extendRuntimeEntry(base,{installation:{root:fileURLToPath(new URL('./whalenest/',import.meta.url)),entryPath:fileURLToPath(import.meta.url),version:"+JSON.stringify(version)+"}});\nexport default {async activate(context){registerManagedLiveware(context);return await runtime.activate(context);}};\n";
  files['artifacts/'+target+'.mjs']={encoding:'utf8',content:entry};
- async function tree(relative){
-  const entries=await readdir(join(root,relative),{withFileTypes:true});
-  entries.sort((left,right)=>left.name<right.name?-1:left.name>right.name?1:0);
-  for(const item of entries){
-   if(['node_modules','__pycache__'].includes(item.name)||item.name.startsWith('.')||item.name.endsWith('.pyc'))continue;
-   if(relative==='src'&&item.name==='connector-extension.mjs')continue;
-   const path=join(relative,item.name);
-   if(item.isDirectory())await tree(path);
-   else if(item.isFile())await add('artifacts/whalenest/'+path,join(root,path));
-  }
- }
- for(const dir of ['src','vendor/aurabot','vendor/qrcode-generator','vendor/abcjs','vendor/platform-liveware','licenses'])await tree(dir);
+ for(const name of await distributionInputs(root))await add('artifacts/whalenest/'+name,join(root,name));
  const lock=JSON.parse(await readFile(join(root,'upstream.lock.json')));
  const persona=lock.personaReference;
  for(const path of ['LICENSE','upstream.lock.json','vendor/aurabot.provenance.json',persona.localFile,persona.licenseFile,'integration/clawchat/LICENSE','integration/clawchat/SOURCE.json'])await add('artifacts/whalenest/'+path,join(root,path));

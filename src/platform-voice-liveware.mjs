@@ -25,7 +25,7 @@ function profileReader({delivery,route}) {
   return async signal => {
     const {stdout} = await run(delivery.connectBin,['tool','call','clawchat_get_account_profile',
       '--agent',route.account,'--config',delivery.configPath,'--request-id','whalenest-voice-profile-'+randomUUID(),
-      '--input-json','{}'],{timeout:8500,maxBuffer:128*1024,signal});
+      '--input-json','{}'],{timeout:8500,maxBuffer:128*1024,signal,env:{...process.env,WHALENEST_SOURCE_INSTANCE:'',CLAWCHAT_CONNECT_CONFIG:delivery.configPath}});
     const {result} = JSON.parse(stdout);
     assert.ok(result?.id,'ClawChat profile unavailable');
     return result;
@@ -53,21 +53,21 @@ function voiceSessionSecret(options) {
   return secret;
 }
 
-export async function startRuntimeVoiceSession(options, {withPrivateVoiceSession,listModels}) {
+export async function startRuntimeVoiceSession(options, {withCallSession,listModels}) {
   const port = voiceSessionPort(options);
   assert.ok(Number.isInteger(port) && port > 0 && port <= 65535 && port !== (options.realtime.port ?? 8897), 'Invalid call session port');
-  return startPlatformVoiceBridge(options, {secret:voiceSessionSecret(options), withPrivateVoiceSession, listModels,
+  return startPlatformVoiceBridge(options, {secret:voiceSessionSecret(options), withCallSession, listModels,
     readProfile:profileReader(options.clawchat), port});
 }
 
-export async function startPlatformVoiceLiveware(options,{withPrivateVoiceSession,listModels,readProfile=profileReader(options.clawchat),
+export async function startPlatformVoiceLiveware(options,{withCallSession,listModels,readProfile=profileReader(options.clawchat),
   port=options.realtime?.port??8897,bridgePort}={}) {
   assert.ok(Number.isInteger(port) && port >= 0 && port <= 65535,'Invalid call port');
   const publicOrigin = verifiedRealtimePublicOrigin(options.realtime?.publicOrigin);
   const {speech} = options;
   const {base,key} = await readPlatformProvider(speech);
   const secret = bridgePort === undefined ? Buffer.from(randomBytes(32).toString('hex')) : voiceSessionSecret(options);
-  const bridge = bridgePort === undefined ? await startPlatformVoiceBridge(options,{secret,withPrivateVoiceSession,listModels,readProfile}) : null;
+  const bridge = bridgePort === undefined ? await startPlatformVoiceBridge(options,{secret,withCallSession,listModels,readProfile}) : null;
   const child = spawn(options.realtime?.python ?? 'python3',['-B','-m','clawnest_voice.dsh_runtime'],{
     cwd:gatewayDirectory,stdio:['pipe','pipe','inherit'],
   });

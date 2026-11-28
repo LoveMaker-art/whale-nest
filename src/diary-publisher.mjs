@@ -6,25 +6,37 @@ import {promisify} from 'node:util';
 import {hash,routeKey,senderKey,ownerScope,resolveDeliveryTarget} from './routing.mjs';
 import {readState,writeState} from './state.mjs';
 import {resolveAudience} from '../vendor/aurabot/src/features/qzone-audience.js';
-import {createClawChatCore} from './clawchat-core.mjs';
+import {platformOperations,classifyPlatformReceipt,isPendingReceipt} from './platform-operations.mjs';
 
 const exec=promisify(execFile);
 /** Publishes an explicitly approved projection of public activity facts.
  * Credentials and transport remain owned by the existing Core. */
-export function createDiaryPublisher(options,route,{diary,run=exec,now=Date.now,getQzone,readStatus=(name,id)=>createClawChatCore(options).toolStatus(name,id)}={}){
+export function createDiaryPublisher(options,route,{diary,run=exec,now=Date.now,getQzone,readStatus,notify=()=>{}}={}){
  assert.ok(resolveDeliveryTarget(options,{origin:route}).ok,'发布档案仅限已关联主人私聊');
  const scope=ownerScope(options),cc=options.clawchat.route,legacy=hash([options.instanceId,routeKey(cc),senderKey(cc)]),file=join(resolve(options.dataDir),'diary-publications.json');
  const state=readState(file,{schema:2,scope,identityScope:legacy,records:{}});assert.ok(state.scope===scope||state.schema===1&&state.scope===legacy,'发布档案归属不符');
- state.schema=2;state.scope=scope;state.identityScope??=legacy;assert.equal(state.identityScope,legacy,'旧发布请求身份不符');
+ state.schema=2;state.scope=scope;state.identityScope??=legacy;
+ if(state.identityScope!==legacy){
+  // Old ClawChat receipts keep their original account namespace. They cannot
+  // authorize a read/delete/retry under the freshly activated account.
+  const retained=Object.fromEntries(Object.entries(state.records).filter(([,r])=>(r.platform??'clawchat')==='clawchat'));
+  if(Object.keys(retained).length)state.retainedClawChatRecords={...state.retainedClawChatRecords,
+    [state.identityScope]:{...state.retainedClawChatRecords?.[state.identityScope],...retained}};
+  state.records=Object.fromEntries(Object.entries(state.records).filter(([,r])=>r.platform==='qq'));
+  state.identityScope=legacy;
+ }
  Object.assign(state.records,state.retainedQQRecords??{});delete state.retainedQQRecords;
  for(const record of Object.values(state.records))if(record.scope===legacy)record.scope=scope;
  const save=()=>writeState(file,state),flights=new Map();save();
  const delivery=options.clawchat.delivery;
+ const operations=platformOperations(options,{run:run===exec?undefined:run});
+ readStatus??=(name,id)=>operations.inspect(name,id);
  async function call(tool,input,requestId){assert.ok(delivery?.connectBin&&delivery.configPath,'Core接线不可用');
-  try{const {stdout}=await run(delivery.connectBin,['tool','call',tool,'--agent',route.account,'--request-id',requestId,'--input-json',JSON.stringify(input),'--config',delivery.configPath],{timeout:40000,maxBuffer:1024*1024});return JSON.parse(stdout);}
+  if(['clawchat_create_moment','clawchat_delete_moment'].includes(tool))return operations.submit(tool,requestId,input);
+  try{const {stdout}=await run(delivery.connectBin,['tool','call',tool,'--agent',route.account,'--request-id',requestId,'--input-json',JSON.stringify(input),'--config',delivery.configPath],{timeout:40000,maxBuffer:1024*1024,env:{...process.env,WHALENEST_SOURCE_INSTANCE:'',CLAWCHAT_CONNECT_CONFIG:delivery.configPath}});return JSON.parse(stdout);}
   catch(error){try{if(error.stdout)return JSON.parse(error.stdout);}catch{}return {status:'unknown'};}
  }
- async function permissions(){const response=await call('clawchat_get_agent_permissions',{},'whalenest-permissions-'+randomUUID());if(response.status!=='succeeded')return {ok:false,state:'unavailable',message:'当前未能读取ClawChat动态权限，禁止据默认值发布。'};
+ async function permissions(){const response=await call('clawchat_get_permissions',{},'whalenest-permissions-'+randomUUID());if(response.status!=='succeeded')return {ok:false,state:'unavailable',message:'当前未能读取ClawChat动态权限，禁止据默认值发布。'};
   const data=response.result;assert.ok(data&&typeof data==='object','权限响应不完整');return {ok:true,visibility:data['moment.visibility'],publish:data['moment.publish'],delete:data['moment.delete'],windows:data.permission_windows??{},checkedAt:now(),message:'可见范围属于Agent全局设置，未来修改也会影响历史动态。'};
  }
  function preview(date){const entry=diary.read(date);if(!entry.ok)return entry;
@@ -33,38 +45,72 @@ export function createDiaryPublisher(options,route,{diary,run=exec,now=Date.now,
   assert.ok(Buffer.byteLength(text,'utf8')<=5000,'日记公开活动摘要超过平台5000字节限制，请先减少素材');
   return {ok:true,date:entry.date,revision:entry.revision,requestId:id,text,audience:'owner',enabled:options.activities?.momentPublicationEnabled===true,message:'这是仅含公开活动来源的拟发布正文，不包含私人感想或主人私聊；动态受众以后可能随主人全局设置变化。'};
  }
- const view=record=>({ok:record.state==='confirmed',state:record.state,date:record.date,revision:record.revision,requestId:record.id,...(record.momentId?{momentId:record.momentId}:{}),...(record.deletion?{deletion:record.deletion.state}:{}),message:record.state==='confirmed'?'平台已确认动态发布；私人日记原件独立保留。':'发布结果尚未确认，禁止另起请求重发，请查询publication_status。'});
- function settle(record,response){const moment=response?.result?.moment;
-  if(response?.status==='succeeded'&&Number.isSafeInteger(moment?.id)&&moment.id>0&&moment.text===record.text){record.state='confirmed';record.momentId=moment.id;}
-  // A failed CLI result can conceal a server-side approval or a lost reply.
-  // Only its stable Core request may be reconciled; it is never resubmitted.
+ const finalFailure=new Set(['failed','denied','expired']);
+ const view=record=>({ok:record.state==='confirmed',state:record.state,date:record.date,revision:record.revision,requestId:record.id,
+  ...(record.momentId?{momentId:record.momentId}:{}),...(record.deletion?{deletion:record.deletion.state}:{}),
+  pending:record.state==='pending',canRetry:finalFailure.has(record.state),
+  message:record.state==='confirmed'?'平台已确认动态发布；私人日记原件独立保留。':record.state==='pending'?'原发布操作仍在执行，可查询publication_status。':finalFailure.has(record.state)?'平台已明确返回'+record.state+'：'+(record.error??'发布未成功')+'。修正原因后可由主人明确重试。':'发布结果无法确定，未重复发布；私人日记仍保留。'});
+ function settle(record,response){
+  response=classifyPlatformReceipt(response);const moment=response?.result?.moment;if(response?.actorId)record.agentId=response.actorId;
+  if(response?.status==='succeeded'&&Number.isSafeInteger(moment?.id)&&moment.id>0&&moment.text===record.text){record.state='confirmed';record.momentId=moment.id;delete record.error;}
+  else if(record.state!=='confirmed'){
+   record.state=finalFailure.has(response?.status)?response.status:isPendingReceipt(response)?'pending':'uncertain';
+   record.error=response?.error??(response?.status==='succeeded'?'成功回执中的动态编号或正文不匹配':undefined);
+  }
   record.checkedAt=now();save();return view(record);
  }
- async function publish(date,approvedText){const draft=preview(date);if(!draft.ok)return draft;
+ async function publish(date,approvedText,_visibility,{retry=false}={}){const draft=preview(date);if(!draft.ok)return draft;
   if(options.activities?.momentPublicationEnabled!==true)return {ok:false,state:'approval-required',draft,message:'当前仅私人归档。请先确认这份正文、全局受众和删除条件，再启用动态发布。'};
   assert.equal(approvedText,draft.text,'需要主人确认的完整拟发布正文，不能发布未核对的私人日记');
-  const previous=state.records[draft.requestId];if(previous){assert.equal(previous.text,draft.text);if(flights.has(previous.id))await flights.get(previous.id);return {...view(previous),duplicate:true};}
+  const previous=state.records[draft.requestId];if(previous){assert.equal(previous.text,draft.text);if(flights.has(previous.id))await flights.get(previous.id);if(!retry||!finalFailure.has(previous.state))return {...view(previous),duplicate:true};}
   const permission=await permissions();if(!permission.ok)return permission;
   if(JSON.stringify(permission.visibility)!=='["owner"]')return {ok:false,state:'audience-changed',message:'当前受众不再是仅主人，未执行发布，需要重新核对受众。'};
   if(permission.publish!=='allow'&&!(Number(permission.windows['moment.publish'])>now()))return {ok:false,state:'permission-required',message:'当前平台未允许直接发布，未提交审批或写入。'};
   // Recheck content after the read-only permission call, before reserving.
   assert.equal(preview(date).text,draft.text,'读取权限期间日记版本已变化，未发布');
-  if(state.records[draft.requestId])return view(state.records[draft.requestId]);
-  const record={id:draft.requestId,date:draft.date,revision:draft.revision,text:draft.text,scope,platform:'clawchat',state:'uncertain',permissions:permission,createdAt:now()};state.records[record.id]=record;save();
+  if(state.records[draft.requestId]!==previous)return view(state.records[draft.requestId]);
+  const attempts=previous?[...(previous.attempts??[]),{id:previous.id,state:previous.state,error:previous.error}]:[];
+  const record={id:attempts.length?draft.requestId+'-attempt-'+attempts.length:draft.requestId,attempts,date:draft.date,revision:draft.revision,text:draft.text,scope,platform:'clawchat',state:'uncertain',permissions:permission,createdAt:now()};state.records[draft.requestId]=record;save();
   const work=call('clawchat_create_moment',{text:record.text},record.id).then(response=>settle(record,response));flights.set(record.id,work);try{return await work;}finally{flights.delete(record.id);}
  }
- async function check(date){const records=Object.values(state.records).filter(r=>r.date===date&&(r.platform??'clawchat')==='clawchat').sort((a,b)=>b.revision-a.revision);const record=records[0];if(!record)return {ok:false,state:'not-published',message:'该日日记没有动态提交记录。'};
-  if(record.state!=='confirmed')try{settle(record,await readStatus('clawchat_create_moment',record.id));}catch{}
-  if(record.state==='confirmed'){const response=await call('clawchat_list_moments',{limit:100},'whalenest-moment-read-'+randomUUID());const rows=response.result?.moments;
-   return {...view(record),readback:response.status==='succeeded'&&Array.isArray(rows)&&rows.some(row=>row.id===record.momentId&&row.text===record.text)?'matched':'unconfirmed'};
-  }return view(record);
+ async function check(date){
+  const record=Object.values(state.records).filter(r=>r.date===date&&(r.platform??'clawchat')==='clawchat').sort((a,b)=>b.revision-a.revision)[0];
+  if(!record)return {ok:false,state:'not-published',message:'该日日记没有动态提交记录。'};
+  if(!['confirmed',...finalFailure].includes(record.state)){
+   try{settle(record,await readStatus('clawchat_create_moment',record.id));}catch{}
+  }
+  if(record.state==='pending')return view(record);
+  if(record.deletion&&['pending','uncertain'].includes(record.deletion.state)){const receipt=await operations.inspect('clawchat_delete_moment',record.deletion.id);record.deletion.state=receipt.status==='succeeded'&&receipt.result?.ok===true?'confirmed':finalFailure.has(receipt.status)?receipt.status:isPendingReceipt(receipt)?'pending':'uncertain';record.deletion.error=receipt.error;save();}
+  if(record.state==='confirmed'||record.state==='uncertain'){
+   const response=await call('clawchat_list_moments',{limit:100},'whalenest-moment-read-'+randomUUID());
+   const rows=response.result?.moments;
+   if(!record.agentId&&record.state==='uncertain'){const profile=await call('clawchat_get_account_profile',{},'whalenest-moment-author-'+randomUUID());if(profile.status==='succeeded'&&profile.result?.id)record.agentId=profile.result.id;}
+   const author=row=>row.author_id??row.userId??row.user_id??row.author?.id??row.user?.id??row.agentId??row.agent_id;
+   const matches=response.status==='succeeded'&&Array.isArray(rows)?rows.filter(row=>row.text===record.text&&Number.isSafeInteger(row.id)&&row.id>0&&(record.state==='confirmed'?row.id===record.momentId:record.agentId&&author(row)===record.agentId)):[];
+   if(record.state==='uncertain'&&matches.length===1){record.state='confirmed';record.momentId=matches[0].id;record.reconciledFrom='public-moment-list';save();}
+   return {...view(record),readback:record.state==='confirmed'&&matches.some(row=>row.id===record.momentId)?'matched':'unconfirmed'};
+  }
+  return view(record);
  }
+ async function reconcile(){
+  for(const record of Object.values(state.records).filter(r=>(r.platform??'clawchat')==='clawchat'&&['pending','uncertain'].includes(r.state)).slice(0,4)){
+   const progress=record.reconciliation??{attempts:0,nextAt:0};
+   if(progress.closedAt||progress.nextAt>now())continue;
+   progress.attempts++;progress.nextAt=now()+[2000,5000,15000,30000,60000][Math.min(progress.attempts-1,4)];record.reconciliation=progress;save();
+   await check(record.date);
+   if(!['pending','uncertain'].includes(record.state)||progress.attempts>=8){
+    if(record.state==='pending')record.state='uncertain';progress.closedAt=now();save();
+    notify({id:'whalenest-publication-result-'+hash([record.id,record.state]),text:record.date+'的动态发布结果：'+view(record).message});
+   }
+  }
+ }
+
  async function remove(date){const record=Object.values(state.records).filter(r=>r.date===date&&(r.platform??'clawchat')==='clawchat'&&r.state==='confirmed').sort((a,b)=>b.revision-a.revision)[0];if(!record)return {ok:false,state:'not-published',message:'没有可删除的确认发布记录。'};
   if(record.deletion)return {...view(record),ok:record.deletion.state==='confirmed',state:record.deletion.state,message:record.deletion.state==='confirmed'?'该平台动态已删除，私人日记仍保留。':'删除结果不确定，未重发删除请求。'};
   const permission=await permissions();if(!permission.ok)return permission;
   if(permission.delete!=='allow'&&!(Number(permission.windows['moment.delete'])>now()))return {ok:false,state:'permission-required',message:'当前ClawChat删除策略需要主人审批或禁止，未擅自提交或更改权限。'};
   record.deletion={id:record.id+'-delete',state:'uncertain',createdAt:now()};save();const result=await call('clawchat_delete_moment',{momentId:record.momentId},record.deletion.id);
-  if(result.status==='succeeded'&&result.result?.ok===true)record.deletion.state='confirmed';save();return {ok:record.deletion.state==='confirmed',state:record.deletion.state,momentId:record.momentId,message:record.deletion.state==='confirmed'?'该平台动态已删除，私人日记仍保留。':'删除结果不确定，未重发请求。'};
+  record.deletion.state=result.status==='succeeded'&&result.result?.ok===true?'confirmed':finalFailure.has(result.status)?result.status:isPendingReceipt(result)?'pending':'uncertain';record.deletion.error=result.error;save();return {ok:record.deletion.state==='confirmed',state:record.deletion.state,momentId:record.momentId,message:record.deletion.state==='confirmed'?'该平台动态已删除，私人日记仍保留。':'删除结果不确定，未重发请求。'};
  }
 
  const qqView=r=>({ok:r.state==='confirmed',platform:'qq',state:r.state,date:r.date,revision:r.revision,requestId:r.id,...(r.tid?{tid:r.tid}:{}),...(r.deletion?{deletion:r.deletion.state}:{}),visibility:r.visibility,
@@ -96,6 +142,6 @@ export function createDiaryPublisher(options,route,{diary,run=exec,now=Date.now,
   if(record.deletion)return {...qqView(record),ok:record.deletion.state==='confirmed',state:record.deletion.state};const service=getQzone?.();if(!service?.connected())return {ok:false,state:'channel-unavailable'};
   record.deletion={state:'uncertain',at:now()};save();try{await service.remove(record.tid);record.deletion.state='confirmed';}catch{}save();return {...qqView(record),ok:record.deletion.state==='confirmed',state:record.deletion.state};
  }
- return {preview,permissions,publish,check,remove,qq:{preview:qqPreview,permissions:qqPermissions,publish:qqPublish,check:qqCheck,remove:qqRemove},
+ return {preview,permissions,publish,check,remove,reconcile,qq:{preview:qqPreview,permissions:qqPermissions,publish:qqPublish,check:qqCheck,remove:qqRemove},
   postQQ:({requestId,...input})=>submitQQ({id:'whalenest-qzone-post-'+hash([scope,requestId]),...input})};
 }

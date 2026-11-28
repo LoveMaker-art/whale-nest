@@ -1,6 +1,6 @@
 {
   "name": "whale-nest",
-  "version": "1.0.0-beta.4.dev.22",
+  "version": "1.0.0",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -14,10 +14,11 @@
     "build:connect": "node scripts/build-connect.mjs",
     "health": "node scripts/health.mjs",
     "prepare:connect": "node scripts/prepare-connect.mjs",
-    "test:deployment": "node scripts/test.mjs test/live-update.test.mjs",
+    "test:deployment": "node scripts/test.mjs test/live-update.test.mjs test/native-install.test.mjs test/bootstrap-deployment.test.mjs test/source-candidate.test.mjs",
     "build:distribution": "node scripts/build-distribution.mjs",
     "preflight:m2": "node scripts/update-m2.mjs preflight",
-    "deploy:m2": "node scripts/update-m2.mjs install"
+    "deploy:m2": "node scripts/update-m2.mjs install",
+    "test:distribution": "node scripts/test.mjs --distribution"
   },
   "engines": {
     "node": ">=24"

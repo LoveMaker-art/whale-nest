@@ -60,7 +60,11 @@ export function createWhaleDshBridgeEntry({encodeBridgeFrame,pageHistoryEvents,r
     wire.start(methods,(method,params)=>business.record(method,params));
     ctx.provide('sdkSessionActivation',{ready:true});markInstalled();
     return dispose;
-   }catch(error){await dispose();throw error;}
+   }catch(error){
+    await wire.send({type:'startupError',code:error?.code==='FIRST_BINDING_PENDING'
+      ?'FIRST_BINDING_PENDING':'BUSINESS_INITIALIZATION_FAILED'}).catch(()=>{});
+    await dispose();throw error;
+   }
   },
  };
 }

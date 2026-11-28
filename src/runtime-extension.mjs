@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync,existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { prepareRuntimeInput, mediaLimits } from './media.mjs';
@@ -7,7 +7,11 @@ import { createSpeechClient } from './speech.mjs';
 import {qqManagementFallback} from './qq-management-message.mjs';
 import {withRequiredCommands} from './reply-notice.mjs';
 import { startRuntimeVoiceSession } from './platform-voice-liveware.mjs';
+import {observeCoreBinding} from './startup-state.mjs';
+import {requireCurrentInstanceBinding} from './instance-binding.mjs';
 import { fastVoiceModel } from './voice-model.mjs';
+import {createReplyDelivery} from './reply-delivery.mjs';
+import {registerInstallation} from './platform-client.mjs';
 
 function adaptImages(input, models) {
   if (!input.media?.length) return input;
@@ -26,9 +30,13 @@ function adaptImages(input, models) {
 /** Wrap only the public Runtime Adapter interface. Core continues to own the
  * same transport, account connection, input acknowledgement and session lifecycle.
  */
-export function extendRuntimeEntry(base) {
+export function extendRuntimeEntry(base,{replyDeliveryFactory=createReplyDelivery,installation}={}) {
   return {
     async activate(context) {
+      if(Number.isSafeInteger(context.activationGeneration)&&process.argv.includes('service')&&process.argv.includes('exec')){
+        const file=join(process.env.DSH_HOME||homedir()+ '/.dsh','companion/aurabot-v1/instance.json');
+        if(existsSync(file)){const options=JSON.parse(readFileSync(file,'utf8'));if(installation||existsSync(join(options.dataDir,'installation.json')))registerInstallation(options,context,installation);}
+      }
       const providers = context.hostCapabilities;
       const runtime = providers.get('runtime-provider');
       return await base.activate({ ...context, hostCapabilities: {
@@ -46,11 +54,12 @@ export function extendRuntimeEntry(base) {
               const optionalOptions = () => {
                 try { return readOptions(); } catch { return {}; }
               };
-              let voiceSession, closing=false;
+              let voiceSession, voiceRoute, closing=false;
               function startVoiceSession(options = optionalOptions()) {
-                if (closing || voiceSession || !options.realtime?.enabled || !options.clawchat?.route) return;
+                if (closing || voiceSession || !options.realtime?.enabled || options.realtime?.sessionEnabled===false || !options.clawchat?.route) return;
+                voiceRoute=JSON.stringify(options.clawchat.route);
                 voiceSession = startRuntimeVoiceSession(options, {
-                  withPrivateVoiceSession:instance?.withPrivateVoiceSession,
+                  withCallSession:(...args)=>adapter.withCallSession(...args),
                   listModels:()=>adapter.listModels?.()??[],
                 }).catch(error=>{
                   console.error('[whalenest-call] session endpoint unavailable: '+error.message);
@@ -58,7 +67,8 @@ export function extendRuntimeEntry(base) {
                   return null;
                 });
               }
-              startVoiceSession();
+              // The adapter's preparation starts and verifies the SDK first.
+              // Never capture a copied route before that preparation completes.
               return new Proxy(adapter, { get(target, key) {
                 if(key==='close')return async()=>{
                   closing=true;
@@ -67,7 +77,13 @@ export function extendRuntimeEntry(base) {
                 };
                 if(key==='prepare'&&typeof target.prepare==='function')return async(...args)=>{
                   const result=await target.prepare(...args);
-                  startVoiceSession();
+                  let options;try{options=readOptions();}catch(error){if(error.code==='ENOENT')return result;throw error;}
+                  requireCurrentInstanceBinding(options);
+                  if(voiceSession&&voiceRoute!==JSON.stringify(options.clawchat?.route)){
+                    await (await voiceSession)?.close();voiceSession=undefined;
+                  }
+                  startVoiceSession(options);
+                  observeCoreBinding(options);
                   return result;
                 };
                 if (key === 'listModels' && typeof target.listModels === 'function') return async (...args) => {
@@ -79,12 +95,12 @@ export function extendRuntimeEntry(base) {
                 };
                 if (key === 'start') return async startContext => {
                   const session = await target.start(startContext);
-                  let expressing=false,cancelled=false,activeInputId,pendingSticker;
-                  return {
+                  let expressing=false,cancelled=false,activeInputId,pendingSticker,replyController;
+                  const native = {
                     prepareVoice: session.prepareVoice,
                     voiceMode: session.voiceMode,
                     voicePlayback: session.voicePlayback,
-                    async afterClawChatReply(inputId) {
+                    async finishPendingSticker(inputId) {
                       if(!pendingSticker||pendingSticker!==inputId||cancelled)return;
                       pendingSticker=undefined;
                       expressing=true;
@@ -98,7 +114,7 @@ export function extendRuntimeEntry(base) {
                       assert.equal(startContext.bindingId, options.clawchat.route.account, '未经验证的账号来源');
                       assert.equal(startContext.chatId, options.clawchat.route.conversation, '未经验证的会话来源');
                       const prepared = await prepareRuntimeInput(input, startContext, options, createSpeechClient(options));
-                      if(prepared.metadata?.whalenestSource==='realtime-call'){
+                      if(prepared.metadata?.whalenestSource==='realtime-call'||prepared.metadata?.origin==='client'){
                         yield* session.prompt(prepared);
                         return;
                       }
@@ -163,9 +179,38 @@ export function extendRuntimeEntry(base) {
                       }
                       for(const item of held.values())yield item;
                     },
-                    close: async () => {cancelled=true;if(expressing)await session.cancelExpression?.({inputId:activeInputId});return session.close();},
-                    ...(session.cancel ? { cancel: async () => {cancelled=true;if(expressing){await session.cancelExpression?.({inputId:activeInputId});return true;}return session.cancel();} } : {}),
+                    close: async () => {cancelled=true;replyController?.abort();if(expressing)await session.cancelExpression?.({inputId:activeInputId});return session.close();},
+                    ...(session.cancel ? { cancel: async () => {cancelled=true;if(replyController){replyController.abort();return true;}if(expressing){await session.cancelExpression?.({inputId:activeInputId});return true;}return session.cancel();} } : {}),
                   };
+                  // The dependent send is coordinated inside our provider,
+                  // using public tools. Core receives only public Activity
+                  // projections and never needs an after-reply extension.
+                  const {finishPendingSticker:finishSticker,...delegated}=native;
+                  return {...delegated,async *prompt(input){
+                    const visible=new Map();
+                    for await(const activity of native.prompt(input)){
+                      if(activity.data?.requiredControl!==true)visible.set(activity.id,activity);
+                      if(pendingSticker===input.turnId&&activity.kind==='assistant'&&activity.data?.outputKind==='final'){
+                        const options=readOptions(),coordinator=replyDeliveryFactory(options,options.clawchat.route);
+                        let plan;
+                        try{plan=await coordinator.prepare([...visible.values()],input,startContext.sessionId);}catch{/* Keep the ordinary Core reply on a preparation failure. */}
+                        if(plan){
+                          // Core buffers ordinary outputs until prompt ends.
+                          // Updating each original ID to projection-only removes
+                          // its buffered external effect while keeping history.
+                          for(const original of plan.events)yield {...original,data:{...original.data,deliveryDisposition:'projection-only'}};
+                          replyController=new AbortController();let receipt;
+                          try{receipt=await coordinator.send(plan,{signal:replyController.signal,isCurrent:()=>!cancelled});}
+                          finally{replyController=undefined;}
+                          if(receipt.state==='confirmed'&&receipt.followUpAllowed!==false&&!cancelled)await finishSticker(input.turnId);
+                          else pendingSticker=undefined;
+                          continue;
+                        }
+                        pendingSticker=undefined;
+                      }
+                      yield activity;
+                    }
+                  }};
                 };
                 const value = Reflect.get(target, key, target);
                 return typeof value === 'function' ? value.bind(target) : value;

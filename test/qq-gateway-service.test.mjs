@@ -222,3 +222,166 @@ assert window.inspect()['state']=='expired','Leaving the pointer over Refresh mu
  const result=spawnSync('python3',['-B','-c',code,helper,fixture],{encoding:'utf8'});
  assert.equal(result.status,0,result.stderr);
 });
+
+test('QQ shutdown waits for its exit before stopping the bus and display, including descendants',()=>{
+ const helper=fileURLToPath(new URL('../deploy',import.meta.url));
+ const code=`import sys,subprocess,time,os,signal
+from pathlib import Path
+from tempfile import TemporaryDirectory
+sys.path.insert(0,sys.argv[1])
+from qq_gateway_lifecycle import stop_desktop,group_alive
+with TemporaryDirectory() as tmp:
+ root=Path(tmp)
+ child="import signal,time,sys;from pathlib import Path;p=Path(sys.argv[1]);signal.signal(signal.SIGTERM,lambda *_:(time.sleep(.15),p.write_text('done'),sys.exit(0)));p.with_suffix('.ready').write_text('ready');time.sleep(60)"
+ processes={}
+ for name in ('xvfb','dbus','snowluma','qq'):
+  path=root/name
+  processes[name]=subprocess.Popen([sys.executable,'-c',child,str(path)],start_new_session=True)
+ deadline=time.monotonic()+5
+ while len(list(root.glob('*.ready')))<4 and time.monotonic()<deadline:time.sleep(.02)
+ stop_desktop(processes)
+ assert all(p.poll() is not None for p in processes.values())
+ assert all((root/name).exists() for name in processes)
+ times={name:(root/name).stat().st_mtime_ns for name in processes}
+ assert times['qq']<times['snowluma']<times['dbus']<times['xvfb'],times
+ stop_desktop(processes)
+ # A leader that already exited must not hide its still-running descendants.
+ leader=subprocess.Popen([sys.executable,'-c',"import subprocess;subprocess.Popen(['sleep','60'])"],start_new_session=True)
+ leader.wait()
+ stop_desktop({'qq':leader})
+ if Path('/proc').exists():assert not group_alive(leader.pid)
+`;
+ const result=spawnSync('python3',['-B','-c',code,helper],{encoding:'utf8',timeout:30000});assert.equal(result.status,0,result.stderr);
+});
+
+test('Electron main exits while its renderer is still alive, then remaining renderer is drained',()=>{
+ const helper=fileURLToPath(new URL('../deploy',import.meta.url));
+ const code=`import sys,subprocess,time
+from pathlib import Path
+from tempfile import TemporaryDirectory
+sys.path.insert(0,sys.argv[1])
+from qq_gateway_lifecycle import stop_group
+with TemporaryDirectory() as tmp:
+ p=Path(tmp)
+ renderer="import sys,signal,time;from pathlib import Path;p=Path(sys.argv[1]);signal.signal(signal.SIGTERM,lambda *_:(p.write_text('terminated'),sys.exit(0)));p.with_suffix('.ready').write_text('ready');time.sleep(60)"
+ main="import sys,signal,time,subprocess;from pathlib import Path;p=Path(sys.argv[1]);c=subprocess.Popen([sys.executable,'-c',sys.argv[2],str(p/'renderer')]);signal.signal(signal.SIGTERM,lambda *_:(time.sleep(.1),sys.exit(71 if (p/'renderer').exists() else 0)));(p/'main.ready').write_text('ready');time.sleep(60)"
+ proc=subprocess.Popen([sys.executable,'-c',main,str(p),renderer],start_new_session=True)
+ deadline=time.monotonic()+5
+ while not (p/'renderer.ready').exists() and time.monotonic()<deadline:time.sleep(.02)
+ stop_group(proc)
+ assert proc.returncode==0,proc.returncode
+ assert (p/'renderer').exists()
+`;
+ const result=spawnSync('python3',['-B','-c',code,helper],{encoding:'utf8',timeout:15000});assert.equal(result.status,0,result.stderr);
+});
+
+test('stopping during Popen registration or a held waitpid lock drains children outside the signal handler',()=>{
+ const path=fileURLToPath(new URL('../deploy/serve-qq-gateway.py',import.meta.url));
+ const helper=fileURLToPath(new URL('../deploy',import.meta.url));
+ const code=`import ast,sys,os,signal,subprocess,time,json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+sys.path.insert(0,sys.argv[2])
+from qq_gateway_lifecycle import stop_desktop,group_alive
+source=ast.parse(Path(sys.argv[1]).read_text())
+nodes=[n for n in source.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in ['StopRequested','save','start','stop','request_stop']]
+exec(compile(ast.Module(body=nodes,type_ignores=[]),'gateway-lifecycle','exec'))
+with TemporaryDirectory() as tmp:
+ snow=Path(tmp);children=[];named_children={};stopping=False;closing=False;stop_signal=None
+ signal.signal(signal.SIGTERM,request_stop)
+ actual=subprocess.Popen
+ def during_start(*args,**kwargs):
+  child=actual(*args,**kwargs);os.kill(os.getpid(),signal.SIGTERM);return child
+ subprocess.Popen=during_start
+ try:
+  try:start('qq',['sleep','60'],dict(os.environ))
+  except StopRequested:pass
+ finally:
+  subprocess.Popen=actual;stop()
+ assert len(children)==1 and children[0].poll() is not None and not group_alive(children[0].pid)
+ children=[];named_children={};stopping=False;closing=False;stop_signal=None
+ child=actual(['sleep','60'],start_new_session=True);children.append(child);named_children['qq']=child
+ try:
+  with child._waitpid_lock:os.kill(os.getpid(),signal.SIGTERM)
+ except StopRequested:pass
+ finally:stop()
+ assert child.poll() is not None and not group_alive(child.pid)
+`;
+ const result=spawnSync('python3',['-B','-c',code,path,helper],{encoding:'utf8',timeout:15000});assert.equal(result.status,0,result.stderr);
+});
+
+test('shutdown reaps the child even if Popen polling was interrupted with its waitpid lock held',()=>{
+ const helper=fileURLToPath(new URL('../deploy',import.meta.url));
+ const code=`import sys,subprocess,os
+sys.path.insert(0,sys.argv[1])
+from qq_gateway_lifecycle import stop_group,leader_alive
+from unittest.mock import patch
+from pathlib import Path
+child=subprocess.Popen(['sleep','60'],start_new_session=True)
+with child._waitpid_lock:stop_group(child)
+assert child.returncode is not None
+with patch.object(Path,'exists',return_value=True),patch.object(Path,'read_text',side_effect=ProcessLookupError(3,'process exited while reading stat')):
+ assert not leader_alive(123)
+`;
+ const result=spawnSync('python3',['-B','-c',code,helper],{encoding:'utf8',timeout:15000});assert.equal(result.status,0,result.stderr);
+});
+
+test('an optional QQ failure retains its deferred result after cleanup so other background work can continue',()=>{
+ const path=fileURLToPath(new URL('../deploy/serve-qq-gateway.py',import.meta.url));
+ const helper=fileURLToPath(new URL('../deploy',import.meta.url));
+ const code=`import ast,sys,os,signal,subprocess,time,json,traceback
+from pathlib import Path
+from tempfile import TemporaryDirectory
+sys.path.insert(0,sys.argv[2])
+from qq_gateway_lifecycle import stop_desktop
+source=ast.parse(Path(sys.argv[1]).read_text())
+nodes=[n for n in source.body if isinstance(n,ast.FunctionDef) and n.name in ['save','stop']]
+exec(compile(ast.Module(body=nodes,type_ignores=[]),'gateway-cleanup','exec'))
+final=next(n.finalbody for n in source.body if isinstance(n,ast.Try) and n.finalbody)
+with TemporaryDirectory() as tmp:
+ snow=Path(tmp);login=snow/'login';login.mkdir();startup={'coreEpoch':'current'}
+ for expected,sig in [('startup-deferred',None),('stopped',signal.SIGTERM),('resource-stop',None)]:
+  if expected=='resource-stop':(snow/'resource-stop.json').write_text('{}')
+  stopping=False;closing=False;stop_signal=sig;named_children={}
+  exec(compile(ast.Module(body=final,type_ignores=[]),'gateway-finally','exec'))
+  saved=json.loads((snow/'managed-status.json').read_text())
+  assert saved['reason']==expected,saved
+  assert saved['coreEpoch']=='current'
+`;
+ const result=spawnSync('python3',['-B','-c',code,path,helper],{encoding:'utf8',timeout:15000});assert.equal(result.status,0,result.stderr);
+});
+
+test('QQ pre-stop hook waits for the guardian and all owned groups, including children registered during startup',()=>{
+ const helper=fileURLToPath(new URL('../deploy',import.meta.url));
+ const code=`import sys,subprocess,time,json,os,signal,importlib.util
+from pathlib import Path
+from tempfile import TemporaryDirectory
+sys.path.insert(0,sys.argv[1])
+spec=importlib.util.spec_from_file_location('qq_pre_stop',Path(sys.argv[1])/'qq-pre-stop.py');hook=importlib.util.module_from_spec(spec);spec.loader.exec_module(hook)
+with TemporaryDirectory() as tmp:
+ root=Path(tmp)
+ worker=root/'worker.py';worker.write_text('import time;time.sleep(60)')
+ guardian=root/'guardian.py'
+ guardian.write_text("import sys,os,signal,time,subprocess,json;from pathlib import Path;root=Path(sys.argv[1]);child=subprocess.Popen([sys.executable,str(root/'worker.py')],start_new_session=True);(root/'ready').write_text(str(os.getpid()))\\ndef stop(*_):\\n (root/'qq-process.json').write_text(json.dumps({'pid':child.pid,'managedBy':os.getpid()}));time.sleep(.2);child.terminate();child.wait();sys.exit(0)\\nsignal.signal(signal.SIGTERM,stop)\\nwhile True:time.sleep(.05)\\n")
+ child=subprocess.Popen([sys.executable,str(guardian),str(root)],start_new_session=True)
+ try:
+  deadline=time.monotonic()+5
+  while not (root/'ready').exists() and time.monotonic()<deadline:time.sleep(.02)
+  result=hook.stop_guardian(child.pid,root,timeout=5)
+  child.wait(timeout=5)
+  assert result['state']=='stopped' and len(result['groups'])==1,result
+  assert child.returncode==0
+ finally:
+  if child.poll() is None:os.killpg(child.pid,signal.SIGKILL);child.wait()
+ # Discovery accepts only this user's exact Python script and refuses duplicates.
+ proc=root/'proc';proc.mkdir()
+ for pid,argv in [(71,['python3','/expected/serve-qq-gateway.py']),(72,['python3','/other.py'])]:
+  entry=proc/str(pid);entry.mkdir();(entry/'cmdline').write_bytes(bytes([0]).join(a.encode() for a in argv)+bytes([0]))
+ assert hook.find_guardian(Path('/expected/serve-qq-gateway.py'),proc)==71
+ (proc/'72/cmdline').write_bytes((proc/'71/cmdline').read_bytes())
+ try:hook.find_guardian(Path('/expected/serve-qq-gateway.py'),proc)
+ except RuntimeError:pass
+ else:raise AssertionError('An ambiguous guardian must not receive a signal')
+`;
+ const result=spawnSync('python3',['-B','-c',code,helper],{encoding:'utf8',timeout:15000});assert.equal(result.status,0,result.stderr);
+});

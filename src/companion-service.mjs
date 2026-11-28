@@ -21,15 +21,15 @@ export function companionSettingsTool(policy){
     return {ok:true,...result,message:JSON.stringify(result)};
    }});
 }
-export function createCompanionService(options,route,{activities,now,publisherRun,policy:sharedPolicy,composeDiary,getQzone}={}){
+export function createCompanionService(options,route,{activities,now,publisherRun,policy:sharedPolicy,composeDiary,getQzone,publicationNotice}={}){
  const policy=sharedPolicy??createCompanionPolicy(options,route,{now}),diary=createDiary(options,route,{activities,now,compose:composeDiary});
- const publisher=createDiaryPublisher(options,route,{diary,now,run:publisherRun,getQzone});
+ const publisher=createDiaryPublisher(options,route,{diary,now,run:publisherRun,getQzone,notify:publicationNotice});
  function nativeJob(ctx){return ctx?.agent?.session?policy.nativeJob(ctx.agent.session):null;}
  function tools(){return [
   companionSettingsTool(policy),
   defineTool({name:'companion_diary',description:'主人私人日记：sources/write/read/list/delete；publication_preview预览仅含公开活动事实的动态草稿，publication_permissions读取平台权限，publication_status查询回执，publish显式发布，unpublish撤回动态。私人归档独立保留；发布默认关闭，需先确认正文及全局受众。',
    render:(_args,value)=>[{type:'text',text:JSON.stringify(value)}],
-   properties:{action:str('sources/write/read/list/delete/publication_preview/publication_permissions/publication_status/publish/unpublish，默认read'),date:str('YYYY-MM-DD，默认今天'),reflection:str('可选：主人明确指定的补充感想，单独标注；正文由原生成器依据真实活动产生'),platform:{type:'string',enum:['clawchat','qq'],description:'公开发布位置；publish/unpublish必须明确指定，不由主动消息首选推断'},visibility:str('明确确认的受众：ClawChat为owner，QQ按预览返回all/friends/selected/self/excluded'),approvedText:str('publish时主人已确认的完整publication_preview正文'),revise:bool('主人明确要求重新整理时才设为true')},
+   properties:{action:str('sources/write/read/list/delete/publication_preview/publication_permissions/publication_status/publish/unpublish，默认read'),date:str('YYYY-MM-DD，默认今天'),reflection:str('可选：主人明确指定的补充感想，单独标注；正文由原生成器依据真实活动产生'),platform:{type:'string',enum:['clawchat','qq'],description:'公开发布位置；publish/unpublish必须明确指定，不由主动消息首选推断'},visibility:str('明确确认的受众：ClawChat为owner，QQ按预览返回all/friends/selected/self/excluded'),approvedText:str('publish时主人已确认的完整publication_preview正文'),revise:bool('主人明确要求重新整理时才设为true'),retry:bool('仅主人明确要求重试已确认失败的发布时为true；结果未知不得重试')},
    execute:(args,ctx)=>{const action=args.action??'read',job=nativeJob(ctx),date=args.date??diary.today();
     if(job)assert.equal(date,job.date,'后台日记日期必须与任务一致');
     if(action==='sources'){const items=diary.sources(date);return {ok:true,items,message:JSON.stringify(items)};}
@@ -41,7 +41,7 @@ export function createCompanionService(options,route,{activities,now,publisherRu
     if(action==='publication_preview')return pub.preview(date,args.visibility);
     if(action==='publication_permissions')return pub.permissions(args.visibility);
     if(action==='publication_status')return pub.check(date);
-    if(action==='publish'||action==='unpublish'){assert.ok(!job,'后台任务不能发布或删除平台动态');requireManualOwnerTurn(ctx);assert.ok(args.platform,'公开发布/撤回需要明确指定平台');if(platform==='clawchat'&&args.visibility)assert.equal(args.visibility,'owner','需要重新核对ClawChat全局受众');return action==='publish'?pub.publish(date,args.approvedText,args.visibility):pub.remove(date);}
+    if(action==='publish'||action==='unpublish'){assert.ok(!job,'后台任务不能发布或删除平台动态');requireManualOwnerTurn(ctx);assert.ok(args.platform,'公开发布/撤回需要明确指定平台');if(platform==='clawchat'&&args.visibility)assert.equal(args.visibility,'owner','需要重新核对ClawChat全局受众');return action==='publish'?pub.publish(date,args.approvedText,args.visibility,{retry:args.retry===true}):pub.remove(date);}
     assert.equal(action,'read','未知日记操作');return diary.read(date);
    }}),
  ];}
@@ -56,5 +56,5 @@ export function createCompanionService(options,route,{activities,now,publisherRu
   if(completed&&job.kind==='browse'&&!activities.list(20).some(record=>record.ok&&record.jobId===job.id))completed=false;
   return policy.finish(ids,{text,completed});
  }
- return {policy,diary,publisher,tools,nativeJob,prompt,finish,tick:dispatch=>policy.tick({dispatch,hasDiarySources:date=>diary.sources(date).length>0,diaryExists:date=>diary.exists(date)})};
+ return {policy,diary,publisher,tools,nativeJob,prompt,finish,tick:async dispatch=>{await publisher.reconcile();return policy.tick({dispatch,hasDiarySources:date=>diary.sources(date).length>0,diaryExists:date=>diary.exists(date)});}};
 }

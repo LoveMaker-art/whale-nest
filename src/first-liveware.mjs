@@ -5,6 +5,8 @@ import {readState,writeState} from './state.mjs';
 import {clawchatBindingState} from './clawchat-state.mjs';
 import {livewareCommands} from './liveware-command.mjs';
 import {livewarePublication} from './liveware-migration.mjs';
+import {startupStatus} from './startup-state.mjs';
+import {retryUnexecutedLivewareOperation} from './liveware-operation.mjs';
 
 const verified=new Map();
 const rows=value=>Array.isArray(value)?value:value?.apps;
@@ -13,11 +15,12 @@ export async function publishFirstLiveware(options,kind,port,signal,dependencies
   if(kind==='call')return; // Official Exposure owns the managed call entry.
   if(options.clawchat?.firstBinding!==true||!Number.isInteger(port)||port<1||port>65535)return;
   assert.equal(kind,'song');
+  if(!startupStatus(options).appsAllowed)return;
   const route=options.clawchat.route;
   if(!route||!resolveDeliveryTarget(options,{origin:route}).ok)return;
   const binding=readState(join(options.dataDir,'first-binding.json'),null);
   if(!binding?.identity)return;
-  const platform=dependencies.platform??clawchatBindingState(options.clawchat.delivery.configPath,route.account);
+  const platform=dependencies.platform??clawchatBindingState(options.clawchat.delivery.configPath,route.account,{options});
   platform.verify(binding.identity);
   const commands=dependencies.commands??livewareCommands(options);
   const path=join(options.dataDir,'song-liveware.json'),previous=readState(path,null);
@@ -47,14 +50,43 @@ export async function publishFirstLiveware(options,kind,port,signal,dependencies
   const save=()=>writeState(path,progress);
   save();
   async function operation(kind,perform){
-    const entry=progress.operations[kind];
+    let entry=progress.operations[kind];
     if(entry.state==='succeeded')return entry.result;
+    if(kind==='create'&&progress.adoption){
+      platform.verify(binding.identity);
+      const listed=rows(await commands.listApps(control));
+      assert.ok(Array.isArray(listed));
+      const candidates=listed.filter(a=>a.name==='鲸栖歌曲');
+      assert.equal(candidates.length,1,'Adopted song app is no longer unique');
+      const app=livewarePublication(await commands.inspectApp(candidates[0].appId,control));
+      assert.equal(app.appId,progress.adoption.app.appId);assert.equal(app.url,progress.adoption.app.url);
+      platform.verify(binding.identity);
+      return app;
+    }
     if(entry.state==='pending'){
-      const receipt=platform.receipt(binding.identity,kind==='create'?'liveware_app_create':'liveware_tunnel_bind',entry.requestId);
+      const raw=await commands.readReceipt(kind==='create'?'liveware_app_create':'liveware_tunnel_bind',entry.requestId);
+      const receipt={...raw,state:raw.status};
       if(receipt?.state==='succeeded'){
         Object.assign(entry,{state:'succeeded',result:receipt.result});save();return entry.result;
       }
-      throw Error('Song '+kind+' is awaiting its original Core receipt');
+      if(kind==='create'&&!['pending','running','prepared'].includes(receipt?.state)&&commands.listApps&&commands.inspectApp){
+        platform.verify(binding.identity);
+        const listed=rows(await commands.listApps(control));
+        assert.ok(Array.isArray(listed),'Invalid account app list');
+        const candidates=listed.filter(a=>a.name==='鲸栖歌曲');
+        assert.equal(candidates.length,1,'Unknown song create needs one uniquely owned app');
+        const app=livewarePublication(await commands.inspectApp(candidates[0].appId,control));
+        assert.equal(app.appId,candidates[0].appId);assert.equal(app.name,'鲸栖歌曲');
+        assert.equal(app.url,livewarePublication(candidates[0]).url);
+        platform.verify(binding.identity);
+        // Adopt a verified existing resource, without fabricating the original ACK.
+        progress.adoption={source:'current-account-list-and-inspect',identity:binding.identity,
+          originalRequestId:entry.requestId,originalState:receipt.state,app};
+        save();return app;
+      }
+      const retry=retryUnexecutedLivewareOperation(entry,receipt);
+      if(!retry)throw Error('Song '+kind+' is awaiting its original Core receipt');
+      progress.operations[kind]=entry=retry;save();
     }
     assert.equal(entry.state,'unissued');
     entry.state='pending';save(); // Unknown delivery is observed, never replayed.
@@ -62,6 +94,7 @@ export async function publishFirstLiveware(options,kind,port,signal,dependencies
     return entry.result;
   }
   const app=livewarePublication(await operation('create',c=>commands.createApp('鲸栖歌曲',c)));
+  platform.verify(binding.identity);
   const result=await operation('bind',c=>commands.bindTunnel(app.appId,upstream,c));
   assert.equal(result.appId,app.appId);assert.equal(result.registeredInClawChat,true);
   const publication=livewarePublication({...app,publicUrl:result.publicUrl});

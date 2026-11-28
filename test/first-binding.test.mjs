@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, realpathSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import {createHash} from 'node:crypto';
 import { readFile, rm, writeFile } from 'node:fs/promises';
-import { DatabaseSync } from 'node:sqlite';
 import { dirname,join } from 'node:path';
 import { writeState } from '../src/state.mjs';
 import { createFirstBinding, firstBindingPorts, prepareFirstBinding } from '../src/first-binding.mjs';
 import {recoverBindingTransition} from '../src/binding-transition.mjs';
 import {sourceIdentity,sourceTarget,inspectSourceCandidate} from '../src/source-candidate.mjs';
 import { bridgeDirectory, bootBridge } from './bridge-helper.mjs';
+import {requireCurrentInstanceBinding} from '../src/instance-binding.mjs';
 
 function parse(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -22,25 +22,11 @@ async function fresh(t, closeBridge) {
   options.clawchat.firstBinding = true;
   options.owners = [];
   delete options.clawchat.route;
-  const dbPath = join(fixture.root, 'connect.sqlite');
-  writeState(options.clawchat.delivery.configPath, { defaultAgent: 'agent', agents: { agent: {} }, stateDbPath: dbPath });
-  writeState(fixture.configPath, options);
-  const db = new DatabaseSync(dbPath);
-  t.after(async () => {
-    try { await closeBridge?.(); }
-    finally {
-      db.close();
-      await rm(fixture.root, { recursive: true, force: true });
-    }
-  });
-  db.exec(`CREATE TABLE activations(platform, local_agent_id, access_token, user_id, owner_user_id, conversation_id, activated_at);
-    CREATE TABLE installation_owner(id, owner_user_id);
-    CREATE TABLE runtime_statuses(agent_id, updated_at, runtime_availability, websocket_connected);
-    CREATE TABLE tool_requests(binding_id, tool_name, request_id, state, result_json);
-    INSERT INTO installation_owner VALUES(1, 'alice');
-    INSERT INTO activations VALUES('clawchat-connect', 'agent', 'not-a-real-token', 'bot-user', 'alice', 'dm-alice', 100);
-    INSERT INTO runtime_statuses VALUES('agent', 101, NULL, 0);`);
-  return { ...fixture, db, dbPath, open: () => prepareFirstBinding(options, fixture.configPath) };
+  writeState(options.clawchat.delivery.configPath, {defaultAgent:'agent',agents:{agent:{}},privateCredential:'not-a-real-token'});
+  writeState(fixture.configPath,options);
+  fixture.setPlatformState({userId:'bot-user',ownerId:'alice',conversationId:'dm-alice',connected:false,available:false,updatedAt:101});
+  t.after(async()=>{try{await closeBridge?.();}finally{await rm(fixture.root,{recursive:true,force:true});}});
+  return {...fixture,open:()=>prepareFirstBinding(options,fixture.configPath)};
 }
 
 test('first provisioning uses the Connect identity and the live handshake; credentials are neither copied nor used in the greeting request', async t => {
@@ -52,20 +38,21 @@ test('first provisioning uses the Connect identity and the live handshake; crede
   const receipts = [{ id: 'bot-user', avatar_url: '' }, { url: avatarUrl }, { avatar_url: avatarUrl }];
   const calls = [];
   const ports = firstBindingPorts(f.options, binding, undefined, async (_cmd, args) => {
+    if(args[0]==='__clawnest-state')return {stdout:JSON.stringify({ownerId:'alice',conversationId:'dm-alice',connected:true})};
     calls.push(args);
-    return { stdout: JSON.stringify({ result: receipts.shift() }) };
+    return { stdout: JSON.stringify({status:'succeeded',result:receipts.shift()}) };
   });
   assert.equal(ports.ready(), false);
-  f.db.exec('UPDATE runtime_statuses SET websocket_connected = 1, updated_at = 90');
+  f.setPlatformState({connected:true,available:false,updatedAt:90});
   assert.equal(ports.ready(), false);
-  f.db.exec('UPDATE runtime_statuses SET updated_at = 101');
+  f.setPlatformState({available:true,updatedAt:101});
   assert.equal(ports.ready(), true);
   assert.equal(await ports.readProfile(), '');
   await ports.upload('upload', '/local/avatar.png');
   await ports.update('patch', avatarUrl);
-  assert.equal(calls[2][6], 'patch');
-  assert.deepEqual(JSON.parse(calls[2].at(-3)), { avatar_url: avatarUrl });
-  f.db.exec("UPDATE activations SET conversation_id = 'someone-else'");
+  assert.equal(calls[2][calls[2].indexOf('--request-id')+1], 'patch');
+  assert.deepEqual(JSON.parse(calls[2][calls[2].indexOf('--input-json')+1]), { avatar_url: avatarUrl });
+  f.setPlatformState({conversationId:'someone-else'});
   assert.throws(() => ports.ready(), /identity changed/);
   assert.equal(f.open().conversation,'someone-else');
   assert.equal(parse(binding.path).id,binding.id,'A private chat change retains actor-scoped avatar receipts');
@@ -73,7 +60,7 @@ test('first provisioning uses the Connect identity and the live handshake; crede
 
 test('a clean template without verified activation and an upgrade with old data cannot enroll', async t => {
   const f = await fresh(t);
-  f.db.exec('DELETE FROM activations');
+  f.setPlatformState({userId:null,ownerId:null,conversationId:null});
   assert.throws(() => f.open(), /awaits verified/);
   assert.ok(!existsSync(join(f.options.dataDir, 'first-binding.json')));
   writeState(join(f.options.dataDir, 'runtime.json'), {});
@@ -101,7 +88,7 @@ test('a new agent retires only local app references and repeated preparation pre
   writeState(song,{url:'https://app-source.apps.clawling.io/'});
   const runtime={schema:1,instanceId:f.options.instanceId,sessions:{original:{id:'retained'}},outbox:{}};
   writeState(join(f.options.dataDir,'runtime.json'),runtime);
-  f.db.exec("UPDATE activations SET user_id='new-agent',conversation_id='new-dm'");
+  f.setPlatformState({userId:'new-agent',conversationId:'new-dm'});
   const binding=f.open();
   assert.notEqual(binding.id,initial.id);assert.equal(parse(song),null);
   const managed=parse(join(f.options.dataDir,'managed-liveware.json'));
@@ -110,10 +97,39 @@ test('a new agent retires only local app references and repeated preparation pre
   writeState(song,{url:'https://app-new.apps.clawling.io/'});
   assert.equal(f.open().id,binding.id);
   assert.equal(parse(song).url,'https://app-new.apps.clawling.io/');
+  const history=join(f.options.dataDir,'binding-transitions');
+  assert.ok(readdirSync(history).some(name=>parse(join(history,name)).identity.agent==='bot-user'),
+    'Previous account transitions and their before-values remain attributable');
   const before=parse(f.configPath);
-  f.db.exec("UPDATE installation_owner SET owner_user_id='bob'; UPDATE activations SET owner_user_id='bob'");
+  f.setPlatformState({ownerId:'bob'});
   assert.throws(()=>f.open(),/explicit handover/);
   assert.deepEqual(parse(f.configPath),before);
+});
+
+test('platform instance changes wait for a different verified agent; same-instance restarts retain receipts',async t=>{
+  const f=await fresh(t);
+  const first=prepareFirstBinding(f.options,f.configPath,{platformInstanceId:'source-instance'});
+  const before=parse(first.path);
+  assert.throws(()=>prepareFirstBinding(f.options,f.configPath,{platformInstanceId:'new-instance'}),
+    error=>error.code==='FIRST_BINDING_PENDING');
+  assert.deepEqual(parse(first.path),before);
+  assert.throws(()=>requireCurrentInstanceBinding(f.options,'new-instance'),error=>error.code==='FIRST_BINDING_PENDING');
+  assert.doesNotThrow(()=>requireCurrentInstanceBinding(f.options,'source-instance'));
+  assert.equal(prepareFirstBinding(f.options,f.configPath,{platformInstanceId:'source-instance'}).id,first.id);
+  f.setPlatformState({userId:'mirror-agent',conversationId:'mirror-dm'});
+  const next=prepareFirstBinding(f.options,f.configPath,{platformInstanceId:'new-instance'});
+  assert.notEqual(next.id,first.id);assert.equal(parse(next.path).platformInstanceId,'new-instance');
+  assert.doesNotThrow(()=>requireCurrentInstanceBinding(f.options,'new-instance'));
+  assert.equal(prepareFirstBinding(f.options,f.configPath,{platformInstanceId:'new-instance'}).id,next.id);
+});
+
+test('unavailable public identity waits without touching an obsolete private database path or mutating our route',async t=>{
+  const f=await fresh(t),config=parse(f.options.clawchat.delivery.configPath);
+  f.setPlatformState({userId:null});
+  config.stateDbPath=join(f.root,'not-created.sqlite');writeState(f.options.clawchat.delivery.configPath,config);
+  const before=parse(f.configPath);
+  assert.throws(()=>f.open(),error=>error.code==='FIRST_BINDING_PENDING');
+  assert.equal(existsSync(config.stateDbPath),false);assert.deepEqual(parse(f.configPath),before);
 });
 
 test('a binding journal recovers an interrupted write and refuses an unrelated edit',async t=>{
@@ -141,10 +157,10 @@ test('verified route migration re-registers the exact source candidate without w
   }
   const manifest=JSON.stringify({schema:1,version:'fixture',files});writeFileSync(join(root,'source-manifest.json'),manifest);
   const selected={status:'active',version:'installed',integrity:'digest',activationGeneration:2,activeArtifact:'/installed/artifacts/entry.mjs'};
-  writeState(join(dirname(f.options.clawchat.delivery.configPath),'plugins.lock.json'),{plugins:{'whalenest.runtime.deepseek-harness':selected}});
   writeState(join(f.options.dataDir,'source-candidate.json'),{schema:1,mode:'source-test',identity:sourceIdentity(f.options),
     target:sourceTarget(selected),root,version:'fixture',manifestSha256:sha(manifest)});
-  f.db.exec("UPDATE activations SET conversation_id='new-verified-dm'");
+  writeState(join(f.options.dataDir,'installation.json'),{schema:1,version:selected.version,integrity:selected.integrity,activationGeneration:selected.activationGeneration,entryPath:selected.activeArtifact,root:join(dirname(selected.activeArtifact),'whalenest')});
+  f.setPlatformState({conversationId:'new-verified-dm'});
   f.open();assert.equal(inspectSourceCandidate(f.options).root,root);
   assert.equal(inspectSourceCandidate(f.options,{...selected,activationGeneration:3}),null);
   assert.equal(parse(join(f.options.dataDir,'source-candidate.json')).manifestSha256,sha(manifest));
@@ -201,18 +217,18 @@ test('an old unsubmitted greeting delegates to the official sender even when ava
 test('native DSH applies the avatar under QQ memory pressure and leaves all greeting delivery to the official runtime', { timeout: 50000 }, async t => {
   let bridge;
   const f = await fresh(t, () => bridge?.close());
-  f.db.exec('UPDATE runtime_statuses SET websocket_connected = 1');
+  f.setPlatformState({connected:true,available:true});
   const gatewayHome = join(f.root, 'gateway');
   f.options.qq = { enabled: false, gateway: { type: 'snowluma', loginQrFile: join(gatewayHome, 'login/qr.json') } };
   writeState(join(gatewayHome, 'managed-status.json'), { ready: true, deferBackground: true, at: Date.now() });
   const tools = join(f.root, 'first-binding-tools.jsonl'), profile = join(f.root, 'profile-avatar');
   const fake = '#!' + process.execPath + '\n' + String.raw`
 const fs = require('node:fs');
-const {DatabaseSync} = require('node:sqlite');
 const a = process.argv.slice(2), name = a[2], id = a[a.indexOf('--request-id')+1];
+const [stateFile, tools, profile, url] = FILES;
+if(a[0]==='config'){console.log(fs.readFileSync(a[a.indexOf('--config')+1],'utf8'));process.exit(0);}
+if(a[0]==='__clawnest-state'){console.log(fs.readFileSync(stateFile,'utf8'));process.exit(0);}
 const input = JSON.parse(a[a.indexOf('--input-json')+1]);
-const [dbPath, tools, profile, url] = FILES;
-const db = new DatabaseSync(dbPath, { timeout: 1500 });
 let result;
 if (name === 'clawchat_mention_message') result = {messageId:'real-path-fixture-message'};
 else if (name === 'clawchat_get_account_profile') result = {id:'bot-user',avatar_url:fs.existsSync(profile)?fs.readFileSync(profile,'utf8'):''};
@@ -222,11 +238,9 @@ else if (name === 'clawchat_upload_avatar_image') {
 } else if (name === 'clawchat_update_account_profile') {
   fs.writeFileSync(profile, input.avatar_url); result = {avatar_url:input.avatar_url};
 } else process.exit(3);
-db.prepare("INSERT INTO tool_requests VALUES('agent',?,?,'succeeded',?)").run(name,id,JSON.stringify(result));
-db.close();
 fs.appendFileSync(tools,JSON.stringify({ name, input })+'\n');
-console.log(JSON.stringify({result}));
-`.replace('FILES', JSON.stringify([f.dbPath, tools, profile, avatarUrl]));
+console.log(JSON.stringify({requestId:id,status:'succeeded',result}));
+`.replace('FILES', JSON.stringify([f.platformStateFile, tools, profile, avatarUrl]));
   await writeFile(f.options.clawchat.delivery.connectBin, fake, { mode: 0o700 });
   bridge = await bootBridge(f);
   const file = join(f.options.dataDir, 'first-binding.json');
@@ -239,7 +253,7 @@ console.log(JSON.stringify({result}));
   assert.equal(parse(file).greeting.state, 'delegated');
   assert.equal((await bridge.request('companionStatus', {})).companion.settings.contactEnabled,true);
   await bridge.close();
-  f.db.exec("UPDATE activations SET access_token = 'rotated-fixture-token'");
+  writeState(f.options.clawchat.delivery.configPath,{...parse(f.options.clawchat.delivery.configPath),privateCredential:'rotated-fixture-token'});
   // The fixture writes its preinstalled configuration on each boot, as a cloud
   // provisioning race might. The durable first binding must still reconcile it.
   bridge = await bootBridge(f);

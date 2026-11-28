@@ -355,7 +355,6 @@ test('a historical unknown Core configure is held without replaying its request'
   const f=fixture(t),file=qqManagementFile(f.options),id='reload-one';
   const coreFile=f.options.clawchat.delivery.configPath;
   writeState(coreFile,{agents:{'local-agent':{runtime:{pluginId:'whalenest.runtime.deepseek-harness'},runtimeConfig:{instancePath:f.configPath}}}});
-  writeState(join(f.root,'connect/plugins.lock.json'),{plugins:{'whalenest.runtime.deepseek-harness':{status:'active',installationConfiguration:{},capabilityConfigurations:{}}}});
   writeState(file,{schema:1,instanceId:f.options.instanceId,transition:{id,state:'queued',reloadState:'uncertain',actor:f.actor().route,instanceId:f.options.instanceId,configPath:f.configPath}});
   let requests=0;
   await reloadQQConnection(f.configPath,id,{fetchImpl:async(url,init)=>{

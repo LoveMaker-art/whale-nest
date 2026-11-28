@@ -3,6 +3,7 @@ import {randomUUID,timingSafeEqual} from 'node:crypto';
 import {join} from 'node:path';
 import {readState,writeState} from './state.mjs';
 import {selectFastVoiceModel} from './voice-model.mjs';
+import {callStateFile} from './call-state.mjs';
 import {defaultPlatformVoice} from './speech.mjs';
 
 const callIdPattern = /^vs_[a-f0-9]{32}$/;
@@ -20,13 +21,18 @@ async function readBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString() || '{}');
 }
 
-export async function startPlatformVoiceBridge(options,{secret,withPrivateVoiceSession,listModels,readProfile,port=0}) {
+export async function startPlatformVoiceBridge(options,{secret,withCallSession,listModels,readProfile,port=0}) {
   const route = options.clawchat.route;
-  if (typeof withPrivateVoiceSession !== 'function') throw Error('Connect does not support voice in the current private Session');
+  if (typeof withCallSession !== 'function') throw Error('Independent voice runtime is unavailable');
   const ownerSession = {chatId:route.conversation,ownerId:route.sender};
   const turns = new Map();
   const closedCalls = new Set();
-  let call, stopping = false;
+  let call, stopping = false;const instanceToken=randomUUID();
+  const activity=active=>{
+    const old=readState(callStateFile(options),null);
+    if(old&&old.token!==instanceToken&&old.pid!==process.pid&&!active)return;
+    writeState(callStateFile(options),{active,pid:process.pid,token:instanceToken,owner:route.sender,chat:route.conversation,at:Date.now()});
+  };
   const profileAbort = new AbortController();
   let profile = {}, profileFlight, refreshProfileAt = 0;
 
@@ -66,7 +72,7 @@ export async function startPlatformVoiceBridge(options,{secret,withPrivateVoiceS
     const started=performance.now();
     const signal=turn.controller.signal;
     try {
-      await withPrivateVoiceSession({...ownerSession,sessionRef:current.sessionRef},signal,async(session,direction)=>{
+      await withCallSession({...ownerSession,sessionRef:current.sessionRef},signal,async(session,direction)=>{
         const {workspace,model,reasoningEffort}=direction;
         const sessionId=await session.prepareVoice({workspace,model,reasoningEffort});
         if(sessionId!==current.sessionId)throw fault(409,'session_changed');
@@ -130,18 +136,18 @@ export async function startPlatformVoiceBridge(options,{secret,withPrivateVoiceS
     if (stopping || closedCalls.has(id)) throw fault(409,'call_closed');
     if (call && call.id !== id) throw fault(409,'session_busy');
     if (!call) {
-      call = {id, byClient:new Map(), preparing:new AbortController()};
+      call = {id, byClient:new Map(), preparing:new AbortController()};activity(true);
       const current = call;
       current.sessionPromise=(async()=>{
         // Catalog lookup can start in parallel with preparing the original DSH thread.
         const models=Promise.resolve().then(()=>listModels?.()).catch(()=>[]);
-        await withPrivateVoiceSession(ownerSession,current.preparing.signal,async(session,direction)=>{
+        await withCallSession(ownerSession,current.preparing.signal,async(session,direction)=>{
           current.sessionRef=direction.sessionRef;
           current.sessionId=await session.prepareVoice(direction);
         });
         current.models=(await models)??[];
       })();
-      current.sessionPromise.catch(()=>{if(call===current && !current.closing) call=undefined;});
+      current.sessionPromise.catch(()=>{if(call===current && !current.closing){call=undefined;activity(false);}});
     }
     const current = call;
     await current.sessionPromise;
@@ -204,7 +210,7 @@ export async function startPlatformVoiceBridge(options,{secret,withPrivateVoiceS
         if (current.latest) await cancel(current.latest,current.latest.played);
       } finally {
         for (const turn of current.byClient.values()) turns.delete(turn.id);
-        if (call===current) call=undefined;
+        if (call===current){call=undefined;activity(false);}
       }
     })();
     return current.closing;
@@ -275,7 +281,7 @@ export async function startPlatformVoiceBridge(options,{secret,withPrivateVoiceS
       return json(error.status ?? (error instanceof SyntaxError ? 400 : 503),{error:{code:error.code ?? 'dsh_voice_failed'}});
     }
   });
-  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});activity(false);
   return {port:server.address().port,async close(){
     stopping = true;
     profileAbort.abort();

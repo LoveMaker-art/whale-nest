@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, chmod, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { prepareProfile } from '../src/profile.mjs';
 import { buildConnectBridge } from '../scripts/build-connect.mjs';
 import { fixtureDirectory, owners } from './host-helper.mjs';
+import {preparePlatformFixture} from './platform-fixture.mjs';
 
 export async function bridgeDirectory() {
   const directory = await fixtureDirectory();
@@ -14,12 +15,7 @@ export async function bridgeDirectory() {
     delivery: { connectBin: join(directory.root, 'fake-clawchat'), configPath: join(directory.root, 'fake-config.json') },
   };
   await writeFile(directory.configPath, JSON.stringify(directory.options));
-  const script = '#!' + process.execPath + '\n' +
-    'import{appendFileSync}from"node:fs";const a=process.argv.slice(2);' +
-    'appendFileSync(' + JSON.stringify(join(directory.root, 'delivered.jsonl')) + ',JSON.stringify({id:a[a.indexOf("--request-id")+1],input:JSON.parse(a[a.indexOf("--input-json")+1])})+"\\n");' +
-    'console.log(JSON.stringify({status:"succeeded",result:{sent:true,messageId:"fixture-ack-"+a[a.indexOf("--request-id")+1]}}));';
-  // Node's extensionless executable is CommonJS outside the project; use require.
-  await writeFile(directory.options.clawchat.delivery.connectBin, script.replace('import{appendFileSync}from"node:fs";', 'const{appendFileSync}=require("node:fs");'), { mode: 0o700 });
+  Object.assign(directory,await preparePlatformFixture(directory));
   return directory;
 }
 export async function bootBridge(directory) {

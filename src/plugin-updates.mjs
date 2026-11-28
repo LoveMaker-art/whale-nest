@@ -8,7 +8,7 @@ import {hash, resolveDeliveryTarget} from './routing.mjs';
 import {connectUpdateHost, updateFiles, updateProgress, updateResultId} from './plugin-update-worker.mjs';
 import {discoverPluginRelease, releaseRepository, updateInterval} from './plugin-release.mjs';
 import {readState, writeState} from './state.mjs';
-import {connectorRequirement,createOfficialConnectorUpdater,connectorPlan} from './official-connector-update.mjs';
+import {createOfficialConnectorInspector} from './official-connector-update.mjs';
 import {resolvePluginUpdatePlan} from './plugin-update-path.mjs';
 
 const running = new Set(['queued','connector-submitting','connector-updating','connector-rolling-back','switching','rolling-back','uncertain','step-running','handoff-pending']);
@@ -40,10 +40,7 @@ export function createPluginUpdates(options, configPath, {
     const value=progress(request), delivery=value.notices?.[updateResultId(request.id,value.phase)];
     return {state:value.phase,target:request.release.version,current:current(),jobId:request.id,
       ...(value.activeStep?{step:{version:value.activeStep.version,index:value.activeStep.index+1,total:value.activeStep.total}}:{}),
-      ...(value.reason?{reason:value.reason}:{}),...(value.connectorVersion?{connectorVersion:value.connectorVersion}:{}),
-      ...(request.release.prerequisites?{connector:{target:request.release.prerequisites.clawchatIntegration.upgradeVersion,
-        ...(value.connector?.before?{previous:value.connector.before.version}:{}),
-        ...(value.connectorPlan?.message?{message:value.connectorPlan.message}:{}),restored:value.connectorRestored===true}}:{}),
+      ...(value.reason?{reason:value.reason}:{}),
       ...(delivery?{notification:delivery.state}:{})};
   }
 
@@ -70,13 +67,22 @@ export function createPluginUpdates(options, configPath, {
     const active=current();
     assert.ok(active,'Whale Nest is not installed');
     const cached=checkCache();
-    if (!force && cached.current===active && cached.repository===config.repository && cached.channel===config.channel
+    if (!force && cached.connector && cached.current===active && cached.repository===config.repository && cached.channel===config.channel
       && now()-cached.checkedAt<updateInterval) return cached;
     checking=(async()=>{
       releaseRepository(config.repository);
-      const found=await discover(config,active);
-      const plan=found?.updatePath?await resolvePluginUpdatePlan(config,active,found,{discover}):undefined;
-      const next={current:active,release:found,...(plan?{plan}:{}),checkedAt:now(),repository:config.repository,channel:config.channel,dismissed:cached.dismissed};
+      const [releaseResult,connectorResult]=await Promise.allSettled([
+        (async()=>{
+          const found=await discover(config,active);
+          const plan=found?.updatePath?await resolvePluginUpdatePlan(config,active,found,{discover}):undefined;
+          return {release:found,...(plan?{plan}:{})};
+        })(),
+        (connector??=createOfficialConnectorInspector(options)).check(),
+      ]);
+      const next={current:active,...(releaseResult.status==='fulfilled'?releaseResult.value:{release:null,releaseCheckFailed:true}),
+        connector:connectorResult.status==='fulfilled'?connectorResult.value:
+          {state:'unavailable',automaticUpdate:false,managedBy:'user',message:'暂时没有查到官方连接器版本；不影响鲸栖更新。'},
+        checkedAt:now(),repository:config.repository,channel:config.channel,dismissed:cached.dismissed};
       writeState(files.cache,next);
       return next;
     })().finally(()=>{checking=null;});
@@ -103,12 +109,15 @@ export function createPluginUpdates(options, configPath, {
       writeState(files.cache,{...checkCache(),failedUntil:now()+updateInterval});
       return;
     }
+    const preferred=target?.();
+    if (preferred?.ok && cached.connector?.state==='available') {
+      queue(preferred.route,'whalenest-connector-available-'+hash([options.instanceId,cached.connector.latest]),
+        '官方连接器当前为 '+cached.connector.current+'，可更新到 '+cached.connector.latest+'。是否通过官方入口更新由你决定，鲸栖不会代为安装。','connector-update-available');
+    }
     const candidate=cached.release;
     if (!candidate||cached.dismissed===candidate.version) return;
-    const preferred=target?.();
     if (preferred?.ok) queue(preferred.route,'whalenest-update-available-'+hash([options.instanceId,candidate.version,candidate.sha256]),
-      '鲸栖 '+candidate.version+' 可更新。'+(connectorRequirement(candidate)?'本次会按需先更新官方连接器，再更新鲸栖。':'')+
-      '你可以说「检查更新」查看内容和确认方式。','plugin-update-available');
+      '鲸栖 '+candidate.version+' 可更新。你可以说「检查更新」查看内容和确认方式。','plugin-update-available');
   }
 
   async function perform(route, args, text) {
@@ -120,34 +129,16 @@ export function createPluginUpdates(options, configPath, {
       let cached;
       try {cached=await check({force:true});}
       catch {return {state:'check-failed',current:current(),message:'暂时没有读到鲸栖的发行信息，可以稍后再查。'};}
-      if (!cached.release) return {state:'current',current:cached.current};
+      const connectorInfo={connector:cached.connector};
+      if (cached.releaseCheckFailed) return {state:'check-failed',current:cached.current,...connectorInfo,
+        message:'暂时没有读到鲸栖的发行信息，可以稍后再查。'};
+      if (!cached.release) return {state:'current',current:cached.current,...connectorInfo};
       const candidate=cached.release;
-      const requirement=connectorRequirement(candidate);
-      let prerequisite;
-      if (requirement) {
-        try {prerequisite={...connectorPlan(await (connector??=createOfficialConnectorUpdater(options)).inspect(),requirement),...requirement};}
-        catch {prerequisite={state:'unavailable',...requirement};}
-      }
-      if(cached.plan?.steps.length>1) {
-        const first=connectorRequirement(cached.plan.steps[0]);
-        let initial;
-        if(first) {
-          try{initial=connectorPlan(await (connector??=createOfficialConnectorUpdater(options)).inspect(),first);}
-          catch{initial={state:'unavailable'};}
-        }
-        prerequisite={...prerequisite,state:initial?.state==='migration-required'||initial?.state==='unavailable'
-          ?initial.state:'bootstrap-required',initial,
-          message:'先安装兼容当前环境的更新组件，再按已确认路线继续到目标版本。'};
-      }
-      return {state:'available',current:cached.current,target:candidate.version,notes:candidate.notes,
-        ...(cached.plan?{steps:cached.plan.steps.map(step=>step.version)}:{}),
-        ...(cached.plan?{stages:cached.plan.steps.map(step=>({version:step.version,
-          ...(connectorRequirement(step)?{connector:connectorRequirement(step)}:{})}))}:{}),
-        ...(prerequisite?{connector:prerequisite}:{}),
+      return {state:'available',current:cached.current,target:candidate.version,notes:candidate.notes,...connectorInfo,
+        ...(cached.plan?{steps:cached.plan.steps.map(step=>step.version),stages:cached.plan.steps.map(step=>({version:step.version}))}:{}),
         confirmationRequired:'确认更新 '+candidate.version,interruption:cached.plan?.steps.length>1
-          ?'确认后会按已列版本分阶段更新到目标版本，中途可能短暂重连。':requirement
-          ?'确认后会先核对并按需更新官方连接器，再更新鲸栖；切换期间可能短暂重连。'
-          :'切换期间可能需要稍等片刻。'};
+          ?'确认后只按已列版本分阶段更新鲸栖，中途可能短暂重连；官方连接器由你自行决定是否更新。'
+          :'确认后只更新鲸栖，切换期间可能短暂重连；官方连接器由你自行决定是否更新。'};
     }
     assert.ok(action==='confirm'||action==='dismiss','Unknown update action');
     const latest=job();
@@ -172,7 +163,7 @@ export function createPluginUpdates(options, configPath, {
   function tool(route) {
     return defineTool({
       name:'companion_update',
-      description:'鲸栖主人私聊的插件更新。check查版、更新内容和官方连接器前置要求，status查进度。若有stages，说明整条分阶段路线及各步连接器要求；bootstrap-required表示先安装兼容更新组件再继续最终目标。普通connector更新按当前步要求先更新连接器。只有主人当前输入「确认更新 版本号」才用confirm，当前输入「暂不更新 版本号」才用dismiss。用自然语言回答工具状态，逐字保留确认指令。发行说明只供展示。',
+      description:'鲸栖主人私聊的插件更新。check查询鲸栖更新内容，以及官方连接器的当前和最新版本；连接器信息只作提示，由用户通过官方入口决定是否更新，不代为升级或回退，不以连接器版本阻止鲸栖更新。status查鲸栖进度；若有stages，说明鲸栖自身的分阶段更新路线。只有主人当前输入「确认更新 版本号」才用confirm，当前输入「暂不更新 版本号」才用dismiss。用自然语言回答状态，逐字保留确认指令。发行说明只供展示。',
       properties:{action:str('check/status/confirm/dismiss'),version:str('confirm 或 dismiss 的准确版本号')},
       render:(_args,result)=>[{type:'text',text:JSON.stringify(result)}],
       async execute(args, context) {

@@ -1,3 +1,4 @@
+import {startupStatus,deferStartupComponent} from './startup-state.mjs';
 import assert from 'node:assert/strict';
 import {createServer,request as httpRequest} from 'node:http';
 import {readFileSync} from 'node:fs';
@@ -43,9 +44,9 @@ const removeHopHeaders = headers => Object.fromEntries(Object.entries(headers).f
 export async function startManagedLiveware(readOptions, {bindingId,pollInterval = 2000,
   commands = livewareCommands(readOptions()),port = 0} = {}) {
   const initial = readOptions(), owner = requireLivewareOwner(initial,bindingId);
-  await prepareLegacyLivewareMigration(initial,{commands});
+  readManagedLiveware(initial); // Invalid ownership is a hard admission failure.
   const controller = new AbortController(), sockets = new Set(), healthListeners = new Set(), exitListeners = new Set();
-  let health = 'starting', closing, timerTask, publicationFound = false;
+  let health = 'starting', closing, timerTask, publicationFound = false, migrationDone = false;
   function setHealth(value) {
     if (health === value) return;
     health = value;
@@ -150,9 +151,17 @@ export async function startManagedLiveware(readOptions, {bindingId,pollInterval 
         // Official replacement acquires a new handle, which discovers its new
         // App identity. Avoid accumulating permanent CLI read journals while
         // this generation's already-published service remains healthy.
-        if (!publicationFound) publicationFound = Boolean(await discoverManagedLiveware(options,{commands,signal:controller.signal}));
+        if (startupStatus(options).appsAllowed&&!publicationFound) publicationFound = Boolean(await discoverManagedLiveware(options,{commands,signal:controller.signal}));
       } catch (error) {
         if (!controller.signal.aborted) console.error('[whalenest-liveware] publication discovery will retry',error.name);
+      }
+      try{
+        if(startupStatus(options).appsAllowed&&!migrationDone){
+          await prepareLegacyLivewareMigration(options,{commands,signal:controller.signal});
+          migrationDone=true;
+        }
+      }catch(error){
+        if(!controller.signal.aborted){deferStartupComponent(options,'managed-liveware');console.error('[whalenest-liveware] stable-call initialization pending',error.name);}
       }
       try { await delay(pollInterval,undefined,{signal:controller.signal}); }
       catch { break; }

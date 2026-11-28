@@ -64,6 +64,14 @@ test('bad identity, incompatible protocol, missing hello and early child exit al
  }
 });
 
+test('an initialization failure returns a bounded code before timeout without exposing child stderr',async t=>{
+ const f=await fixture(t,'startup-error');
+ await assert.rejects(startRuntimeBridge(f.options),error=>{
+  assert.equal(error.code,'BUSINESS_INITIALIZATION_FAILED');assert.doesNotMatch(error.message,/fixture-only-private-token|timed out/);return true;
+ });
+ await cleaned(f);
+});
+
 test('malformed frames, repeated hello and unexpected exits reject every in-flight request',async t=>{
  for(const method of ['malformed','duplicate-hello','exit']){
   const f=await fixture(t),client=await startRuntimeBridge(f.options);t.after(()=>client.close());

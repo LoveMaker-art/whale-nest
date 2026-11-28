@@ -11,7 +11,7 @@ import {protectQQSocialRollback} from '../src/runtime-upgrade.mjs';
 
 async function fixture(t,{limit=5,comments=3,friends=false,failLike=false,failModel=false,failComment=false,afterDraft,clock=()=>Date.parse('2030-01-01T04:00:00Z')}={}){
  const root=await mkdtemp(join(tmpdir(),'whalenest-qq-social-'));t.after(()=>rm(root,{recursive:true,force:true}));const dataDir=join(root,'data');await mkdir(join(dataDir,'aurabot'),{recursive:true});process.env.AURABOT_DATA_DIR=join(dataDir,'aurabot');
- const route={channel:'clawchat',account:'agent',sender:'owner',conversation:'dm',kind:'private'},options={instanceId:'qq-auto',dataDir,owners:[route],qq:{enabled:true,nativeModules:true},activities:{maxDailyBackgroundModelCalls:limit}};
+ const route={channel:'clawchat',account:'agent',sender:'owner',conversation:'dm',kind:'private'},options={instanceId:'qq-auto',dataDir,owners:[route],qq:{enabled:true,nativeModules:true},activities:{automatic:false,maxDailyBackgroundModelCalls:limit}};
  const policy=createCompanionPolicy(options,route,{now:clock});let cfg=normalize({enabled:true,dryRun:false,ownerQQ:'10000001',botQQ:'20000002',qzoneSocial:{enabled:true,replyOwn:!friends,commentFriends:friends,friendChance:1,ownerChance:1,maxPerDay:8,intervalMin:1}}),models=0;
  const calls=[],outside=new AsyncResource('social-model-worker');let backend,qq;
  const onebot={state:'connected',async call(action,params,settings){calls.push({action,params,settings});if(action==='get_qzone_msg_list')return {msglist:[{tid:'own',comment_num:comments,time:Date.now()/1000,content:'公开资料'}]};

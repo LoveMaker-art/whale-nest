@@ -11,12 +11,21 @@ import {createManagedLivewareProvider,startManagedLiveware} from '../src/livewar
 import {discoverManagedLiveware,prepareLegacyLivewareMigration,readManagedLiveware,
   restoreLegacyLivewareLauncher,rollbackManagedLiveware,livewarePublication} from '../src/liveware-migration.mjs';
 import {realtimeCallUrl} from '../src/chat-liveware.mjs';
+import {retryUnexecutedLivewareOperation} from '../src/liveware-operation.mjs';
 
 const oldUrl = 'https://app-original-call.apps.clawling.io/';
 const stableUrl = 'https://app-stable-call.apps.clawling.io/';
 const managedUrl = 'https://app-managed-call.apps.clawling.io/';
 const route = {channel:'clawchat',kind:'private',account:'dsh',conversation:'private',sender:'owner'};
 const managedApp = {appId:'app-managed-call',name:'鲸栖通话 · dsh',publicUrl:managedUrl};
+async function migrationReady(f){
+  for(let n=0;n<100;n++){
+    const state=readManagedLiveware(f.options);
+    if(state?.legacy&&['legacy-launcher-retired','managed','ready'].includes(state.phase))return;
+    await delay(10);
+  }
+  assert.fail('Background stable call initialization did not settle');
+}
 
 async function fixture(t, {legacy = true} = {}) {
   const directory = await mkdtemp(join(tmpdir(),'whalenest-managed-liveware-'));
@@ -67,6 +76,7 @@ test('migration retires only the old launcher before Exposure can publish, retai
   const service=await startManagedLiveware(()=>f.options,{bindingId:'dsh',commands:f.commands,pollInterval:10});
   f.cleanup.push(()=>service.release());
   assert.equal(service.health(),'ready');
+  await migrationReady(f);
   assert.deepEqual(f.launchers.map(app=>app.app_id),['app-songs']);
   assert.ok(f.apps.some(app=>app.appId==='app-original-call'));
   assert.deepEqual(JSON.parse(await readFile(join(f.directory,'call-liveware.json'))),f.original);
@@ -108,12 +118,14 @@ test('unknown unregister reuses its journaled request, and rollback/re-migration
   assert.equal(f.apps.length,2);
 });
 
-test('unrecognized registration responses or a changed owner block acquire before any new publication',async t=>{
+test('a changed owner blocks admission; an auxiliary registration error does not block the real local service',async t=>{
   const f=await fixture(t);
   const provider=createManagedLivewareProvider({readOptions:()=>f.options,commands:{...f.commands,
     listLaunchers:async()=>({unexpected:[]})}});
   assert.throws(()=>provider.instanceKey({bindingId:'someone-else'}),/verified private binding/);
-  await assert.rejects(provider.acquire({bindingId:'dsh'}),/unrecognized launcher list/);
+  const service=await provider.acquire({bindingId:'dsh'});f.cleanup.push(()=>service.release());
+  assert.equal(service.health(),'ready');assert.equal((await fetch(service.upstream+'/healthz')).status,200);
+  await delay(30);
   assert.equal(f.effects.filter(([action])=>action==='unregister').length,0);
   assert.equal(f.launchers.length,2);
 });
@@ -155,6 +167,28 @@ test('a lost fresh create receipt is durable, cannot be replayed, and cannot be 
   assert.equal(f.effects.filter(([action])=>action==='bind' || action==='unregister').length,0);
 });
 
+test('an uncertain auxiliary App cannot block provider acquisition; exact receipts recover it without another write',async t=>{
+  const f=await fixture(t,{legacy:false});
+  f.commands.createApp=async()=>{throw Error('lost after submit');};
+  await assert.rejects(prepareLegacyLivewareMigration(f.options,{commands:f.commands}),/lost after/);
+  const original=readManagedLiveware(f.options).stableCall.create.requestId;
+  let receipt={requestId:original,status:'pending'},creates=0;
+  f.commands.createApp=async()=>{creates++;assert.fail('Do not replay the unknown create');};
+  f.commands.readReceipt=async(name,id)=>{assert.equal(name,'liveware_app_create');assert.equal(id,original);return receipt;};
+  f.apps.push({appId:'app-stable-call',name:'鲸栖通话',publicUrl:stableUrl});
+  const service=await startManagedLiveware(()=>f.options,{commands:f.commands,bindingId:'dsh',pollInterval:10});
+  f.cleanup.push(()=>service.release());
+  assert.equal((await fetch(service.upstream+'/healthz')).status,200);
+  assert.equal(service.health(),'ready');assert.equal(readManagedLiveware(f.options).stableCall.create.state,'pending');
+  receipt={requestId:original,status:'succeeded',result:f.apps.at(-1)};
+  await migrationReady(f);
+  assert.equal(creates,0);assert.equal(realtimeCallUrl(f.options),stableUrl);
+  assert.equal(f.effects.filter(([kind])=>kind==='bind').length,1);
+  await service.release();
+  await prepareLegacyLivewareMigration(f.options,{commands:f.commands});
+  assert.equal(f.effects.filter(([kind])=>kind==='bind').length,1);
+});
+
 test('a lost fresh bind receipt keeps the confirmed App and original request but never rebinds or mutates other launchers',async t=>{
   const f=await fixture(t,{legacy:false}),bind=f.commands.bindTunnel;
   let calls=0;
@@ -181,6 +215,21 @@ test('a lost fresh bind receipt keeps the confirmed App and original request but
   assert.equal(f.effects.filter(([action])=>action==='create').length,1);
   assert.deepEqual(f.launchers,before,'unknown bind cannot authorize deleting any guessed launcher');
   assert.equal(f.effects.filter(([action])=>action==='unregister' || action==='register').length,0);
+});
+
+test('stable App recovery requires terminal zero-execution proof and preserves the original expired operation',async t=>{
+ const f=await fixture(t,{legacy:false}),create=f.commands.createApp;let creates=0;
+ f.commands.createApp=async(...args)=>{creates++;if(creates===1)throw Error('queue timed out');return create(...args);};
+ await assert.rejects(prepareLegacyLivewareMigration(f.options,{commands:f.commands}),/queue timed out/);
+ const original=readManagedLiveware(f.options).stableCall.create.requestId;
+ f.commands.readReceipt=async(name,id)=>({requestId:id,status:'expired',unexecuted:true});
+ await prepareLegacyLivewareMigration(f.options,{commands:f.commands});
+ const progress=readManagedLiveware(f.options).stableCall;
+ assert.equal(creates,2);assert.equal(realtimeCallUrl(f.options),stableUrl);
+ assert.equal(progress.create.attempts[0].requestId,original);
+ let op={requestId:'original',state:'pending'};
+ for(let i=0;i<2;i++){op=retryUnexecutedLivewareOperation(op,{status:'expired',unexecuted:true});assert.ok(op);}
+ assert.equal(retryUnexecutedLivewareOperation(op,{status:'expired',unexecuted:true}),null);
 });
 
 test('restart after a confirmed create resumes only an unissued bind, without replaying create',async t=>{
@@ -235,6 +284,7 @@ test('official hot replacement keeps stable cards and two launchers without recr
   const f=await fixture(t,{legacy:false});
   const first=await startManagedLiveware(()=>f.options,{bindingId:'dsh',commands:f.commands,pollInterval:10});
   f.cleanup.push(()=>first.release());
+  await migrationReady(f);
   f.apps.push(managedApp);f.launchers.push({app_id:managedApp.appId,name:managedApp.name,url:managedApp.publicUrl});
   await discoverManagedLiveware(f.options,{commands:f.commands});
   const stableCard=await readFile(join(f.directory,'call-liveware.json'),'utf8');
@@ -289,7 +339,7 @@ test('port zero stable cards bind the actual call gateway, and managed origins p
   await writeFile(provider,JSON.stringify({models:{providers:{clawling:{apiKey:'fixture',baseUrl:'http://127.0.0.1:1/v1'}}}}));
   f.options.speech={enabled:true,providerConfigPath:provider,asrModel:'fixture-asr',ttsModel:'fixture-tts'};
   const gateway=await startPlatformVoiceLiveware(f.options,{readProfile:async()=>({name:'fixture'}),
-    withPrivateVoiceSession:async()=>{}});
+    withCallSession:async()=>{}});
   f.cleanup.push(()=>gateway.close());
   const managed=await startManagedLiveware(()=>f.options,{bindingId:'dsh',commands:f.commands,pollInterval:10});
   f.cleanup.push(()=>managed.release());
@@ -432,10 +482,10 @@ test('binding identity changes fence an existing managed service and release is 
   await service.release();await service.release();assert.equal(service.health(),'stopped');
 });
 
-test('Liveware commands use only the configured official CLI and generate fresh read request IDs',async()=>{
-  const invocations=[],options={clawchat:{route,delivery:{connectBin:'/verified/connect',configPath:'/verified/config.json'}}};
+test('Liveware commands use only the configured official CLI and generate fresh read request IDs',async t=>{
+  const dir=await fixture(t);const invocations=[],options={...dir.options,clawchat:{route,delivery:{connectBin:'/verified/connect',configPath:'/verified/config.json'}}};
   const commands=livewareCommands(options,{run:async(executable,args)=>{
-    invocations.push({executable,args});return {stdout:JSON.stringify({status:'succeeded',result:{apps:[]}})};
+    if(args[0]==='__clawnest-state')return {stdout:JSON.stringify({ownerId:route.sender,conversationId:route.conversation,connected:true})};invocations.push({executable,args});return {stdout:JSON.stringify({status:'succeeded',result:{apps:[]}})};
   }});
   await commands.listLaunchers();await commands.listLaunchers();
   await commands.unregisterLauncher('app-old',{requestId:'stable-remove'});

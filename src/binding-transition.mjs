@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {join,resolve} from 'node:path';
+import {createHash} from 'node:crypto';
 import {readState,writeState} from './state.mjs';
 import {clawchatBindingState} from './clawchat-state.mjs';
 
@@ -14,7 +15,7 @@ export function recoverBindingTransition(configPath,{afterWrite=()=>{}}={}){
   if(!job||job.state==='committed')return options;
   assert.equal(job.schema,1);assert.equal(job.instanceId,options.instanceId);
   assert.equal(resolve(job.configPath),resolve(configPath));
-  const current=clawchatBindingState(options.clawchat.delivery.configPath,job.identity.account).current();
+  const current=clawchatBindingState(options.clawchat.delivery.configPath,job.identity.account,{options}).current();
   for(const key of ['agent','owner','conversation'])assert.equal(current?.[key],job.identity[key],
     'Activation changed during binding recovery');
   const allowed=new Set(['first-binding.json','source-candidate.json','managed-liveware.json',
@@ -38,6 +39,15 @@ export function commitBindingTransition(options,configPath,identity,changes,depe
   const writes=changes.map(([path,after])=>({path:resolve(path),before:readState(path,null),after}))
     .filter(entry=>!equal(entry.before,entry.after));
   if(!writes.length)return;
+  const previous=readState(fileFor(options),null);
+  if(previous){
+    assert.equal(previous.state,'committed','Recover the previous binding transition before preparing another');
+    const digest=createHash('sha256').update(JSON.stringify(previous)).digest('hex');
+    const archive=join(options.dataDir,'binding-transitions',digest+'.json');
+    const retained=readState(archive,null);
+    assert.ok(retained===null||equal(retained,previous),'Binding transition archive changed');
+    if(retained===null)writeState(archive,previous);
+  }
   writeState(fileFor(options),{schema:1,instanceId:options.instanceId,configPath:resolve(configPath),
     identity,state:'pending',writes});
   recoverBindingTransition(configPath,dependencies);

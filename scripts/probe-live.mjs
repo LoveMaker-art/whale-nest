@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+import {platformConfig} from '../src/platform-client.mjs';
 import {verifyLiveTools,verifyLiveModules} from './lib/live-tools.mjs';
 import {readBridgeHistory} from '../src/bridge-history.mjs';
 import {waitForSdkExit} from '../src/recovery.mjs';
@@ -16,17 +16,13 @@ import {voiceModelOverlay,fastVoiceModel} from '../src/voice-model.mjs';
 process.umask(0o077);
 const [instancePath, bridgePath, outputPath, dialoguePath] = process.argv.slice(2);
 const instance = JSON.parse(await readFile(instancePath));
-const platform = JSON.parse(await readFile(instance.clawchat.delivery.configPath));
-const route = instance.clawchat.route;
-const database = new DatabaseSync(platform.stateDbPath, {readOnly:true});
-let privateSessionId;
-try {
-  privateSessionId=database.prepare(`SELECT runtime_session_id AS id FROM runtime_sessions
-    WHERE chat_id=? AND agent_id=? AND is_current=1 ORDER BY updated_at DESC LIMIT 1`).get(route.conversation,route.account)?.id;
-} finally {database.close();}
-const release = dirname(instance.clawchat.delivery.connectBin);
-const { nativeModel, modelPatch } = await import(pathToFileURL(join(release, 'runtime/lib.mjs')));
-const model = nativeModel();
+const platform=platformConfig(instance);
+const route=instance.clawchat.route;
+// Our provider records observed thread ownership; never inspect Core Session tables.
+const ownRuntime=JSON.parse(await readFile(join(instance.dataDir,'runtime.json')));
+const privateSessionId=Object.entries(ownRuntime.externalRoutes??{}).filter(([,r])=>routeKey(r)===routeKey(route)&&senderKey(r)===senderKey(route)).at(-1)?.[0];
+const modelPatch=instance.runtime?.modelPatchFile??join(instance.home,'../.clawchat-dsh/models.patch.yml');
+const model={...JSON.parse(await readFile(modelPatch)).find(p=>p.id==='agent-default-model').config,env:process.env};
 await waitForSdkExit(instance, 0);
 const overlay = outputPath + '.overlay.json';
 await writeFile(overlay, JSON.stringify([...voiceModelOverlay({modelPatchFile:modelPatch}),{id:'sdk-jsonrpc-server',disabled:true},{ insert: [{ id: 'clawchat-connect-bridge', name: resolve(bridgePath),

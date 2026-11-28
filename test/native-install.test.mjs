@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createHash} from 'node:crypto';
+import {inspectNativeInstall,launcherFiles} from '../src/native-install.mjs';
+test('native installation plans use public platform state and immutable approved bundle; busy and foreign owners block before stopping',t=>{
+ const root=mkdtempSync(join(tmpdir(),'whalenest-native-install-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const dataDir=join(root,'data');mkdirSync(dataDir);const configPath=join(root,'config.json');writeFileSync(configPath,'not a private configuration');
+ const options={instanceId:'fixture',cwd:root,dataDir,clawchat:{route:{account:'dsh',sender:'owner',conversation:'dm'},delivery:{configPath,connectBin:'/public/cli'}}};
+ const files={};for(const name of [...launcherFiles,'package.json','src/assets/workspace-instructions.json','src/assets/capabilities.md'])files['artifacts/whalenest/'+name]={encoding:'base64',content:readFileSync(new URL('../'+name,import.meta.url)).toString('base64')};
+ files['artifacts/entry.mjs']={encoding:'utf8',content:'export default {}'};const digest=x=>createHash('sha256').update(x);
+ const version='1.0.0-test',bundle={format:'clawchat-connect-plugin-bundle-v1',manifest:{pluginId:'whalenest.runtime.deepseek-harness',version,artifacts:[{target:'linux-x64',entry:'artifacts/entry.mjs',integrity:'sha256-'+digest(files['artifacts/entry.mjs'].content).digest('base64')}]},files};
+ const file=join(root,'approved.connect-plugin');writeFileSync(file,JSON.stringify(bundle));writeFileSync(join(root,'distribution.json'),JSON.stringify({version,target:'linux-x64',sha256:digest(readFileSync(file)).digest('hex')}));
+ let status={available:true,connected:true,running:0,queued:0,ownerId:'owner',conversationId:'dm'};const calls=[];
+ const run=(_bin,args)=>{calls.push(args);if(args[0]==='__clawnest-state')return JSON.stringify(status);if(args[0]==='config')return JSON.stringify({agents:{dsh:{runtime:{pluginId:'whalenest.runtime.deepseek-harness'}}}});assert.ok(args[0].endsWith('/platform-query.mjs'));return JSON.stringify([{pluginId:'whalenest.runtime.deepseek-harness',version:'1.0.0-old',status:'active',source:{type:'local',path:'/fixture'},target:'linux-x64',integrity:'sha256-old'}]);};
+ assert.equal(inspectNativeInstall(options,file,root,{run}).version,version);assert.ok(calls.every(args=>['config','__clawnest-state'].includes(args[0])||args[0].endsWith('/platform-query.mjs')));
+ status={...status,running:1};assert.throws(()=>inspectNativeInstall(options,file,root,{run}),/healthy, owned and idle/);
+ status={...status,running:0,ownerId:'other'};assert.throws(()=>inspectNativeInstall(options,file,root,{run}),/healthy, owned and idle/);
+});

@@ -46,12 +46,8 @@ test('owner chat selects the shared voice; Liveware only reads it and each call 
   await extendRuntimeEntry(entry).activate({installationConfiguration:{},hostCapabilities:{get:()=>({register:value=>{provider=value;}})}});
   async function boot(){
     bridge=await bootBridge(dir);
-    adapter=provider.create({homePath:dir.options.home,profile:'whalenest'},{
-      async withPrivateVoiceSession(request,signal,run){
-        assert.equal(request.chatId,route.conversation);assert.equal(request.ownerId,route.sender);signal.throwIfAborted();
-        return run(session,{workspace,sessionRef:'original-private',model:dir.options.model});
-      },
-    });
+    adapter=provider.create({homePath:dir.options.home,profile:'whalenest'},{});
+    await adapter.prepare();
     session=await adapter.start({bindingId:route.account,chatId:route.conversation,sessionId:'original-private',
       ...(nativeId?{runtimeThreadId:nativeId}:{}),onRuntimeThreadId:id=>{nativeId=id;}});
   }
@@ -96,8 +92,14 @@ test('owner chat selects the shared voice; Liveware only reads it and each call 
   await command({action:'update',voice:'大鲸娘1'},'换成大鲸娘1。');assert.equal(await selectedVoice(),second);
   assert.ok((await speakInCall('same-call')).every(voice=>voice===first),'An active call keeps its original voice');
   await call.close();call=null;
+  const independentDirectory=join(dir.options.dataDir,'realtime/sessions');
+  const independentFiles=await (await import('node:fs/promises')).readdir(independentDirectory);
+  assert.equal(independentFiles.length,1);
+  const independent=JSON.parse(await readFile(join(independentDirectory,independentFiles[0])));
+  assert.notEqual(independent.thread,nativeId,'Voice must not borrow the text Session');
   call=await connectPlatformVoice(origin,route.sender);
   assert.ok((await speakInCall('next-call')).every(voice=>voice===second),'The next call reads the chat selection');
+  assert.equal(JSON.parse(await readFile(join(independentDirectory,independentFiles[0]))).thread,independent.thread,'Calls reuse one dedicated thread without accumulating Session copies');
   await call.close();call=null;
   const beforeMessage=voices.length;await prompt('运维自测：SEND_VOICE_FIXTURE 请用语音回复。');
   assert.deepEqual(voices.slice(beforeMessage),[second],'Chat voice messages use the same saved preference');

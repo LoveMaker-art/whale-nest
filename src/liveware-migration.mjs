@@ -4,6 +4,8 @@ import {join} from 'node:path';
 import {hash,resolveDeliveryTarget} from './routing.mjs';
 import {readState,writeState} from './state.mjs';
 import {livewareCommands} from './liveware-command.mjs';
+import {requireCurrentInstanceBinding} from './instance-binding.mjs';
+import {retryUnexecutedLivewareOperation} from './liveware-operation.mjs';
 
 export const managedLivewareCapability = {
   id:'whalenest-liveware',type:'managed-web-app',interfaceVersion:'1',
@@ -23,6 +25,7 @@ export function livewarePublication(app) {
 }
 
 export function requireLivewareOwner(options, bindingId = options.clawchat?.route?.account) {
+  requireCurrentInstanceBinding(options);
   const route = options.clawchat?.route;
   assert.ok(route && route.account === bindingId && resolveDeliveryTarget(options,{origin:route}).ok,
     'Liveware needs the verified private binding');
@@ -100,6 +103,26 @@ function requireUnissuedStableOperation(operation, progress) {
   throw error;
 }
 
+async function reconcileStableOperation(options,commands,progress,kind){
+  const operation=progress[kind];
+  if(operation.state!=='pending'||!commands.readReceipt)return progress;
+  const receipt=await commands.readReceipt(kind==='create'?'liveware_app_create':'liveware_tunnel_bind',operation.requestId);
+  assert.equal(receipt.requestId,operation.requestId,'Stable call receipt belongs to another request');
+  const retry=retryUnexecutedLivewareOperation(operation,receipt);
+  if(retry){progress={...progress,[kind]:retry};save(options,{stableCall:progress});return progress;}
+  if(receipt.status!=='succeeded')return progress;
+  const result=receipt.result;
+  if(kind==='create')progress={...progress,app:livewarePublication(result),create:{...operation,state:'succeeded'}};
+  else{
+    const app=livewarePublication(progress.app);
+    assert.equal(result.appId,app.appId);assert.equal(result.registeredInClawChat,true);
+    const publication=livewarePublication({...app,publicUrl:result.publicUrl});
+    assert.equal(publication.url,app.url);
+    progress={...progress,publication,bind:{...operation,state:'succeeded'}};
+  }
+  save(options,{stableCall:progress});return progress;
+}
+
 function completeStableCall(options, progress) {
   assert.equal(progress.create?.state,'succeeded');
   assert.equal(progress.bind?.state,'succeeded');
@@ -137,6 +160,9 @@ async function provisionStableCall(options, commands, signal) {
     binding:route.account,owner:route.sender,provisioning:true,requestId:progress.create.requestId,
   });
   if (progress.create.state !== 'succeeded') {
+    progress=await reconcileStableOperation(options,commands,progress,'create');
+  }
+  if (progress.create.state !== 'succeeded') {
     requireUnissuedStableOperation(progress.create,progress);
     progress = {...progress,create:{...progress.create,state:'pending'}};
     save(options,{stableCall:progress});
@@ -145,6 +171,9 @@ async function provisionStableCall(options, commands, signal) {
     }));
     progress = {...progress,app,create:{...progress.create,state:'succeeded'}};
     save(options,{stableCall:progress});
+  }
+  if (progress.bind.state !== 'succeeded') {
+    progress=await reconcileStableOperation(options,commands,progress,'bind');
   }
   if (progress.bind.state !== 'succeeded') {
     requireUnissuedStableOperation(progress.bind,progress);
@@ -164,7 +193,7 @@ async function provisionStableCall(options, commands, signal) {
 
 /** Remove only the historical launcher. Its App, tunnel, URL, business files,
  * and the existing call gateway are retained, so old chat cards keep working.
- * This runs before acquire returns: Exposure cannot add a third launcher. */
+ * This is a recoverable background job, independent of provider acquisition. */
 export async function prepareLegacyLivewareMigration(options, {commands = livewareCommands(options),signal} = {}) {
   const route = requireLivewareOwner(options);
   let state = readManagedLiveware(options);

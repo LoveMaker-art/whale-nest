@@ -1,3 +1,4 @@
+import {activeCall} from './call-state.mjs';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {mkdirSync, readFileSync} from 'node:fs';
@@ -13,7 +14,7 @@ import {createOneBotClient} from '../vendor/aurabot/src/onebot/client.js';
 import {clawchatTextDelivery} from './clawchat-text.mjs';
 import {deliverIntent} from './delivery.mjs';
 import {createClawChatCore} from './clawchat-core.mjs';
-import {connectorRequirement,createOfficialConnectorUpdater,connectorPlan,connectorSnapshot} from './official-connector-update.mjs';
+import {syncBootstrap} from './bootstrap-deployment.mjs';
 import {ensureRuntimeActivation,runtimeActivationTarget} from './runtime-activation.mjs';
 import {runPluginUpdatePlan,isInstalledUpdateWorker} from './plugin-update-orchestrator.mjs';
 import {workspaceInstructionsSource,planWorkspaceInstructions,applyWorkspaceInstructions} from './workspace-instructions.mjs';
@@ -45,16 +46,16 @@ function lease(path) {
   return ()=>database.close();
 }
 
-export function connectUpdateHost(options, {fetchImpl=fetch,run=exec}={}) {
+export function connectUpdateHost(options, {fetchImpl=fetch,run=exec,runSync}={}) {
   const {connectBin,configPath}=options.clawchat.delivery;
   assert.ok(isAbsolute(connectBin)&&isAbsolute(configPath));
-  const core=createClawChatCore(options,{run,fetchImpl}), route=options.clawchat.route;
+  const core=createClawChatCore(options,{run,runSync,fetchImpl}), route=options.clawchat.route;
   const installed=()=>core.installed(pluginId);
   async function identity() {
     const s=await core.state();
     if (!s.available||!s.connected||s.ownerId!==route.sender||s.conversationId!==route.conversation) return null;
-    const {configuration,stateDbPath}=core.binding(pluginId);
-    return {idle:s.running===0&&s.queued===0, key:hash({route,binding:configuration,stateDbPath}),accountId:s.userId};
+    const {configuration}=core.binding(pluginId);
+    return {idle:s.running===0&&s.queued===0&&!activeCall(options), key:hash({route,binding:configuration}),accountId:s.userId};
   }
   async function versions() {
     const runtime=readState(join(options.dataDir,'runtime.json'),null);
@@ -68,8 +69,9 @@ export function connectUpdateHost(options, {fetchImpl=fetch,run=exec}={}) {
   }
   function instructions(entry=installed(),apply=false) {
     assert.ok(isAbsolute(entry.activeArtifact),'Installed Runtime artifact must be absolute');
-    const source=workspaceInstructionsSource({installedRoot:join(dirname(entry.activeArtifact),'whalenest')});
+    const source=workspaceInstructionsSource({installedRoot:entry.ownedRoot});
     const plan=planWorkspaceInstructions(options,source);
+    if(apply&&entry.bootstrapRoot)syncBootstrap(options,entry);
     return apply?applyWorkspaceInstructions(plan):{state:'prepared',changed:plan.changed};
   }
   return {installed,identity,versions,change,prepareInstructions:()=>instructions(),syncInstructions:entry=>instructions(entry,true)};
@@ -85,10 +87,9 @@ function isRelease(entry, release) {
 }
 
 function resultText(job, progress) {
-  if (progress.phase==='completed') return (progress.connectorDone?'官方连接器已更新到 '+progress.connectorVersion+'。':'')+'鲸栖已经更新到 '+job.release.version+'，原私聊可以继续使用。';
-  if (progress.phase==='rolled-back') return '这次更新未能启用，已经切回 '+progress.version+'。'+(progress.connectorRestored?'官方连接器也已恢复。':'')+'可以继续在这里聊天。';
-  if (progress.phase==='failed' && progress.reason==='connector-migration-required') return '这次更新没有执行：当前仍使用定制连接器，需要配套迁移版本才能切换官方底座。现有功能保持原样。';
-  if (progress.phase==='failed' && progress.reason?.startsWith('connector-')) return '官方连接器更新未完成，鲸栖没有继续更新。你可以说「查看更新进度」核对结果。';
+  if (progress.phase==='completed') return '鲸栖已经更新到 '+job.release.version+'，原私聊可以继续使用。';
+  if (progress.phase==='rolled-back') return '这次更新未能启用，已经切回 '+progress.version+'。可以继续在这里聊天。';
+  if (progress.reason==='legacy-connector-task-manual') return '旧任务曾请求变更官方连接器，现已停止自动接续。请通过官方入口核实该操作的结果；鲸栖不会再次升级或回退连接器。';
   if (progress.phase==='failed') return '这次更新尚未完成。'+(progress.version?'当前版本为 '+progress.version+'。':'')+'你可以说「查看更新进度」确认目前的版本。';
   return '这次更新的结果还在核对。你可以说「查看更新进度」。';
 }
@@ -120,7 +121,7 @@ function liveResultDelivery(loadOptions, request) {
   }};
 }
 
-async function executeSinglePluginUpdate(options, id, {host,connector,discover=discoverPluginRelease,wait=delay,delivery,activate=ensureRuntimeActivation}={}, suppliedRequest, locked=false) {
+async function executeSinglePluginUpdate(options, id, {host,discover=discoverPluginRelease,wait=delay,delivery,activate=ensureRuntimeActivation}={}, suppliedRequest, locked=false) {
   const files=updateFiles(options), request=suppliedRequest??readState(files.request,null);
   if (request?.id!==id || request.instanceId!==options.instanceId) return;
   assert.ok(resolveDeliveryTarget(options,{origin:request.route}).ok,'Update requester is no longer the verified owner');
@@ -133,7 +134,6 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
   catch (error) {unlock();throw error;}
   const save=fields=>{progress={...progress,...fields,updatedAt:Date.now()};writeState(file,progress);};
   const release=request.release;
-  let requirement;
   async function activateCurrent(key) {
     const installed=host.installed(),identity=await host.identity();
     if(!identity||identity.key!==progress.identity)return {state:'pending',reason:'runtime-unavailable'};
@@ -141,33 +141,11 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
     const expected=runtimeActivationTarget(installed,identity);
     return await activate(options,{host,expected,required:true,read:()=>progress[key],save:record=>save({[key]:record}),wait});
   }
-  async function connectorReady() {
-    if (!requirement) return true;
-    const status=await connector.inspect();
-    return connectorPlan(status,requirement).state==='ready' &&
-      status.running.health.identity===progress.connectorIdentity;
-  }
-  async function restoreConnector(finalPhase,reason) {
-    const status=await connector.inspect(),change=progress.connector;
-    assert.deepEqual(selection(host.installed()),progress.previous,'Whale Nest selection changed before connector rollback');
-    assert.equal(status.job?.id,change.jobId,'Another operator replaced the official update job');
-    assert.equal(status.selected?.id,change.target,'Official selection changed before rollback');
-    assert.equal(status.previous?.id,change.before.selectedId,'Official rollback point changed');
-    assert.equal(status.previous.rollback_compatible,true,'No state-compatible official rollback');
-    assert.equal(status.running?.health?.identity,change.before.identity,'Official identity changed before rollback');
-    save({phase:'connector-rolling-back',reason,connectorRollback:{beforeJobId:status.job.id,finalPhase,reason}});
-    try {
-      const ack=await connector.rollback();
-      assert.equal(ack.target,change.before.selectedId);
-      assert.ok(typeof ack.id==='string' && ack.id && ack.id!==status.job.id);
-      save({connectorRollback:{...progress.connectorRollback,jobId:ack.id}});
-    } catch { /* Reconcile the persisted native job without repeating rollback. */ }
-  }
   const observe=async expected=>{
     for (let attempt=0; attempt<60; attempt++) {
       try {
         const current=host.installed(), identity=await host.identity();
-        if (current?.status==='active' && expected(current) && identity?.key===progress.identity && await connectorReady()) return true;
+        if (current?.status==='active' && expected(current) && identity?.key===progress.identity) return true;
       } catch { /* A short transition may leave Core temporarily unavailable. */ }
       if (attempt<59) await wait(1000);
     }
@@ -176,63 +154,17 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
   try {
     if (terminal.has(progress.phase)) return progress;
     host??=connectUpdateHost(options);
-    requirement=connectorRequirement(release);
-    if (requirement) connector??=createOfficialConnectorUpdater(options);
-    if (progress.phase==='connector-rolling-back' ||
-      progress.phase==='uncertain' && progress.reason==='connector-rollback-unconfirmed') {
-      const status=await connector.inspect(),job=status.job,change=progress.connector,rollback=progress.connectorRollback;
-      if (!rollback.jobId && job?.id!==rollback.beforeJobId && job?.action==='rollback' &&
-        job.target===change.before.selectedId && job.previous===change.target && job.identity===change.before.identity) {
-        save({connectorRollback:{...rollback,jobId:job.id}});
-      }
-      if (job?.id===progress.connectorRollback.jobId && ['accepted','running'].includes(job.status)) return progress;
-      const identity=await host.identity(),current=host.installed(),health=status.running?.health;
-      if (job?.id===progress.connectorRollback.jobId && job.status==='succeeded' &&
-        status.selected?.id===change.before.selectedId && status.running?.id===change.before.selectedId &&
-        health?.version===change.before.version && health.ready===true && health.connected===true && health.draining!==true &&
-        health.identity===change.before.identity && identity?.key===progress.identity && current?.status==='active' &&
-        current.version===progress.previous.version && current.integrity===progress.previous.integrity) {
-        save({phase:rollback.finalPhase,reason:rollback.reason,version:current.version,connectorDone:false,
-          connectorVersion:change.before.version,connectorRestored:true});
-      } else save({phase:'uncertain',reason:'connector-rollback-unconfirmed'});
+    // Never replay an old worker's connector mutation intent. Preserve its
+    // evidence for the user to verify through the official update entry.
+    if (progress.phase.startsWith('connector-') ||
+      progress.phase==='uncertain' && progress.reason?.startsWith('connector-') ||
+      progress.reason==='legacy-connector-task-manual') {
+      save({phase:'uncertain',reason:'legacy-connector-task-manual'});
       return progress;
-    }
-    if (['connector-submitting','connector-updating'].includes(progress.phase) ||
-      progress.phase==='uncertain' && progress.reason?.startsWith('connector-')) {
-      assert.ok(requirement && progress.connector,'Missing persisted connector update');
-      let status;
-      try {status=await connector.inspect();} catch {return progress;}
-      const change=progress.connector, job=status.job;
-      // Reconcile a lost CLI acknowledgement; never repeat the submission.
-      if (!change.jobId && job?.id!==change.before.jobId && job?.target===change.target &&
-        job.previous===change.before.selectedId && job.identity===change.before.identity && job.action==='upgrade') {
-        save({phase:'connector-updating',connector:{...change,jobId:job.id}});
-      }
-      if (!progress.connector.jobId || job?.id!==progress.connector.jobId) {
-        save({phase:'uncertain',reason:'connector-submission-unconfirmed'});
-        return progress;
-      }
-      if (status.running?.health?.identity && status.running.health.identity!==change.before.identity) {
-        save({phase:'uncertain',reason:'connector-identity-changed'});
-        return progress;
-      }
-      if (['accepted','running'].includes(job.status)) {
-        save({phase:'connector-updating'});
-        return progress;
-      }
-      if (['failed','interrupted'].includes(job.status)) {
-        save({phase:job.recoveryRequired?'uncertain':'failed',reason:job.recoveryRequired?'connector-recovery-required':'connector-upgrade-failed'});
-        return progress;
-      }
-      if (job.status!=='succeeded' || connectorPlan(status,requirement).state!=='ready') {
-        save({phase:'uncertain',reason:'connector-running-unconfirmed'});
-        return progress;
-      }
-      save({phase:'queued',connectorDone:true,connectorVersion:status.effective.version,reason:undefined});
     }
     if (progress.phase==='uncertain') {
       const selected=host.installed(), identity=await host.identity();
-      if (identity?.key===progress.identity && selected?.status==='active' && isRelease(selected,release) && await connectorReady()) {
+      if (identity?.key===progress.identity && selected?.status==='active' && isRelease(selected,release)) {
         const completed=completedSelection(selected);
         const activation=await activateCurrent('runtimeActivation');
         if(activation.state==='ready')assert.deepEqual(completedSelection(host.installed()),completed,'Installed plugin changed during activation');
@@ -250,8 +182,8 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
       const current=host.installed(), identity=await host.identity();
       if (!identity?.idle) return progress;
       if (progress.connectorDone) {
-        assert.equal(identity.key,progress.identity,'Original binding changed during connector update');
-        assert.deepEqual(selection(current),progress.previous,'Another operator changed Whale Nest during connector update');
+        assert.equal(identity.key,progress.identity,'Original binding changed during the pending update');
+        assert.deepEqual(selection(current),progress.previous,'Another operator changed Whale Nest during the pending update');
       }
       assert.ok(current?.status==='active' && current.target===updateTarget);
       assert.ok(comparePluginVersions(release.version,current.version)>0);
@@ -262,43 +194,11 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
       if(host.prepareInstructions)await host.prepareInstructions();
       assert.deepEqual(await discover(options.pluginUpdates,current.version,{tag:release.tag}),release);
       verifyUpdateCompatibility(await host.versions(),release.compatibility);
-      let connectorStatus;
-      if (requirement) {
-        connectorStatus=await connector.inspect();
-        const plan=connectorPlan(connectorStatus,requirement);
-        if (identity.accountId) assert.equal(connectorStatus.running?.health?.identity,identity.accountId,'Official integration belongs to another account');
-        if (plan.state==='unavailable') {save({reason:'connector-busy'});return progress;}
-        if (plan.state==='migration-required') {save({phase:'failed',reason:'connector-migration-required',connectorPlan:plan});return progress;}
-        if (plan.state==='upgrade-required') {
-          assert.ok(!progress.connectorDone,'Verified connector changed before Whale Nest installation');
-          const prepared=await connector.prepare(requirement);
-          const checked=await host.identity();
-          if (!checked?.idle || checked.key!==identity.key) return progress;
-          assert.deepEqual(selection(host.installed()),selection(current));
-          assert.deepEqual(connectorSnapshot(await connector.inspect()),connectorSnapshot(connectorStatus),'Official integration changed during preparation');
-          save({phase:'connector-submitting',previous:selection(current),identity:identity.key,
-            connectorIdentity:connectorStatus.running.health.identity,
-            connector:{before:connectorSnapshot(connectorStatus),...prepared,submittedAt:Date.now()}});
-          try {
-            const ack=await connector.upgrade(requirement);
-            assert.equal(ack.target,prepared.target,'Unexpected official upgrade target');
-            assert.ok(typeof ack.id==='string' && ack.id && ack.id!==progress.connector.before.jobId);
-            save({phase:'connector-updating',connector:{...progress.connector,jobId:ack.id}});
-          } catch {save({reason:'connector-ack-unknown'});}
-          return progress;
-        }
-        save({connectorIdentity:connectorStatus.running.health.identity,connectorVersion:plan.current,reason:undefined});
-      }
       // Repeat the live checks after the network read. Core drains in-flight
       // turns if a message arrives between admission and the switch.
       const checked=await host.identity();
       if (!checked?.idle || checked.key!==identity.key) return progress;
       assert.deepEqual(selection(host.installed()),selection(current),'Selected version changed during update preparation');
-      if (requirement) {
-        const status=await connector.inspect();
-        assert.deepEqual(connectorSnapshot(status),connectorSnapshot(connectorStatus),'Official integration changed before Whale Nest switch');
-        assert.equal(connectorPlan(status,requirement).state,'ready');
-      }
       if(host.prepareInstructions)await host.prepareInstructions();
       save({phase:'switching',previous:selection(current),identity:identity.key});
       try {
@@ -322,9 +222,6 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
       const selected=host.installed(), previous=progress.previous;
       if (selected?.version===previous?.version && selected?.integrity===previous?.integrity && selected.status==='active') {
         if(host.syncInstructions)save({workspaceInstructions:await host.syncInstructions(selected)});
-        if (progress.ack==='rejected' && progress.connectorDone) {
-          await restoreConnector('failed','switch-rejected');return progress;
-        }
         save(progress.ack==='rejected'
           ? {phase:'failed',reason:'switch-rejected',version:selected.version}
           : {phase:'uncertain',reason:'switch-unconfirmed',version:selected.version});
@@ -343,23 +240,16 @@ async function executeSinglePluginUpdate(options, id, {host,connector,discover=d
     if (progress.phase==='rolling-back') {
       const prior=progress.previous;
       const restored=await observe(entry=>entry.version===prior.version && entry.integrity===prior.integrity);
-      const selected=host.installed();
       if(restored){
         const activation=await activateCurrent('rollbackActivation');
         if(activation.state!=='ready'){save({phase:'uncertain',reason:'runtime-rollback-unconfirmed'});return progress;}
-      }
-      if (progress.connectorDone && selected?.version===prior.version && selected.integrity===prior.integrity) {
-        await restoreConnector('rolled-back','target-unhealthy');return progress;
       }
       save(restored ? {phase:'rolled-back',version:prior.version,reason:'target-unhealthy'}
         : {phase:'uncertain',reason:'rollback-unconfirmed'});
     }
   } catch {
-    if (progress.phase==='queued' && progress.connectorDone) {
-      try {await restoreConnector('failed','preflight');}
-      catch {save({phase:'uncertain',reason:'connector-reconciliation'});}
-    } else save(progress.phase==='queued' ? {phase:'failed',reason:'preflight'}
-      : {phase:'uncertain',reason:progress.phase==='connector-rolling-back'?'connector-rollback-unconfirmed':'reconciliation'});
+    save(progress.phase==='queued' ? {phase:'failed',reason:'preflight'}
+      : {phase:'uncertain',reason:'reconciliation'});
   } finally {
     try {
       if (delivery&&(terminal.has(progress.phase)||progress.phase==='uncertain')) {

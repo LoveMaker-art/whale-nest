@@ -1,5 +1,7 @@
 # 鲸栖彻底解耦：依赖覆盖、替代实现与退出验收
 
+11月27日进展：本文件保留0.2.23严格无损阶段的退出条件与清单。用户随后允许内部替代并暂缓通话；0.2.26非通话源码已部署，当前范围、证据和发行包待验边界见[连续实施记录](../tasks/connector-026-upgrade-plan.md#非通话剩余收敛2026-11-27)及[STATUS](../STATUS.md)，不把下表旧依赖当作现行运行事实。
+
 日期：2026-11-25。基线：鲸栖 dev.19、官方集成包 0.2.23、自有 Core .0.2.23.2。当前运行和部署状态以 [STATUS](../STATUS.md) 为准。本轮只有方案和源码覆盖分析，没有执行功能迁移或部署。
 
 ## 1. 明确目标与充分性结论
@@ -26,7 +28,7 @@
 
 | 编号 | 当前实际依赖与证据 | 替代方式/平台条件 | 鲸栖负责的改造 | 退出证据 |
 | --- | --- | --- | --- | --- |
-| I01 | Core 媒体工具、实际字节/类型/元数据/ACK；[补丁](../../integration/clawchat/core-media/core-extension.patch)、[media-delivery](../../src/media-delivery.mjs) | G2＋G3：回合内等待、异步授权、实际内容、结果/历史查询 | 保留产物和业务ID，改交官方 artifact/operation，删除旧工具调用 | 前台/后台/格式/断链/旧请求测试后删除相应 Core 差异 |
+| I01 | Core 媒体工具、实际字节/类型/元数据/ACK；补丁（历史文件已退役，原文保存在Git记录）、[media-delivery](../../src/media-delivery.mjs) | G2＋G3：回合内等待、异步授权、实际内容、结果/历史查询 | 保留产物和业务ID，改交官方 artifact/operation，删除旧工具调用 | 前台/后台/格式/断链/旧请求测试后删除相应 Core 差异 |
 | I02 | Core 权限工具；[diary-publisher](../../src/diary-publisher.mjs) | G4＋G1：当前绑定只读权限 | 改只读入口，保留日记受众/正文/策略/幂等 | 无改目录的权限读取；发布/删除仍走官方工具 |
 | I03 | Core 原私聊/队列借用；[platform-voice-bridge](../../src/platform-voice-bridge.mjs) | G5＋G1：权威当前会话、无输入准备、Runtime声明操作/共队列 | 把prepare与互动封装到自己的provider声明操作；通话入口只持opaque ref | 原线程、空历史、队列、取消/切换及隐藏投影全通过；删除shared-voice差异 |
 | I04 | Core 正文确认后回调；[runtime-extension](../../src/runtime-extension.mjs)、[expressions](../../src/expressions.mjs) | G2＋G3：每消息结果关联＋原生有序投递 | 将表达计划/执行/结果应用分开；用结果事件/查询替代专属回调 | 文字失败不发图、图片确认后记使用、重复/未知不重发；删除after差异 |
@@ -36,9 +38,9 @@
 | I08 | 官方config/lock读取；[clawchat-core](../../src/clawchat-core.mjs)、[live-update](../../src/live-update.mjs)、[runtime-upgrade](../../src/runtime-upgrade.mjs)、[runtime-activation](../../src/runtime-activation.mjs)、[qq-reload](../../src/qq-reload.mjs) | G6已有plugin list/Bootstrap＋G1稳定身份 | 以公开安装/绑定字段替代全配置/dbPath哈希；管理入口经公开发现/CLI | 不读lock/私有config仍可查版、重载、预检及更新 |
 | I09 | 独立Liveware读lock、import activeArtifact并判断status；[liveware-service](../../src/liveware-service.mjs) | G6/G7托管生命周期与公开插件状态 | 从自己已安装入口/受支持托管能力启动，不读官方lock找路径 | 通话/歌曲独立入口重启/插件替换不再读lock |
 | I10 | 安装/回退直接写官方runtime配置、override及lock代际/retainedVersions；[update-m2](../../scripts/update-m2.mjs) | G6官方install/replace/configure/select/agent add；既有配对迁移契约 | 重写安装与回退事务，不手写lock；首装和已有实例分别走受支持路线 | 首装/replace/升级/失败回退/重装无私有文件写入，新增数据保留 |
-| I11 | 解析官方integration state/release/receipt/schema；[connector-cutover](../../src/connector-cutover.mjs)、[official-updater](../../src/official-connector-update.mjs) | G7官方候选准备/状态/升级/回退 | 只消费受支持结果，不重建官方私有安装模型 | 安装路径变化不影响预检和组合恢复 |
+| I11 | 解析官方integration state/release/receipt/schema；connector-cutover（历史文件已退役，原文保存在Git记录）、[official-updater](../../src/official-connector-update.mjs) | G7官方候选准备/状态/升级/回退 | 只消费受支持结果，不重建官方私有安装模型 | 安装路径变化不影响预检和组合恢复 |
 | I12 | 读host.json后在内存替换传给main的agent启动目标、动态import官方host私有路径；[serve-media](../../deploy/serve-media.mjs) | G7原版宿主与标准启动 | 撤入口覆盖；自己的SDK准备/租约动作归自身迁移或插件生命周期 | 实际进程是原版官方入口，无内存启动覆盖或宿主文件改写 |
-| I13 | 复制Core/Runtime/Skills和specialcmd分流shim；[connector-extension](../../src/connector-extension.mjs)、[send-media脚本](../../scripts/send-media.mjs) | G1/G2/G6/G7稳定公开入口 | 删除自有Core、Skills配套和二进制分流；特定状态/owner/usage调用使用官方支持入口 | 发布包和活跃入口不再含旧补丁/shim；无旧命令兜底 |
+| I13 | 复制Core/Runtime/Skills和specialcmd分流shim；connector-extension（历史文件已退役，原文保存在Git记录）、[send-media脚本](../../scripts/send-media.mjs) | G1/G2/G6/G7稳定公开入口 | 删除自有Core、Skills配套和二进制分流；特定状态/owner/usage调用使用官方支持入口 | 发布包和活跃入口不再含旧补丁/shim；无旧命令兜底 |
 | I14 | 原样官方factory/4个helpers、Bridge协议2、Exposure发布保留规则；[runtime-provider](../../src/runtime-provider.mjs)、[liveware-managed](../../src/liveware-managed.mjs) | G7声明SDK/factory/协议/资源生命周期兼容 | 保留合法原样依赖；解除与定制Core版本/安装布局的绑定 | 只升级官方连接器后原插件、原App/卡片URL继续工作 |
 
 I08 同时包括管理端口/请求头的使用：不能默认它永久稳定或默认它是私有。优先用官方 CLI/宿主授予的公开入口，或取得明确受支持契约。
@@ -185,7 +187,7 @@ G6已有公共能力可以先实现，但不能把它们的局部迁移当成四
 
 ## 8. 本轮证据与尚未完成的事实
 
-已完成：固定源码/现调用点核对、安装/回退/独立服务补充审计、通用契约与I01–I14对应、角色及验收门槛。四项Core涉及9份运行源码，补丁及原始来源见[来源清单](../../integration/clawchat/core-media/SOURCE.json)。
+已完成：固定源码/现调用点核对、安装/回退/独立服务补充审计、通用契约与I01–I14对应、角色及验收门槛。四项Core涉及9份运行源码，补丁及原始来源见来源清单（历史文件已退役，原文保存在Git记录）。
 
 未完成：新平台接口实现、鲸栖新适配实现、迁移回归、测试机切换、官方独立升级验收。以前dev.19的测试只证明旧组合，不替代新契约验收。
 

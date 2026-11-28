@@ -54,7 +54,7 @@
 
 交付层级：本次代码、构建、相关本地回归和 45001 部署及实机验收已完成，具体验收边界见末节。标签、Release 和发行资产上传仍须另获明确发布同意，本次未发布。
 
-操作依据：[现有实例更新](../DEVELOPMENT.md#现有实例的直接更新) · [本地开发及远端验收](../DEVELOPMENT.md#本地开发后进行测试机最终验收) · [ClawChat 自测](../DEVELOPMENT.md#clawchat-对话自测) · [扩展构建](../../integration/clawchat/core-media/README.md)
+操作依据：[现有实例更新](../DEVELOPMENT.md#现有实例的直接更新) · [本地开发及远端验收](../DEVELOPMENT.md#本地开发后进行测试机最终验收) · [ClawChat 自测](../DEVELOPMENT.md#clawchat-对话自测) · 扩展构建（历史文件已退役，原文保存在Git记录）
 
 ## 45001 现有连接恢复记录
 

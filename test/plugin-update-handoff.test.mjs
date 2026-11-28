@@ -138,7 +138,7 @@ test('three steps use the same owner job while each child freezes its own bindin
   assert.equal(f.progress().stableBinding.key,hash({instanceId:f.options.instanceId,route:f.options.clawchat.route}));
 });
 
-test('the final official-only prerequisite cannot prevent installing a compatible bridge first',async t=>{
+test('historical connector prerequisites do not block or mutate the connector at any Whale Nest update stage',async t=>{
   const f=await fixture(t,{finalPrerequisites:{clawchatIntegration:{minimumVersion:'0.2.24',upgradeVersion:'0.2.24',officialOnly:true}}});
   const connectorCalls=[];
   const connector={async inspect(){connectorCalls.push('inspect');return {
@@ -147,14 +147,14 @@ test('the final official-only prerequisite cannot prevent installing a compatibl
     effective:{version:'0.2.23',custom:true},job:{id:'old-job',status:'succeeded'},
   };},async prepare(){throw Error('A custom base cannot be silently replaced');},async upgrade(){throw Error('Unexpected official upgrade');}};
   assert.equal((await f.run({connector})).phase,'handoff-pending');
-  assert.deepEqual(connectorCalls,[],'Only the current step prerequisite may execute');
+  assert.deepEqual(connectorCalls,[],'The connector is managed independently');
   f.state.workerVersion=f.steps[0].version;
   const result=await f.run({connector});
-  assert.equal(result.phase,'failed');
-  assert.equal(f.state.installed.version,f.steps[0].version);
-  assert.equal(f.calls.length,1);
-  assert.ok(connectorCalls.length>0);
-  assert.equal(f.child(1).reason,'connector-migration-required');
+  assert.equal(result.phase,'completed');
+  assert.equal(f.state.installed.version,f.steps.at(-1).version);
+  assert.equal(f.calls.length,2);
+  assert.deepEqual(connectorCalls,[]);
+  assert.equal(f.child(1).phase,'completed');
 });
 
 test('a lost bridge selection ACK is reconciled once before a new worker resumes',async t=>{

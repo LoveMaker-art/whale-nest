@@ -78,3 +78,10 @@ test('concurrent callers cannot submit two supervisor restarts',async t=>{
  assert.deepEqual(await ensureRuntimeActivation(f.options,ports),{state:'pending',reason:'activation-busy'});
  release.resolve();assert.equal((await first).state,'ready');assert.equal(restarts,1);
 });
+
+ test('paused realtime does not gate native writer readiness on a removed voice endpoint',async t=>{
+ const f=await fixture(t);f.options.realtime.sessionEnabled=false;
+ assert.equal(await probeRuntimeReady(f.options),false);
+ await writeFile(join(f.options.dataDir,'runtime.lock'),JSON.stringify({instanceId:f.options.instanceId,hostname:hostname(),pid:process.pid}));
+ assert.equal(await probeRuntimeReady(f.options,{fetchImpl:()=>{throw Error('voice endpoint must not be queried');}}),true);
+});

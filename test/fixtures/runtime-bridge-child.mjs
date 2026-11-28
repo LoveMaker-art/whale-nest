@@ -34,6 +34,10 @@ async function fragmented(buffer){
  await bytes(buffer.subarray(start));
 }
 if(mode==='silent'){setInterval(()=>{},1000);}
+else if(mode==='startup-error'){
+ await send({type:'startupError',code:'BUSINESS_INITIALIZATION_FAILED'});
+ process.stderr.write('fixture-only-private-token\n');setInterval(()=>{},1000);
+}
 else if(mode==='early-exit'){process.stderr.write('fixture-only-private-token\n');process.exit(29);}
 else{
  if(mode==='stubborn'){process.on('SIGTERM',()=>{});setInterval(()=>{},1000);}

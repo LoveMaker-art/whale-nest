@@ -8,9 +8,9 @@ export const updateProtocol = 1;
 export const updateCompatibility = {
   dataSchema: 1,
 };
-export const updatePrerequisites = {
-  clawchatIntegration: {minimumVersion:'0.2.23',upgradeVersion:'0.2.23'},
-};
+// Historical metadata is still parsed below, but new releases do not declare a
+// connector version prerequisite or an automatic upgrade target.
+export const updatePrerequisites = undefined;
 export const updateInterval = 6 * 3600_000;
 const versionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*))?$/;
 const digestPattern = /^sha256:([a-f0-9]{64})$/;

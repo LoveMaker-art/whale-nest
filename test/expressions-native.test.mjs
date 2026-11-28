@@ -49,13 +49,9 @@ test('native reply exit sends mood-driven voice/sticker once, preserves text his
  const result=await prompt('auto-first','运维自测：我拿到 offer 了！STICKER_FIXTURE_CELEBRATE');
  assert.equal(tts,1);const final=result.findLast(a=>a.kind==='assistant'&&a.data?.outputKind==='final');assert.equal(final.text,'');
  assert.ok(!result.some(a=>a.kind==='assistant'&&a.text==='fixture complete'),'Original short reply is not duplicated as text');
- const sent=()=>readFile(join(dir.root,'delivered.jsonl'),'utf8').then(s=>s.trim().split('\n').map(JSON.parse));
- assert.deepEqual((await sent()).map(r=>r.input.expectedKind),['audio','image'],'A confirmed voice is the primary reply for its selected sticker');
- await session.afterClawChatReply('other-input');
- assert.equal((await sent()).length,2);
- await session.afterClawChatReply('auto-first');
- await session.afterClawChatReply('auto-first');
- assert.deepEqual((await sent()).map(r=>r.input.expectedKind),['audio','image']);
+ const sent=()=>readFile(join(dir.root,'delivered.jsonl'),'utf8').then(s=>s.trim().split('\n').map(JSON.parse).filter(r=>r.tool!=='clawchat_send_message'));
+ assert.deepEqual((await sent()).map(r=>r.tool),['clawchat_send_voice','clawchat_send_image'],'A confirmed voice is the primary reply for its selected sticker');
+ assert.equal(session.afterClawChatReply,undefined,'Core never needs our private after-reply extension');
  assert.doesNotMatch(JSON.stringify(result),/whalenest-sticker|stickerPending/);
  const history=await readBridgeHistory(bridge,runtimeId);assert.ok(history.events.some(e=>e.type==='assistant/message'&&JSON.stringify(e.data).includes('fixture complete')));
  await session.close();session=null;await adapter.close();adapter=null;await bridge.close();bridge=null;await start();
@@ -95,7 +91,6 @@ test('native reply exit sends mood-driven voice/sticker once, preserves text his
    const text='运维自测这轮是普通聊天 STICKER_FIXTURE_'+variant;
    const activities=await prompt(id,text);
    assert.doesNotMatch(JSON.stringify(activities),/whalenest-sticker|stickerPending/);
-   await session.afterClawChatReply(id);
  }
  const trace=(await readFile(join(dir.root,'trace.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
  const chanceMiss=trace.filter(r=>r.messages.findLast(m=>m.source?.kind==='user')?.content.some(c=>c.text?.includes('STICKER_FIXTURE_UNSOLICITED')));

@@ -13,7 +13,7 @@
 
 ## 安装和使用
 
-测试版面向预装鲸栖的 **Linux x64 ClawChat 云实例**。取得配对码后，在 ClawChat 完成绑定。想关联 QQ 时，在该私聊中说「连接 QQ」并按提示操作。模型、语音、图像和歌曲由实例使用的 ClawChat 平台服务提供。
+面向预装鲸栖的 **Linux x64 ClawChat 云实例**。取得配对码后，在 ClawChat 完成绑定。想关联 QQ 时，在该私聊中说「连接 QQ」并按提示操作。模型、语音、图像和歌曲由实例使用的 ClawChat 平台服务提供。
 
 自维护实例及宿主兼容要求见[开发与安装](docs/DEVELOPMENT.md)。安装资产为 `.connect-plugin` 和同版本的 `distribution.json`。
 
